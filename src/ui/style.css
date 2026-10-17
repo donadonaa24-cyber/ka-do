@@ -412,10 +412,49 @@ select {
   opacity: 0;
   cursor: pointer;
 }
+.detail-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  flex-shrink: 0;
+}
+.detail-body.with-img {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
 .detail-img {
-  width: 120px;
+  width: 84px;
   border-radius: 6px;
-  align-self: center;
+}
+.card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.card-text p {
+  margin: 0;
+}
+.card-text .ct-lead {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ct-effect {
+  padding-left: 1.6em;
+  text-indent: -1.6em;
+}
+.ct-num {
+  display: inline-block;
+  width: 1.6em;
+  text-indent: 0;
+  color: var(--gold);
+  font-weight: 800;
+}
+.ct-bullet {
+  padding-left: 2.6em;
+  text-indent: -1em;
+  color: #cfd5e2;
 }
 .empty-pile {
   background: transparent;
@@ -604,7 +643,10 @@ select {
 .sheet {
   border-radius: 14px 14px 0 0;
   padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  max-height: 72%;
+  max-height: 85%;
+}
+.sheet > * {
+  flex-shrink: 0;
 }
 .route-modal {
   width: min(680px, 100%);

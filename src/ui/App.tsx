@@ -21,7 +21,7 @@ import { tributesRequired } from '../engine/rules';
 import type { BattlePosition, GameState, Location, PileZone } from '../engine/types';
 import { isExtraDeckCard, PHASE_LABEL } from '../engine/types';
 import { Board } from './Board';
-import { CardView, statLine } from './CardView';
+import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
@@ -1120,8 +1120,12 @@ export function App() {
                 {isOnField(selLoc) && !state.cards[sel].faceUp && '（裏側）'}
               </div>
               {selDef.materialText && <div className="meta">素材: {selDef.materialText}</div>}
-              {shownImages[selDef.id] && <img className="detail-img" src={shownImages[selDef.id]} alt={selDef.name} />}
-              <p className="text">{selDef.text}</p>
+              <div className={`detail-body ${shownImages[selDef.id] ? 'with-img' : ''}`}>
+                {shownImages[selDef.id] && (
+                  <img className="detail-img" src={shownImages[selDef.id]} alt={selDef.name} />
+                )}
+                <CardText text={selDef.text} />
+              </div>
               <div className="btn-row">
                 {imagePicker(selDef.id, shownImages[selDef.id] ? '画像を変更' : '画像を設定')}
                 {images[selDef.id] && (

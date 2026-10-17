@@ -23,8 +23,7 @@ export function statLine(def: CardDef): string {
     };
     return `${label[t ?? 'normal']}${def.kind === 'spell' ? '魔法' : '罠'}`;
   }
-  const lv =
-    def.frame === 'link' ? `LINK-${def.link}` : def.frame === 'xyz' ? `☆${def.rank}` : `★${def.level ?? '?'}`;
+  const lv = def.frame === 'link' ? `LINK-${def.link}` : def.frame === 'xyz' ? `☆${def.rank}` : `★${def.level ?? '?'}`;
   return def.frame === 'link' ? `${lv} ${def.atk ?? '?'}` : `${lv} ${def.atk ?? '?'}/${def.def ?? '?'}`;
 }
 
@@ -40,7 +39,16 @@ interface Props {
   small?: boolean;
 }
 
-export function CardView({ def, inst, showFaceDown = true, selected, highlighted, onClick, onPointerDown, small }: Props) {
+export function CardView({
+  def,
+  inst,
+  showFaceDown = true,
+  selected,
+  highlighted,
+  onClick,
+  onPointerDown,
+  small,
+}: Props) {
   const image = useContext(CardImageContext)[def.id];
   const faceDown = inst ? !inst.faceUp : false;
   const isDef = inst?.position === 'def';
@@ -88,6 +96,36 @@ export function CardView({ def, inst, showFaceDown = true, selected, highlighted
       )}
       {inst && inst.overlay.length > 0 && <div className="card-overlay">素材{inst.overlay.length}</div>}
       {faceDown && <div className="card-tag">裏側</div>}
+    </div>
+  );
+}
+
+/** カードの効果テキスト。①②③や●ごとに段落を分けて読みやすくする */
+export function CardText({ text }: { text: string }) {
+  const lines = text.split('\n').filter((l) => l.trim());
+  return (
+    <div className="card-text">
+      {lines.map((line, i) => {
+        const num = line.match(/^([①-⑳])：?(.*)$/);
+        if (num)
+          return (
+            <p key={i} className="ct-effect">
+              <span className="ct-num">{num[1]}</span>
+              {num[2]}
+            </p>
+          );
+        if (line.startsWith('●'))
+          return (
+            <p key={i} className="ct-bullet">
+              {line}
+            </p>
+          );
+        return (
+          <p key={i} className={i === 0 && !/[①-⑳]/.test(line) ? 'ct-lead' : ''}>
+            {line}
+          </p>
+        );
+      })}
     </div>
   );
 }
