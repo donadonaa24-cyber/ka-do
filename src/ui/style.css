@@ -1,0 +1,540 @@
+:root {
+  --bg: #12141a;
+  --panel: #1c1f28;
+  --panel2: #252935;
+  --line: #343a48;
+  --text: #e6e8ee;
+  --muted: #9aa1b2;
+  --accent: #4f8cff;
+  --warn: #ffb347;
+  --danger: #ff6b6b;
+  --ok: #5bd18b;
+  --card-w: 64px;
+  --card-h: 90px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+}
+
+button {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+input,
+select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ===== ヘッダー ===== */
+.topbar {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar h1 {
+  font-size: 16px;
+  margin: 0;
+}
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-weight: 600;
+}
+.status .phase {
+  color: var(--accent);
+}
+.status .used {
+  color: var(--muted);
+}
+.status .avail {
+  color: var(--ok);
+}
+.status .free {
+  color: var(--warn);
+}
+.status .result {
+  color: var(--danger);
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.toggle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.error {
+  background: #4a1f24;
+  border: 1px solid var(--danger);
+  color: #ffd5d5;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pending {
+  background: #1f2d4a;
+  border: 1px solid var(--accent);
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.pending .picked {
+  color: var(--warn);
+}
+.token-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.token-form input[type='number'] {
+  width: 70px;
+}
+
+/* ===== レイアウト ===== */
+.main {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  align-items: flex-start;
+}
+.play {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.side {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .side {
+    width: 100%;
+  }
+  :root {
+    --card-w: 50px;
+    --card-h: 72px;
+  }
+}
+/* ===== 盤面 ===== */
+.board {
+  display: grid;
+  grid-template-columns: repeat(7, calc(var(--card-h) + 8px));
+  gap: 6px;
+  justify-content: center;
+  background: var(--panel);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+.zone-wrap {
+  display: contents;
+}
+.zone {
+  height: calc(var(--card-h) + 8px);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.zone.blank {
+  border: none;
+}
+.zone.emz {
+  border-color: #6b5fb5;
+}
+.zone.fz {
+  border-color: #3f8f5f;
+}
+.zone.linked {
+  border-color: #4f8cff;
+  border-style: solid;
+  box-shadow: inset 0 0 8px rgba(79, 140, 255, 0.4);
+}
+.zone-selectable {
+  border: 2px solid var(--ok) !important;
+  background: rgba(91, 209, 139, 0.15);
+  cursor: pointer;
+}
+.zone-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.pile {
+  flex-direction: column;
+  border-style: solid;
+  cursor: pointer;
+}
+.pile .card {
+  transform: scale(0.85);
+}
+.pile-count {
+  position: absolute;
+  bottom: -2px;
+  font-size: 11px;
+  background: var(--panel);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+/* ===== カード ===== */
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 4px;
+  padding: 3px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #111;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid transparent;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card.def-pos {
+  transform: rotate(90deg);
+}
+.card.face-down {
+  opacity: 0.7;
+  background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0, 0, 0, 0.15) 6px 12px);
+}
+.card.selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.card.highlighted {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px var(--warn);
+}
+.card.pending {
+  animation: pulse 1s infinite alternate;
+}
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 10px 2px var(--warn);
+  }
+}
+.card-name {
+  font-weight: 700;
+  word-break: break-all;
+  max-height: 3.6em;
+  overflow: hidden;
+}
+.card-stat {
+  font-size: 9px;
+}
+.card-tag,
+.card-overlay,
+.card-markers {
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 2px;
+  align-self: flex-start;
+}
+.card.small {
+  --card-w: 56px;
+  --card-h: 78px;
+}
+
+.f-normal {
+  background: #e8c96a;
+}
+.f-effect {
+  background: #e08a4a;
+}
+.f-ritual {
+  background: #7aa6e0;
+}
+.f-fusion {
+  background: #a57ac9;
+}
+.f-synchro {
+  background: #eeeeee;
+}
+.f-xyz {
+  background: #3a3a3a;
+  color: #f0f0f0;
+}
+.f-link {
+  background: #3f6fb8;
+  color: #fff;
+}
+.f-token {
+  background: #b9b9b9;
+}
+.f-spell {
+  background: #3fa38a;
+  color: #fff;
+}
+.f-trap {
+  background: #c45a8f;
+  color: #fff;
+}
+.f-back {
+  background: linear-gradient(135deg, #5a3a1e, #2b1a0c);
+  border: 2px solid #8a6a3a;
+}
+.empty-pile {
+  background: transparent;
+  border: 1px dashed var(--line);
+}
+
+/* ===== 手札・山札表示 ===== */
+.hand,
+.pile-view {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.hand-label {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.hand-cards,
+.pile-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hand .card {
+  --card-w: 80px;
+  --card-h: 112px;
+  font-size: 11px;
+}
+.pile-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.pile-head button {
+  margin-left: auto;
+}
+
+/* ===== サイドパネル ===== */
+.detail,
+.log {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.detail h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.text {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.overlay-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.log-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.log-head strong {
+  flex: 1;
+}
+.log-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-left: 0;
+  list-style: none;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.log-list li {
+  padding: 2px 0;
+  border-bottom: 1px solid var(--panel2);
+}
+.log-turn {
+  color: var(--muted);
+  margin-right: 6px;
+}
+.log-summon {
+  color: #ffd27a;
+}
+.log-activate {
+  color: #8fc6ff;
+}
+.log-warn {
+  color: var(--danger);
+}
+.log-info {
+  color: var(--muted);
+}
+.routes,
+.route-row,
+.hand-picker-row,
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.routes {
+  flex-direction: column;
+  align-items: stretch;
+}
+.grow {
+  flex: 1;
+}
+
+/* ===== モーダル ===== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal h2,
+.modal h3 {
+  margin: 4px 0;
+}
+.hand-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hand-picker .count {
+  width: 20px;
+  text-align: center;
+}
+.row.end {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ===== スマホ幅（他の指定より後に置く） ===== */
+@media (max-width: 600px) {
+  :root {
+    --card-w: 34px;
+    --card-h: 46px;
+  }
+  .main {
+    padding: 8px;
+  }
+  .board {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+    padding: 6px;
+  }
+  .board .card {
+    font-size: 7px;
+    padding: 1px;
+  }
+  .board .card-stat,
+  .board .card-tag {
+    display: none;
+  }
+  .zone-label,
+  .pile-count {
+    font-size: 9px;
+  }
+}
