@@ -27,7 +27,8 @@ import { useDrag } from './useDrag';
 import { CardImageContext, type CardImages, fileToDataUrl, loadAllImages, removeImage, saveImage } from './cardImages';
 import { TOON_GUIDES } from '../data/toonGuides';
 import { findGuideAction, type Guide } from '../engine/guide';
-import { actionHighlights, type Coach, coachFromGuide, coachProgress } from '../engine/coach';
+import { actionHighlights, type Coach, coachFromGuide, coachFromRoute, coachProgress, explainStep } from '../engine/coach';
+import { StepPopup } from './StepPopup';
 import {
   afterPick,
   completeStep,
@@ -96,7 +97,11 @@ export function App() {
   const [coach, setCoach] = useState<Coach | null>(null);
   const [modal, setModal] = useState<'routes' | 'menu' | 'images' | null>(null);
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
-  const [autoSearch, setAutoSearch] = useState(false);
+  /** ナビモード：自動で最適ルートを探し、1手ずつ解説する */
+  const [navi, setNavi] = useState(false);
+  const [popupOpen, setPopupOpen] = useState(true);
+  /** 最後に自動で探した盤面（同じ盤面で何度も探さないため） */
+  const naviKey = useRef('');
   const { w: winWidth, h: winHeight } = useWindowSize();
   const routeSearch = useRouteSearch(useCallback((m: string) => setError(m), []));
   const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
@@ -644,13 +649,41 @@ export function App() {
     tick();
   };
 
-  // 「開始してルートを探す」：新しい盤面になってから探索を始める
+  // ナビ：練習中のルートが無い・外れたら、今の盤面から探し直す
+  const boardKey = `${session.deckName}:${session.seed}:${session.fixedHand.join(',')}:${session.actions.length}`;
+  const naviNeedsSearch =
+    navi &&
+    !run &&
+    !pending &&
+    state.status === 'playing' &&
+    (state.phase === 'M1' || state.phase === 'M2') &&
+    (!coach || (!!coachStep && !coachAction));
   useEffect(() => {
-    if (!autoSearch || session.actions.length > 0) return;
-    setAutoSearch(false);
-    routeSearch.search(state, 0);
-    setModal('routes');
-  }, [autoSearch, session.actions.length, state, routeSearch]);
+    if (!naviNeedsSearch || routeSearch.searching || naviKey.current === boardKey) return;
+    naviKey.current = boardKey;
+    routeSearch.search(state, session.actions.length);
+  }, [naviNeedsSearch, boardKey, routeSearch, state, session.actions.length]);
+
+  // ナビ：探し終わったら一番良いルートで解説を始める
+  useEffect(() => {
+    const found = routeSearch.routes;
+    if (!navi || !found || routeSearch.baseActions !== session.actions.length) return;
+    if (found.length === 0) {
+      setError('この盤面から動ける展開は見つかりませんでした');
+      return;
+    }
+    const best = found[0];
+    setCoach(coachFromRoute('最適ルート', best.steps, best.summary, routeSearch.baseLog, best.finalUids));
+    setPopupOpen(true);
+    // 探し終わった結果だけに反応する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSearch.routes]);
+
+  // 次の手に進んだら解説を開く
+  useEffect(() => setPopupOpen(true), [coachDone, coach]);
+
+  const nameOf = (uid: string) => (state.cards[uid] ? def(uid).name : 'トークン');
+  const coachWhy = coach ? explainStep(coach, coachDone, nameOf) : [];
 
   // エラーは数秒で消す
   useEffect(() => {
@@ -815,7 +848,12 @@ export function App() {
     </div>
   ) : null;
 
-  const coachBar = coach && !busy && (
+  const quitCoach = () => {
+    setCoach(null);
+    setNavi(false);
+  };
+
+  const coachBar = coach && !busy && !popupOpen && (
     <div className={`coach ${coachStep ? '' : 'finished'}`}>
       {coachStep ? (
         <>
@@ -841,18 +879,34 @@ export function App() {
         </>
       )}
       <div className="coach-btns">
+        <button className="primary" onClick={() => setPopupOpen(true)}>
+          解説
+        </button>
         {coachStep && (
-          <button className="primary" disabled={!coachAction} onClick={() => coachAction && dispatch(coachAction)}>
+          <button disabled={!coachAction} onClick={() => coachAction && dispatch(coachAction)}>
             お手本
           </button>
         )}
-        <button onClick={() => setModal('routes')}>手順</button>
-        <button onClick={() => setCoach(null)} aria-label="練習をやめる">
+        <button onClick={quitCoach} aria-label="練習をやめる">
           ×
         </button>
       </div>
     </div>
   );
+
+  const naviSearching = navi && routeSearch.searching && !busy && (
+    <div className="coach searching">
+      <div className="coach-head">
+        <span className="coach-count">ナビ</span>
+        <span className="coach-title">この盤面から最適ルートを計算中… {Math.round(routeSearch.progress * 100)}%</span>
+      </div>
+      <div className="progress" aria-hidden="true">
+        <div style={{ width: `${Math.round(routeSearch.progress * 100)}%` }} />
+      </div>
+    </div>
+  );
+
+  const showStepPopup = coach && popupOpen && !busy && !dropMenu && !sel && !pile && !modal && !showSetup;
 
   return (
     <CardImageContext.Provider value={images}>
@@ -883,9 +937,21 @@ export function App() {
             <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
               次のフェイズ
             </button>
-            <button className="accent" onClick={() => setModal('routes')}>
-              ルート
+            <button
+              className={navi ? 'primary' : 'accent'}
+              aria-pressed={navi}
+              onClick={() => {
+                if (navi) quitCoach();
+                else {
+                  setNavi(true);
+                  setCoach(null);
+                  naviKey.current = '';
+                }
+              }}
+            >
+              ナビ{navi ? 'ON' : ''}
             </button>
+            <button onClick={() => setModal('routes')}>ルート</button>
             <button onClick={() => setModal('menu')} aria-label="メニュー">
               ≡
             </button>
@@ -893,7 +959,7 @@ export function App() {
         </header>
 
         <main className="table">
-          {coachBar}
+          {naviSearching || coachBar}
           {actionPanel}
           <div className="board-wrap">
             <Board
@@ -933,6 +999,26 @@ export function App() {
             {view.hand.length === 0 && <span className="note">手札なし</span>}
           </div>
         </section>
+
+        {showStepPopup && (
+          <StepPopup
+            coach={coach}
+            done={coachDone}
+            canDemo={!!coachAction}
+            why={coachWhy}
+            onTry={() => setPopupOpen(false)}
+            onDemo={() => coachAction && dispatch(coachAction)}
+            onUndo={undo}
+            onShowAll={() => setModal('routes')}
+            onRecalc={() => {
+              setCoach(null);
+              setNavi(true);
+              naviKey.current = '';
+            }}
+            onRestart={() => setSession((x) => ({ ...x, actions: [] }))}
+            onQuit={quitCoach}
+          />
+        )}
 
         {error && (
           <div className="toast" role="alert" onClick={() => setError(null)}>
@@ -1217,7 +1303,9 @@ export function App() {
               setRun(null);
               setPile(null);
               setShowSetup(false);
-              setAutoSearch(search);
+              // 「開始して最適ルートを探す」はナビモードで始める
+              setNavi(search);
+              naviKey.current = '';
             }}
           />
         )}

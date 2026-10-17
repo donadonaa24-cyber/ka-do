@@ -14,6 +14,10 @@ export interface CoachStep {
   match: string[];
   /** そのまま実行できる操作（探索したルートのみ。ガイドはその場で探す） */
   action?: Action;
+  /** この手で効果を使う・召喚するカード */
+  actor?: string;
+  /** この手で動くカード（サーチしたカード・素材など） */
+  uids: string[];
 }
 
 export interface Coach {
@@ -25,6 +29,8 @@ export interface Coach {
   guideId?: string;
   /** 最終盤面の説明 */
   summary: string[];
+  /** 最終盤面に残るカード */
+  finalUids: string[];
 }
 
 /** ゾーン番号の違いは同じ手とみなす */
@@ -34,23 +40,98 @@ export function normalize(text: string): string {
 
 /** 「Aの効果「①…」を発動」を「A ①…」に縮める */
 export function shortLine(line: string): string {
-  const m = line.match(/^(.+?)の効果「(.+)」を発動$/);
-  return m ? `${m[1]}：${m[2]}` : line;
+  const clean = line.replace('（処理後に「解決」で墓地へ）', '');
+  const m = clean.match(/^(.+?)の効果「(.+)」を発動$/);
+  return m ? `${m[1]}：${m[2]}` : clean;
 }
 
-export function coachFromRoute(title: string, steps: RouteStep[], summary: string[], baseLog: number): Coach {
+export function coachFromRoute(
+  title: string,
+  steps: RouteStep[],
+  summary: string[],
+  baseLog: number,
+  finalUids: string[] = [],
+): Coach {
   return {
     kind: 'route',
     title,
     summary,
     baseLog,
+    finalUids,
     steps: steps.map((s) => ({
       text: shortLine(s.lines[0] ?? ''),
       sub: s.lines.slice(1).filter((l) => !l.includes('効果処理完了')),
       match: s.lines.map(normalize),
       action: s.action,
+      actor: actorOf(s.action),
+      uids: actionUids(s.action),
     })),
   };
+}
+
+/** 操作で使う・動くカードを全部集める */
+export function actionUids(action: Action): string[] {
+  const out: string[] = [];
+  const visit = (a: Action) => {
+    if (a.type === 'BATCH') return a.actions.forEach(visit);
+    if ('uid' in a && a.uid) out.push(a.uid);
+    if ('tributes' in a && a.tributes) out.push(...a.tributes);
+    if ('materials' in a) out.push(...a.materials);
+    if ('target' in a && typeof a.target === 'string') out.push(a.target);
+  };
+  visit(action);
+  return [...new Set(out)];
+}
+
+/** その手の主役のカード（効果を使う・召喚する・セットする） */
+export function actorOf(action: Action): string | undefined {
+  if (action.type === 'BATCH') return action.actions.length ? actorOf(action.actions[0]) : undefined;
+  return 'uid' in action ? action.uid : undefined;
+}
+
+/**
+ * 「なぜこの手をするのか」の説明。この手で動いたカードが、後のどの手で使われるか・最後まで残るかを示す。
+ * nameOf はカードの名前を返す。
+ */
+export function explainStep(coach: Coach, index: number, nameOf: (uid: string) => string): string[] {
+  const step = coach.steps[index];
+  if (!step) return [];
+  const out: string[] = [];
+  const laterUse = (uid: string) => coach.steps.findIndex((s, j) => j > index && (s.actor === uid || s.uids.includes(uid)));
+  const seen = new Set<string>();
+  for (const uid of [step.actor, ...step.uids].filter((u): u is string => !!u)) {
+    if (seen.has(uid)) continue;
+    seen.add(uid);
+    const j = laterUse(uid);
+    const name = `《${nameOf(uid)}》`;
+    if (j >= 0) {
+      out.push(`${name}は手順${j + 1}で${roleIn(coach.steps[j], uid)}`);
+    } else if (coach.finalUids.includes(uid)) {
+      out.push(`${name}は最終盤面に残ります`);
+    }
+  }
+  if (out.length === 0 && step.actor) out.push(`《${nameOf(step.actor)}》の効果で展開を進めます`);
+  return out;
+}
+
+/** 後の手でそのカードが何をするか */
+function roleIn(step: CoachStep, uid: string): string {
+  const a = step.action?.type === 'BATCH' ? step.action.actions[0] : step.action;
+  if (step.actor !== uid) return '素材・コストになります';
+  switch (a?.type) {
+    case 'NORMAL_SUMMON':
+      return '召喚します';
+    case 'PROC_SUMMON':
+    case 'PROCEDURE_SUMMON':
+    case 'SPECIAL_SUMMON':
+      return '特殊召喚します';
+    case 'SET_SPELL_TRAP':
+      return 'セットします';
+    case 'ACTIVATE_CARD':
+      return '発動します';
+    default:
+      return '効果を使います';
+  }
 }
 
 export function coachFromGuide(g: Guide): Coach {
@@ -59,8 +140,9 @@ export function coachFromGuide(g: Guide): Coach {
     title: g.name,
     summary: g.notes,
     baseLog: 0,
+    finalUids: [],
     guideId: g.id,
-    steps: g.steps.map((s) => ({ text: s.text, sub: [], match: s.match.map(normalize) })),
+    steps: g.steps.map((s) => ({ text: s.text, sub: [], match: s.match.map(normalize), uids: [] })),
   };
 }
 

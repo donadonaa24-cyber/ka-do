@@ -10,6 +10,7 @@ export interface FoundRoute {
   score: number;
   summary: string[];
   steps: RouteStep[];
+  finalUids: string[];
 }
 
 export interface RouteSearch {
@@ -155,7 +156,7 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
                 <button
                   className="primary"
                   disabled={stale}
-                  onClick={() => onPractice(coachFromRoute(`ルート${open + 1}`, route.steps, route.summary, search.baseLog))}
+                  onClick={() => onPractice(coachFromRoute(`ルート${open + 1}`, route.steps, route.summary, search.baseLog, route.finalUids))}
                 >
                   このルートを盤面で練習
                 </button>

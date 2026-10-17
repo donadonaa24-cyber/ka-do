@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { coachFromRoute, explainStep } from '../engine/coach';
 import { applyAction, createGame, type Ctx } from '../engine/game';
 import { findGuideAction } from '../engine/guide';
 import { solve } from '../engine/solver';
@@ -16,6 +17,21 @@ describe('ルート探索', () => {
     // スクショのルート（修正版）：完全なる世界＋エビル・ボックス＋テラー
     expect(routes[0].summary.join('\n')).toContain('伏せ：トゥーン・テラー');
     expect(routes[0].summary.join('\n')).toContain('エビル・ボックス');
+
+    // 解説：ラビット③で置いた「完全なる世界」は後の手で効果を使う
+    const final = routes[0].final;
+    const coach = coachFromRoute(
+      '最適ルート',
+      routes[0].steps,
+      routes[0].summary,
+      s.log.length,
+      [...final.mz, ...final.stz, final.fz].filter((u): u is string => !!u),
+    );
+    const nameOf = (u: string) => CARD_DB[routes[0].final.cards[u].defId].name;
+    const placeWorld = coach.steps.findIndex((st) => st.sub.some((l) => l.includes('フィールドゾーンへ')));
+    expect(explainStep(coach, placeWorld, nameOf).join('\n')).toMatch(
+      /《完全なる世界 トゥーン・ワールド》は手順\d+で効果を使います/,
+    );
   }, 30000);
 
   it('ノー・フェイス＋しおり＋キャット', () => {

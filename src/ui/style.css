@@ -892,3 +892,97 @@ select {
     animation: none;
   }
 }
+
+/* ===== 1手ごとの解説（ナビ） ===== */
+.step-popup {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  width: min(calc(100vw - 12px), 640px);
+  max-height: 58%;
+  overflow-y: auto;
+  z-index: 90;
+  background: var(--panel);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.55);
+}
+.step-dots {
+  display: flex;
+  gap: 4px;
+}
+.step-dots span {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel2);
+}
+.step-dots span.done {
+  background: var(--ok);
+}
+.step-dots span.now {
+  background: var(--gold);
+}
+.step-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.step-count {
+  color: var(--gold);
+  font-weight: 800;
+}
+.step-count.ok {
+  color: var(--ok);
+}
+.step-route {
+  color: var(--muted);
+  font-size: 12px;
+}
+.step-main {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+.step-sub {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #cfd5e2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.step-why {
+  background: var(--panel2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.step-why strong {
+  color: var(--gold);
+}
+.step-why ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.step-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.coach.searching {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-color: var(--accent);
+}
