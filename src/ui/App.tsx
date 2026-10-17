@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CARD_DB, CARD_SCRIPTS, DECKS } from '../data';
+import { BUILTIN_DECKS, CARD_DB, CARD_SCRIPTS } from '../data';
+import { DeckEditor } from './DeckEditor';
+import { loadDecks, type SavedDeck, saveDecks } from './deckStore';
 import {
   type Action,
   applyAction,
@@ -90,7 +92,7 @@ interface Btn {
 }
 
 const defaultSession = (): SessionData => ({
-  deckName: DECKS[0].name,
+  deckName: BUILTIN_DECKS[0].name,
   seed: randomSeed(),
   fixedHand: [],
   strict: true,
@@ -112,7 +114,7 @@ export function App() {
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
   const [coach, setCoach] = useState<Coach | null>(null);
-  const [modal, setModal] = useState<'routes' | 'menu' | 'images' | null>(null);
+  const [modal, setModal] = useState<'routes' | 'menu' | 'images' | 'decks' | null>(null);
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
   /** 表示する画像：埋め込みの画像に、自分で設定した画像を上書き */
   const shownImages = useMemo(() => ({ ...BUILTIN_IMAGES, ...images }), [images]);
@@ -133,7 +135,9 @@ export function App() {
     () => ({ db: CARD_DB, options: { strict: session.strict }, scripts: CARD_SCRIPTS }),
     [session.strict],
   );
-  const deck = DECKS.find((d) => d.name === session.deckName) ?? DECKS[0];
+  const [customDecks, setCustomDecks] = useState<SavedDeck[]>(() => loadDecks());
+  const allDecks = useMemo(() => [...BUILTIN_DECKS, ...customDecks], [customDecks]);
+  const deck = allDecks.find((d) => d.name === session.deckName) ?? BUILTIN_DECKS[0];
   const deckCardIds = useMemo(() => [...new Set([...deck.main, ...deck.extra])], [deck]);
 
   const { state, appliedCount } = useMemo(() => {
@@ -1234,6 +1238,9 @@ export function App() {
                 <button onClick={() => dispatch({ type: 'DRAW' })}>1枚ドロー</button>
                 <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
                 <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>
+                <button className="primary wide" onClick={() => setModal('decks')}>
+                  デッキ編集・切り替え（現在：{deck.name}）
+                </button>
                 <button className="wide" onClick={() => setModal('images')}>
                   カード画像の設定
                 </button>
@@ -1358,11 +1365,12 @@ export function App() {
         {showSetup && (
           <SetupDialog
             initial={{ ...session, seed: randomSeed() }}
+            decks={allDecks}
             onClose={() => setShowSetup(false)}
             onStart={(s, search) => {
               try {
                 createGame(
-                  DECKS.find((d) => d.name === s.deckName) ?? DECKS[0],
+                  allDecks.find((d) => d.name === s.deckName) ?? BUILTIN_DECKS[0],
                   replayCtx,
                   s.seed,
                   s.fixedHand,
@@ -1384,6 +1392,42 @@ export function App() {
               naviKey.current = '';
             }}
           />
+        )}
+
+        {/* デッキ編集 */}
+        {modal === 'decks' && (
+          <div className="modal-backdrop" onClick={() => setModal(null)}>
+            <DeckEditor
+              decks={customDecks}
+              current={deck.name}
+              onSave={(list) => {
+                if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
+                setCustomDecks(list);
+                // 使っていたデッキを消した場合は既製のデッキに戻す
+                if (![...BUILTIN_DECKS, ...list].some((d) => d.name === session.deckName)) {
+                  setSession({ ...defaultSession(), deckName: BUILTIN_DECKS[0].name });
+                  setCoach(null);
+                }
+              }}
+              onPlay={(deckName) => {
+                setSession({
+                  deckName,
+                  seed: randomSeed(),
+                  fixedHand: [],
+                  handSize: 5,
+                  strict: session.strict,
+                  actions: [],
+                });
+                setCoach(null);
+                setNavi(false);
+                setSelected(null);
+                setPending(null);
+                setRun(null);
+                setModal(null);
+              }}
+              onClose={() => setModal(null)}
+            />
+          </div>
         )}
 
         {/* カード画像の設定 */}

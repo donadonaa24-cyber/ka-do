@@ -1022,3 +1022,90 @@ select {
   z-index: 2;
   box-shadow: 0 0 0 2px var(--bg);
 }
+
+/* ===== デッキ編集 ===== */
+.deck-modal {
+  width: min(680px, 100%);
+}
+.deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deck-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.deck-row.current {
+  border-color: var(--gold);
+}
+.deck-row .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.deck-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.deck-counts {
+  display: flex;
+  gap: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.deck-counts .good {
+  color: var(--ok);
+}
+.deck-counts .bad {
+  color: var(--danger);
+}
+.problems {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--warn);
+  font-size: 12px;
+}
+.pool {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--panel2);
+}
+.pool-row .card.small {
+  --card-w: 40px;
+  --card-h: 57px;
+  font-size: 6px;
+}
+.pool-row .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pool-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.pool-row .count {
+  width: 22px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}

@@ -3,14 +3,19 @@ import type { CardDef, DeckList } from '../engine/types';
 import { TEST_CARDS, TEST_DECK } from './testCards';
 import { TOON_CARD_DATA } from './toonCards.generated';
 import { TOON_OVERRIDES, TOON_SCRIPTS } from './toonScripts';
+import { OTHER_CARD_DATA } from './otherCards.generated';
+import { OTHER_SCRIPTS } from './otherScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 
-export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...TEST_CARDS];
+export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...TEST_CARDS];
+
+/** デッキ編集で選べるカード（動作確認用の架空カードは除く） */
+export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
 
-export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS };
+export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS, ...OTHER_SCRIPTS };
 
 const n = (id: string, count: number) => Array<string>(count).fill(id);
 
@@ -64,4 +69,7 @@ export const TOON_DECK: DeckList = {
   ],
 };
 
-export const DECKS: DeckList[] = [TOON_DECK, TEST_DECK];
+/** 最初から入っているデッキ（編集はコピーして行う）。テスト用デッキは動作確認専用なので含めない */
+export const BUILTIN_DECKS: DeckList[] = [TOON_DECK];
+
+export { TEST_DECK };

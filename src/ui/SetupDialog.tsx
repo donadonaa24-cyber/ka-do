@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { randomSeed } from '../engine/rng';
-import { CARD_DB, DECKS } from '../data';
+import { CARD_DB } from '../data';
+import type { DeckList } from '../engine/types';
 import type { SessionData } from './session';
 
 interface Props {
   initial: SessionData;
+  /** 選べるデッキ（既製＋自分で作ったデッキ） */
+  decks: DeckList[];
   /** autoSearch: 開始と同時にルートを探す */
   onStart: (s: SessionData, autoSearch: boolean) => void;
   onClose: () => void;
@@ -12,7 +15,7 @@ interface Props {
 
 type Mode = 'pick' | 'random';
 
-export function SetupDialog({ initial, onStart, onClose }: Props) {
+export function SetupDialog({ initial, decks, onStart, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('pick');
   const [deckName, setDeckName] = useState(initial.deckName);
   const [seed, setSeed] = useState(initial.seed);
@@ -20,7 +23,7 @@ export function SetupDialog({ initial, onStart, onClose }: Props) {
   const [fixedHand, setFixedHand] = useState<string[]>(initial.fixedHand.slice(0, initial.handSize ?? 5));
   const [strict, setStrict] = useState(initial.strict);
 
-  const deck = DECKS.find((d) => d.name === deckName) ?? DECKS[0];
+  const deck = decks.find((d) => d.name === deckName) ?? decks[0];
   const counts = new Map<string, number>();
   for (const id of deck.main) counts.set(id, (counts.get(id) ?? 0) + 1);
   const picked = (id: string) => fixedHand.filter((x) => x === id).length;
@@ -80,7 +83,7 @@ export function SetupDialog({ initial, onStart, onClose }: Props) {
               setFixedHand([]);
             }}
           >
-            {DECKS.map((d) => (
+            {decks.map((d) => (
               <option key={d.name}>{d.name}</option>
             ))}
           </select>
