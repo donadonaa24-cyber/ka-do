@@ -38,6 +38,8 @@ export type Step =
   | {
       op: 'pick';
       prompt: string;
+      /** 発動時に払うコスト（チェーンに積む前に処理する） */
+      cost?: boolean;
       from: PickZone[];
       filter?: CardFilter;
       /** CardFilter で表せない条件 */
@@ -52,8 +54,8 @@ export type Step =
       zone?: 'monster' | 'stz';
       then: (env: Env, picked: string[], zone: Location | null, mode: number) => Action[];
     }
-  | { op: 'place'; prompt: string; zone: 'monster' | 'stz'; then: (env: Env, zone: Location) => Action[] }
-  | { op: 'do'; then: (env: Env) => Action[] };
+  | { op: 'place'; prompt: string; zone: 'monster' | 'stz'; cost?: boolean; then: (env: Env, zone: Location) => Action[] }
+  | { op: 'do'; cost?: boolean; then: (env: Env) => Action[] };
 
 export interface EffectDef {
   label: string;
@@ -72,6 +74,8 @@ export interface EffectDef {
   opponentOnly?: boolean;
   /** 「召喚・特殊召喚した場合」の効果：そのターンに出た時に1回だけ使える */
   onSummon?: boolean;
+  /** スペルスピード。省略時は速攻魔法・罠の発動なら2（カウンター罠は3）、それ以外は1 */
+  speed?: 1 | 2 | 3;
   steps: Step[];
 }
 

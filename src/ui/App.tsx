@@ -27,9 +27,18 @@ import { useDrag } from './useDrag';
 import { CardImageContext, type CardImages, fileToDataUrl, loadAllImages, removeImage, saveImage } from './cardImages';
 import { TOON_GUIDES } from '../data/toonGuides';
 import { findGuideAction, type Guide } from '../engine/guide';
-import { actionHighlights, type Coach, coachFromGuide, coachFromRoute, coachProgress, explainStep } from '../engine/coach';
+import {
+  actionHighlights,
+  type Coach,
+  coachFromGuide,
+  coachFromRoute,
+  coachProgress,
+  explainStep,
+} from '../engine/coach';
 import { StepPopup } from './StepPopup';
 import {
+  chainableEffects,
+  startResolve,
   afterPick,
   completeStep,
   currentStep,
@@ -97,6 +106,8 @@ export function App() {
   const [coach, setCoach] = useState<Coach | null>(null);
   const [modal, setModal] = useState<'routes' | 'menu' | 'images' | null>(null);
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
+  /** チェーンを上から順に解決している */
+  const [resolvingChain, setResolvingChain] = useState(false);
   /** ナビモード：自動で最適ルートを探し、1手ずつ解説する */
   const [navi, setNavi] = useState(false);
   const [popupOpen, setPopupOpen] = useState(true);
@@ -225,7 +236,8 @@ export function App() {
     setPending(null);
     const preset = presetRef.current;
     presetRef.current = null;
-    let r = startEffect(state, ctx, uid, effect, preset ?? undefined);
+    // ルールチェック中は、チェーンできる効果があればチェーンに積んで止める
+    let r = startEffect(state, ctx, uid, effect, preset ?? undefined, session.strict ? 'auto' : 'never');
     // ドラッグで出し先が決まっていれば最初のゾーン選択に使う
     if (preset && r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, preset);
     onRunResult(r);
@@ -731,6 +743,23 @@ export function App() {
     </label>
   );
 
+  // ===== チェーン =====
+
+  const chain = state.chain ?? [];
+  const chainResponses = chain.length ? chainableEffects(state, ctx, chain[chain.length - 1].speed) : [];
+  const chainOf = Object.fromEntries(chain.map((l, i) => [l.uid, i + 1]));
+
+  // 「解決する」を押したら、チェーンが無くなるまで上から順に解決する（途中の選択は都度聞く）
+  useEffect(() => {
+    if (!resolvingChain || run || pending) return;
+    if (!chain.length) {
+      setResolvingChain(false);
+      return;
+    }
+    onRunResult(startResolve(state, ctx));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvingChain, chain.length, run, pending]);
+
   // ===== 表示 =====
 
   const selDef = sel ? def(sel) : null;
@@ -846,6 +875,37 @@ export function App() {
         <button onClick={() => setRun(null)}>キャンセル</button>
       </div>
     </div>
+  ) : chain.length ? (
+    <div className="action-panel chain-panel">
+      <div className="ap-title">チェーン {chain.length}</div>
+      <ol className="chain-list">
+        {[...chain].reverse().map((l, i) => (
+          <li key={chain.length - i}>
+            <span className="chain-no">C{chain.length - i}</span>
+            {CARD_DB[l.defId]?.name}：{l.label}
+          </li>
+        ))}
+      </ol>
+      {chainResponses.length > 0 ? (
+        <>
+          <div className="ap-hint">さらにチェーンできる効果（後から発動したものから解決します）</div>
+          <div className="btn-row">
+            {chainResponses.map((c) => (
+              <button key={`${c.uid}-${c.effect.label}`} onClick={() => runEffect(c.uid, c.effect)}>
+                {def(c.uid).name}：{c.effect.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="ap-hint">これ以上チェーンできる効果はありません。</div>
+      )}
+      <div className="btn-row">
+        <button className="primary" onClick={() => setResolvingChain(true)}>
+          チェーンを解決する（C{chain.length}から）
+        </button>
+      </div>
+    </div>
   ) : null;
 
   const quitCoach = () => {
@@ -906,7 +966,7 @@ export function App() {
     </div>
   );
 
-  const showStepPopup = coach && popupOpen && !busy && !dropMenu && !sel && !pile && !modal && !showSetup;
+  const showStepPopup = coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup;
 
   return (
     <CardImageContext.Provider value={images}>
@@ -975,6 +1035,7 @@ export function App() {
               dropTarget={drag?.target}
               hintCards={hl.cards}
               hintZones={hl.zones}
+              chainOf={chainOf}
             />
           </div>
         </main>

@@ -986,3 +986,39 @@ select {
   gap: 4px;
   border-color: var(--accent);
 }
+
+/* ===== チェーン ===== */
+.chain-panel {
+  border-color: var(--gold);
+  background: #2a2616;
+}
+.chain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.chain-no,
+.chain-badge {
+  display: inline-block;
+  min-width: 26px;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #1a1a1a;
+  font-weight: 800;
+  font-size: 11px;
+  text-align: center;
+}
+.chain-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  margin: 0;
+  z-index: 2;
+  box-shadow: 0 0 0 2px var(--bg);
+}

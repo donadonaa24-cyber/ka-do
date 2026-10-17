@@ -90,6 +90,7 @@ const search = (prompt: string, filter: CardFilter, from: ('deck' | 'gy')[] = ['
 
 const selfTo = (zone: 'gy' | 'banished', reason = 'コスト'): Step => ({
   op: 'do',
+  cost: reason === 'コスト',
   then: (env) => [move(env.self, { zone }, reason)],
 });
 
@@ -107,6 +108,7 @@ const logOnly = (label: string, from: EffectDef['from'], key?: string, cost: Ste
   key,
   limit: key ? 1 : undefined,
   opponentOnly: true,
+  speed: 2,
   steps: cost,
 });
 
@@ -183,6 +185,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
+            cost: true,
             prompt: 'コスト：手札から捨てる「トゥーン」カードを選択',
             from: ['hand'],
             filter: { archetype: 'トゥーン' },
@@ -211,6 +214,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
+            cost: true,
             prompt: 'コスト：手札から捨てる「トゥーン」カードを選択',
             from: ['hand'],
             filter: { archetype: 'トゥーン' },
@@ -256,6 +260,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '③ 墓地のカード1枚をデッキの一番下へ',
+        speed: 2,
         from: ['monster'],
         key: 'エビル・ボックス③',
         limit: 1,
@@ -485,6 +490,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     effects: [
       {
         label: '② モンスター1体をリリースし、「トゥーン・ワールド」記載モンスターを手札・デッキから特殊召喚',
+        speed: 2,
         from: ['monster'],
         key: 'コミックキャット②',
         limit: 1,
@@ -731,6 +737,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       logOnly('② 相手モンスターを破壊（相手用）', ['monster']),
       {
         label: '③ 手札1枚を捨てて発動を無効（相手用）',
+        speed: 2,
         from: ['monster'],
         key: 'ドラグーン③',
         limit: 1,
@@ -738,6 +745,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
+            cost: true,
             prompt: 'コスト：捨てる手札',
             from: ['hand'],
             min: 1,
@@ -805,6 +813,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'do',
+            cost: true,
             then: (env) => [{ type: 'DETACH', target: env.self, uid: env.state.cards[env.self].overlay[0] }],
           },
           {
@@ -832,6 +841,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     effects: [
       {
         label: '① 手札1枚を捨て、フィールドのカード1枚を破壊',
+        speed: 2,
         from: ['monster'],
         key: 'ア＝バオ・ア・クゥー①',
         limit: 1,
@@ -839,6 +849,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
+            cost: true,
             prompt: 'コスト：捨てる手札',
             from: ['hand'],
             min: 1,
@@ -857,6 +868,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '① 手札1枚を捨て、自身を除外して墓地の光・闇を特殊召喚',
+        speed: 2,
         from: ['monster'],
         key: 'ア＝バオ・ア・クゥー①',
         limit: 1,
@@ -864,6 +876,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
+            cost: true,
             prompt: 'コスト：捨てる手札',
             from: ['hand'],
             min: 1,
@@ -938,6 +951,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '③ 魔力カウンター3つで手札・墓地の魔法使い族を守備表示で特殊召喚',
+        speed: 2,
         from: ['monster'],
         key: '神聖魔皇后セレーネ③',
         limit: 1,
@@ -946,6 +960,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'do',
+            cost: true,
             then: (env) => [{ type: 'SET_COUNTERS', uid: env.self, value: env.state.cards[env.self].counters - 3 }],
           },
           {
@@ -994,6 +1009,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '② レベル5以上の闇属性モンスター1体の召喚を行う',
+        speed: 2,
         from: ['monster'],
         key: '神書の使いラハムゥ②',
         limit: 1,
@@ -1074,6 +1090,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '② 表側モンスター2体をエンドフェイズまで除外',
+        speed: 2,
         from: ['monster'],
         key: 'Ｓ：Ｐリトルナイト②',
         limit: 1,

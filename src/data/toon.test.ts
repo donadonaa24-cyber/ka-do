@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { type Action, applyAction, createGame, type Ctx, findLocation } from '../engine/game';
 import type { GameState, Location } from '../engine/types';
-import { afterPick, completeStep, type RunResult, type Running, startEffect, stepCandidates } from '../engine/effectRunner';
+import {
+  afterPick,
+  chainableEffects,
+  completeStep,
+  type RunResult,
+  type Running,
+  startEffect,
+  startResolve,
+  stepCandidates,
+} from '../engine/effectRunner';
 import { CARD_DB, CARD_SCRIPTS, TOON_DECK } from '.';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
@@ -181,5 +190,61 @@ describe('トゥーンデッキ', () => {
     s = useEffect(s, inHand(s, 'トゥーン・キングダム'), '発動');
     expect(s.banished).toEqual(top3);
     expect(top3.every((u) => !s.cards[u].faceUp)).toBe(true);
+  });
+});
+
+describe('チェーン', () => {
+  it('しおりにコミックキャット②をチェーンし、後から発動した方から解決する', () => {
+    let s = createGame(TOON_DECK, ctx, 21, ['91500017', '72921536', '7293697']);
+    s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: inHand(s, 'コミックキャット'), index: 0 });
+    const cat = s.mz[0]!;
+
+    // しおりを発動：キャット②でチェーンできるので、チェーン1に積まれて止まる
+    const shiori = inHand(s, 'トゥーンのしおり');
+    const shioriEffect = CARD_SCRIPTS['91500017'].effects![0];
+    let r = startEffect(s, ctx, shiori, shioriEffect, undefined, 'auto');
+    expect(r.kind).toBe('done');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain).toHaveLength(1);
+    expect(chainableEffects(s, ctx, 2).map((c) => name(s, c.uid))).toContain('コミックキャット');
+
+    // チェーン中は召喚できない
+    expect(applyAction(s, { type: 'NEXT_PHASE' }, ctx)).toMatchObject({ ok: false });
+
+    // チェーン2：コミックキャット②
+    const catEffect = CARD_SCRIPTS['72921536'].effects![0];
+    r = startEffect(s, ctx, cat, catEffect, undefined, 'auto');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain).toHaveLength(2);
+
+    // チェーン2から解決：キャットをリリースしてデッキからBEトゥーン
+    r = startResolve(s, ctx);
+    expect(r.kind).toBe('running');
+    let run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'コミックキャット') }, ctx);
+    run = (r as { run: Running }).run;
+    const be = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'ブルーアイズ・トゥーン・ドラゴン')!;
+    r = afterPick({ ...run, picked: [be] }, ctx);
+    r = completeStep((r as { run: Running }).run, ctx, mz(1));
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain).toHaveLength(1);
+    expect(name(s, s.mz[1]!)).toBe('ブルーアイズ・トゥーン・ドラゴン');
+
+    // チェーン1：しおりのサーチ
+    r = startResolve(s, ctx);
+    run = (r as { run: Running }).run;
+    const box = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'エビル・ボックス')!;
+    r = afterPick({ ...run, picked: [box] }, ctx);
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain).toHaveLength(0);
+    expect(s.hand).toContain(box);
+    expect(s.gy.map((u) => name(s, u))).toContain('トゥーンのしおり');
+  });
+
+  it('チェーンできる効果が無ければ、その場で最後まで処理する', () => {
+    const s = createGame(TOON_DECK, ctx, 22, ['89997728']);
+    const r = startEffect(s, ctx, inHand(s, 'トゥーンのもくじ'), CARD_SCRIPTS['89997728'].effects![0], undefined, 'auto');
+    expect(r.kind).toBe('running');
   });
 });

@@ -21,6 +21,8 @@ interface Props {
   /** 練習中の「次の手」で使うカード・出し先 */
   hintCards?: string[];
   hintZones?: Location[];
+  /** チェーンに積まれているカード → チェーン番号 */
+  chainOf?: Record<string, number>;
 }
 
 export function Board({
@@ -36,6 +38,7 @@ export function Board({
   dropTarget,
   hintCards = [],
   hintZones = [],
+  chainOf = {},
 }: Props) {
   const isHintZone = (loc: Location) =>
     hintZones.some((z) => z.zone === loc.zone && ('index' in z ? z.index : -1) === ('index' in loc ? loc.index : -1));
@@ -63,6 +66,7 @@ export function Board({
         ) : (
           <span className="zone-label">{label}</span>
         )}
+        {uid && chainOf[uid] ? <span className="chain-badge">C{chainOf[uid]}</span> : null}
       </div>
     );
   };

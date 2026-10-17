@@ -105,6 +105,10 @@ export type Action =
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
   | { type: 'DOUBLE_ATTACK'; uid: string }
+  /** 効果をチェーンに積む（コストは支払い済み） */
+  | { type: 'CHAIN_PUSH'; uid: string; effect: number; stepStart: number; speed: number; label: string }
+  /** 一番上のチェーンの解決が終わった */
+  | { type: 'CHAIN_POP' }
   /** 複数の操作をまとめて1手として行う（効果処理など） */
   | { type: 'BATCH'; label?: string; actions: Action[] };
 
@@ -184,6 +188,7 @@ export function createGame(
     shuffleCount: 0,
     summonGrants: [],
     spellActivatedThisTurn: false,
+    chain: [],
   };
   if (second) {
     log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
@@ -498,8 +503,26 @@ function drawCards(state: GameState, count: number) {
   }
 }
 
+/** チェーンを解決するまで行えない操作 */
+const BLOCKED_DURING_CHAIN = new Set<Action['type']>([
+  'NEXT_PHASE',
+  'END_TURN',
+  'NORMAL_SUMMON',
+  'FLIP_SUMMON',
+  'PROC_SUMMON',
+  'PROCEDURE_SUMMON',
+  'SET_SPELL_TRAP',
+  'CHANGE_POSITION',
+  'ATTACK',
+]);
+
 function reduce(state: GameState, action: Action, ctx: Ctx): void {
   const strict = ctx.options.strict;
+  // 古い保存データには chain が無い
+  state.chain ??= [];
+  if (strict && state.chain.length && BLOCKED_DURING_CHAIN.has(action.type)) {
+    fail('チェーンを解決してから行ってください');
+  }
   switch (action.type) {
     case 'NEXT_PHASE': {
       const cur = PHASE_ORDER.indexOf(state.phase);
@@ -818,6 +841,28 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       for (const a of action.actions) reduce(state, a, ctx);
       return;
     }
+    case 'CHAIN_PUSH': {
+      const top = state.chain[state.chain.length - 1];
+      if (strict && top && (action.speed < 2 || action.speed < top.speed)) {
+        fail(`スペルスピード${action.speed}の効果はチェーンできません`);
+      }
+      state.chain.push({
+        uid: action.uid,
+        defId: state.cards[action.uid].defId,
+        effect: action.effect,
+        stepStart: action.stepStart,
+        speed: action.speed,
+        label: action.label,
+      });
+      log(state, `チェーン${state.chain.length}：${name(state, ctx, action.uid)}の効果「${action.label}」`, 'activate');
+      return;
+    }
+    case 'CHAIN_POP': {
+      const link = state.chain.pop();
+      if (!link) fail('解決するチェーンがありません');
+      log(state, `チェーン${state.chain.length + 1}（${ctx.db[link.defId]?.name ?? ''}）の解決が終わった`, 'info');
+      return;
+    }
   }
 }
 
@@ -844,6 +889,7 @@ function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
       if (isSet && inst.enteredTurn === state.turn) fail('セットしたターンに速攻魔法は発動できません');
     } else {
       requireMainPhase(state, ctx, `${def.name}の発動`);
+      if (state.chain.length) fail(`${def.name}（スペルスピード1）はチェーンして発動できません`);
     }
   }
 

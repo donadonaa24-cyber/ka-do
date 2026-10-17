@@ -13,6 +13,13 @@ export interface Running {
   stage: 'pick' | 'mode' | 'zone';
   picked: string[];
   mode: number;
+  /**
+   * チェーンの扱い。auto：コストを払った後、チェーンできる効果があればチェーンに積んで止める／
+   * force：必ず積む／never：最後まで処理する
+   */
+  chainMode: 'auto' | 'force' | 'never';
+  /** チェーンを解決している */
+  resolving: boolean;
 }
 
 export type RunResult =
@@ -54,6 +61,50 @@ export function effectAvailable(state: GameState, uid: string, effect: EffectDef
   return true;
 }
 
+/** 効果のスペルスピード */
+export function effectSpeed(state: GameState, ctx: Ctx, uid: string, effect: EffectDef): number {
+  if (effect.speed) return effect.speed;
+  if (effect.isCardActivation) {
+    const def = makeEnv(state, ctx, uid).def(uid);
+    if (def.trapType === 'counter') return 3;
+    if (def.kind === 'trap' || def.spellType === 'quick') return 2;
+  }
+  return 1;
+}
+
+function effectKey(uid: string, effect: EffectDef): string | undefined {
+  return effect.key ? (effect.perCard ? `${effect.key}:${uid}` : effect.key) : undefined;
+}
+
+/** 今のチェーンに続けて発動できる効果（スペルスピード2以上・使用回数が残っている） */
+export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): { uid: string; effect: EffectDef }[] {
+  const out: { uid: string; effect: EffectDef }[] = [];
+  const env = makeEnv(state, ctx, '');
+  const uids = [
+    ...state.hand,
+    ...state.mz,
+    ...state.emz,
+    ...state.stz,
+    state.fz,
+    ...state.gy,
+  ].filter((u): u is string => !!u);
+  for (const uid of uids) {
+    for (const effect of ctx.scripts?.[env.def(uid).id]?.effects ?? []) {
+      if (effect.opponentOnly || !effectAvailable(state, uid, effect)) continue;
+      const speed = effectSpeed(state, ctx, uid, effect);
+      if (speed < 2 || speed < minSpeed) continue;
+      const key = effectKey(uid, effect);
+      if (key && effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit) continue;
+      if (effect.isCardActivation && env.def(uid).oncePerTurnActivation && state.effectUses[`${env.def(uid).name}:発動`]) continue;
+      if (effect.condition?.(makeEnv(state, ctx, uid))) continue;
+      // 罠はセットしたターンには発動できない
+      if (effect.isCardActivation && env.def(uid).kind === 'trap' && state.cards[uid].enteredTurn === state.turn) continue;
+      out.push({ uid, effect });
+    }
+  }
+  return out;
+}
+
 export function startEffect(
   state: GameState,
   ctx: Ctx,
@@ -61,11 +112,12 @@ export function startEffect(
   effect: EffectDef,
   /** 魔法・罠を手札から発動するときに置くゾーン */
   activationZone?: Location,
+  chainMode: Running['chainMode'] = 'never',
 ): RunResult {
   const env = makeEnv(state, ctx, uid);
   const cond = effect.condition?.(env);
   if (cond) return { kind: 'error', error: cond };
-  const key = effect.key ? (effect.perCard ? `${effect.key}:${uid}` : effect.key) : undefined;
+  const key = effectKey(uid, effect);
   const first: Action = effect.isCardActivation
     ? { type: 'ACTIVATE_CARD', uid, index: activationZone?.zone === 'stz' ? activationZone.index : undefined }
     : { type: 'ACTIVATE_EFFECT', uid, label: effect.label, key, limit: effect.limit };
@@ -97,9 +149,58 @@ export function startEffect(
       stage: 'pick',
       picked: [],
       mode: 0,
+      chainMode: state.chain?.length ? 'force' : chainMode,
+      resolving: false,
     },
     ctx,
   );
+}
+
+/** チェーンの一番上の効果を解決する */
+export function startResolve(state: GameState, ctx: Ctx): RunResult {
+  const link = state.chain[state.chain.length - 1];
+  if (!link) return { kind: 'error', error: '解決するチェーンがありません' };
+  const effect = ctx.scripts?.[link.defId]?.effects?.[link.effect];
+  if (!effect) return { kind: 'error', error: '効果が見つかりません' };
+  const name = makeEnv(state, ctx, link.uid).def(link.uid).name;
+  return advance(
+    {
+      title: `チェーン${state.chain.length}を解決：${name}`,
+      self: link.uid,
+      effect,
+      stepIndex: link.stepStart,
+      temp: state,
+      batch: [],
+      stage: 'pick',
+      picked: [],
+      mode: 0,
+      chainMode: 'never',
+      resolving: true,
+    },
+    ctx,
+  );
+}
+
+/** コストを払い終えたところでチェーンに積むか決める */
+function pushToChain(run: Running, ctx: Ctx): RunResult | null {
+  if (run.chainMode === 'never' || run.resolving) return null;
+  const speed = effectSpeed(run.temp, ctx, run.self, run.effect);
+  const responses = chainableEffects(run.temp, ctx, Math.max(2, speed)).filter((c) => c.uid !== run.self);
+  if (run.chainMode === 'auto' && responses.length === 0) return null;
+  const def = makeEnv(run.temp, ctx, run.self).def(run.self);
+  const index = ctx.scripts?.[def.id]?.effects?.indexOf(run.effect) ?? -1;
+  if (index < 0) return null;
+  const push: Action = {
+    type: 'CHAIN_PUSH',
+    uid: run.self,
+    effect: index,
+    stepStart: run.stepIndex,
+    speed,
+    label: run.effect.label,
+  };
+  const r = applyAction(run.temp, push, ctx);
+  if (!r.ok) return { kind: 'error', error: r.error };
+  return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
 }
 
 function applyAll(run: Running, ctx: Ctx, actions: Action[]): Running | string {
@@ -140,6 +241,12 @@ export function advance(run: Running, ctx: Ctx): RunResult {
   let cur = run;
   for (;;) {
     const step = currentStep(cur);
+    // コストを払い終えたら、チェーンに積むか（積まずにこのまま処理するか）を決める
+    if (cur.chainMode !== 'never' && !cur.resolving && (!step || !step.cost)) {
+      const pushed = pushToChain(cur, ctx);
+      if (pushed) return pushed;
+      cur = { ...cur, chainMode: 'never' };
+    }
     if (!step) return finish(cur, ctx);
     if (step.op === 'do') {
       const next = applyAll(cur, ctx, step.then(makeEnv(cur.temp, ctx, cur.self)));
@@ -167,7 +274,8 @@ function finish(run: Running, ctx: Ctx): RunResult {
     if (typeof next === 'string') return { kind: 'error', error: next };
     cur = next;
   }
-  return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: cur.batch } };
+  const actions = run.resolving ? [...cur.batch, { type: 'CHAIN_POP' } as Action] : cur.batch;
+  return { kind: 'done', action: { type: 'BATCH', label: run.title, actions } };
 }
 
 /** 選択（カード・処理の種類・ゾーン）を確定して次へ */

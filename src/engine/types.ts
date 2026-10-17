@@ -114,6 +114,19 @@ export interface CardInstance {
   entryId: number;
 }
 
+/** チェーンに積まれた効果。解決はスクリプトの effect 番号の stepStart 以降を実行する */
+export interface ChainLink {
+  uid: string;
+  defId: string;
+  /** スクリプトの effects の番号 */
+  effect: number;
+  /** 解決で実行する最初のステップ（それより前はコストとして発動時に処理済み） */
+  stepStart: number;
+  /** スペルスピード */
+  speed: number;
+  label: string;
+}
+
 /** 効果で得た追加の召喚権・リリースなし召喚 */
 export interface SummonGrant {
   /** 効果の出どころ（表示用） */
@@ -177,6 +190,8 @@ export interface GameState {
   /** ゲーム中にシャッフルした回数（リプレイの再現用） */
   shuffleCount: number;
   summonGrants: SummonGrant[];
+  /** 積まれているチェーン（末尾が一番上＝最後に発動したもの） */
+  chain: ChainLink[];
   /** このターンに魔法カードの効果が発動したか */
   spellActivatedThisTurn: boolean;
 }
