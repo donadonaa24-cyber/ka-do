@@ -80,6 +80,7 @@ export function App() {
   const [showSetup, setShowSetup] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
+  const [routeName, setRouteName] = useState('');
 
   const ctx: Ctx = useMemo(
     () => ({ db: CARD_DB, options: { strict: session.strict }, scripts: CARD_SCRIPTS }),
@@ -281,10 +282,7 @@ export function App() {
 
   const effectBtn = (uid: string): Btn => ({
     label: '効果発動（記録）',
-    onClick: () => {
-      const label = window.prompt('効果のメモ（任意）', '') ?? undefined;
-      dispatch({ type: 'ACTIVATE_EFFECT', uid, label: label || undefined });
-    },
+    onClick: () => dispatch({ type: 'ACTIVATE_EFFECT', uid }),
   });
 
   const commonMoves = (uid: string, loc: Location): Btn[] => {
@@ -499,8 +497,8 @@ export function App() {
   const [runMin, runMax] = run ? pickRange(run, ctx) : [0, 0];
 
   const saveRoute = () => {
-    const name = window.prompt('ルート名', `${deck.name} シード${session.seed}`);
-    if (!name) return;
+    const name = routeName.trim() || `${deck.name} シード${session.seed}`;
+    setRouteName('');
     const next = [...routes, { ...session, name, savedAt: new Date().toISOString() }];
     setRoutes(next);
     saveRoutes(next);
@@ -508,7 +506,11 @@ export function App() {
 
   const copyLog = () => {
     const text = state.log.map((l) => `[T${l.turn} ${PHASE_LABEL[l.phase]}] ${l.text}`).join('\n');
-    navigator.clipboard?.writeText(text).catch(() => undefined);
+    try {
+      navigator.clipboard?.writeText(text).catch(() => setError('コピーできませんでした。ログを長押しして選択してください'));
+    } catch {
+      setError('コピーできませんでした。ログを長押しして選択してください');
+    }
   };
 
   const pendingButtons = pending && (
@@ -584,7 +586,7 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className={`app ${run || pending ? 'busy' : ''}`}>
       <header className="topbar">
         <h1>遊戯王 一人回し</h1>
         <div className="status">
@@ -701,10 +703,15 @@ export function App() {
         </section>
 
         <aside className="side">
-          <section className="detail">
+          <section className={`detail ${sel ? 'has-sel' : ''}`}>
             {sel && selDef && selLoc ? (
               <>
-                <h2>{selDef.name}</h2>
+                <div className="detail-head">
+                  <h2>{selDef.name}</h2>
+                  <button className="sheet-close" onClick={() => setSelected(null)} aria-label="閉じる">
+                    閉じる
+                  </button>
+                </div>
                 <div className="meta">
                   {selDef.attribute && `${selDef.attribute}属性 `}
                   {selDef.race && `${selDef.race} `}
@@ -747,6 +754,14 @@ export function App() {
             <div className="log-head">
               <strong>ルート記録（{session.actions.length}手）</strong>
               <button onClick={copyLog}>コピー</button>
+            </div>
+            <div className="route-save">
+              <input
+                id="route-name"
+                value={routeName}
+                placeholder={`ルート名（例：${deck.name} シード${session.seed}）`}
+                onChange={(e) => setRouteName(e.target.value)}
+              />
               <button onClick={saveRoute}>保存</button>
             </div>
             <ol className="log-list">

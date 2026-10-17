@@ -273,7 +273,7 @@ select {
   border-color: var(--warn);
   box-shadow: 0 0 0 2px var(--warn);
 }
-.card.pending {
+.card.resolving {
   animation: pulse 1s infinite alternate;
 }
 @keyframes pulse {
@@ -522,7 +522,7 @@ select {
     --card-h: 46px;
   }
   .main {
-    padding: 8px;
+    padding-top: 8px;
   }
   .board {
     grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -554,4 +554,91 @@ select {
   gap: 6px;
   max-height: 220px;
   overflow-y: auto;
+}
+
+/* ===== 非公開ページ（Artifact）・スマホ向け ===== */
+.detail-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.detail-head h2 {
+  flex: 1;
+  min-width: 0;
+}
+.sheet-close {
+  display: none;
+}
+.route-save {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.route-save input {
+  flex: 1;
+  min-width: 0;
+}
+.topbar {
+  top: env(safe-area-inset-top, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--panel);
+}
+.main {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (max-width: 900px) {
+  /* 上部バーは固定せず、操作パネルを画面下に出す */
+  .topbar {
+    position: static;
+  }
+  .main {
+    padding-bottom: 45vh;
+  }
+  .pending,
+  .detail.has-sel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    max-height: 55vh;
+    overflow-y: auto;
+    border-radius: 14px 14px 0 0;
+    border: 1px solid var(--accent);
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px))
+      max(16px, env(safe-area-inset-left, 0px));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .pending {
+    background: #1f2d4a;
+  }
+  .detail.has-sel {
+    background: var(--panel);
+  }
+  .detail .text {
+    max-height: 7.5em;
+    overflow-y: auto;
+  }
+  .app.busy .detail.has-sel {
+    display: none;
+  }
+  .sheet-close {
+    display: inline-block;
+  }
+  .error {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    z-index: 60;
+  }
 }

@@ -47,7 +47,7 @@ export function CardView({ def, inst, showFaceDown = true, selected, highlighted
     isDef ? 'def-pos' : '',
     selected ? 'selected' : '',
     highlighted ? 'highlighted' : '',
-    inst?.pendingResolve ? 'pending' : '',
+    inst?.pendingResolve ? 'resolving' : '',
     small ? 'small' : '',
   ]
     .filter(Boolean)
