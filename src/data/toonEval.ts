@@ -29,6 +29,10 @@ const TRAP_VALUE: Record<string, { value: number; note: string; needsToon?: bool
   '霆王の閃光': { value: 3, note: '相手モンスター1体を除外' },
   'トゥーンのかばん': { value: 2, note: '相手がモンスターを召喚・特殊召喚した時にデッキへ戻す', needsToon: true },
   'センサー万別': { value: 1.5, note: '同じ種族を1体に制限して展開を止める' },
+  '聖なる心のバリア －マインドフォース－': {
+    value: 3,
+    note: '相手の自分ターン中の手札・場のモンスター効果やカード破壊効果にチェーンして、相手の表側カードを全て無効＆破壊',
+  },
 };
 
 const HAND_VALUE: Record<string, number> = {
@@ -37,6 +41,7 @@ const HAND_VALUE: Record<string, number> = {
   'ドロール＆ロックバード': 1.5,
   '幽鬼うさぎ': 1.5,
   '無限泡影': 1,
+  'マルチャミー・フワロス': 1.5,
 };
 
 /** 手札誘発をいつ使うか */
@@ -46,6 +51,7 @@ const HAND_USE: Record<string, string> = {
   'ドロール＆ロックバード': '相手がドロー以外でデッキから手札に加えた後に発動',
   '幽鬼うさぎ': '相手の場のモンスター効果の発動にチェーンして破壊',
   '無限泡影': '自分の場にカードが無ければ手札から、相手の効果モンスターを無効',
+  'マルチャミー・フワロス': '自分の場にカードが無い時に捨てて、相手がデッキ・EXから特殊召喚するたびにドロー',
 };
 
 function analyze(state: GameState, ctx: Ctx) {
