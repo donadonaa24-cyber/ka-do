@@ -68,10 +68,16 @@ export interface EffectDef {
   condition?: (env: Env) => string | null;
   /** 魔法・罠カードの発動そのもの */
   isCardActivation?: boolean;
+  /** 相手がいる時にしか意味がない効果（ルート探索では使わない） */
+  opponentOnly?: boolean;
+  /** 「召喚・特殊召喚した場合」の効果：そのターンに出た時に1回だけ使える */
+  onSummon?: boolean;
   steps: Step[];
 }
 
 export interface CardScript {
   procedures?: ProcedureDef[];
   effects?: EffectDef[];
+  /** 融合・S・X・L召喚の素材のカード固有の条件。満たさない場合はメッセージを返す */
+  materialCheck?: (env: Env, materials: string[], method: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual') => string | null;
 }

@@ -1,6 +1,6 @@
-import { type Action, applyAction, candidates, type Ctx, findLocation, makeEnv } from '../engine/game';
-import type { EffectDef, Step } from '../engine/scripts';
-import type { GameState, Location } from '../engine/types';
+import { type Action, applyAction, candidates, type Ctx, findLocation, makeEnv } from './game';
+import type { EffectDef, Step } from './scripts';
+import type { GameState, Location } from './types';
 
 /** 実行中の効果処理。途中の盤面（temp）を見ながら1ステップずつ選ばせる */
 export interface Running {
@@ -15,7 +15,10 @@ export interface Running {
   mode: number;
 }
 
-export type RunResult = { kind: 'running'; run: Running } | { kind: 'done'; action: Action } | { kind: 'error'; error: string };
+export type RunResult =
+  | { kind: 'running'; run: Running }
+  | { kind: 'done'; action: Action }
+  | { kind: 'error'; error: string };
 
 type EffectFrom = EffectDef['from'][number];
 
@@ -51,15 +54,37 @@ export function effectAvailable(state: GameState, uid: string, effect: EffectDef
   return true;
 }
 
-export function startEffect(state: GameState, ctx: Ctx, uid: string, effect: EffectDef): RunResult {
+export function startEffect(
+  state: GameState,
+  ctx: Ctx,
+  uid: string,
+  effect: EffectDef,
+  /** 魔法・罠を手札から発動するときに置くゾーン */
+  activationZone?: Location,
+): RunResult {
   const env = makeEnv(state, ctx, uid);
   const cond = effect.condition?.(env);
   if (cond) return { kind: 'error', error: cond };
   const key = effect.key ? (effect.perCard ? `${effect.key}:${uid}` : effect.key) : undefined;
   const first: Action = effect.isCardActivation
-    ? { type: 'ACTIVATE_CARD', uid }
+    ? { type: 'ACTIVATE_CARD', uid, index: activationZone?.zone === 'stz' ? activationZone.index : undefined }
     : { type: 'ACTIVATE_EFFECT', uid, label: effect.label, key, limit: effect.limit };
-  const r = applyAction(state, first, ctx);
+  const batch: Action[] = [first];
+  if (effect.onSummon) {
+    const inst = state.cards[uid];
+    if (inst.enteredTurn !== state.turn)
+      return { kind: 'error', error: 'このターンに召喚・特殊召喚されたカードではありません' };
+    // 召喚1回につき1度だけ（ターン1の制限とは別に管理）
+    batch.push({
+      type: 'ACTIVATE_EFFECT',
+      uid,
+      silent: true,
+      key: `召喚時:${effect.label}:${uid}:${inst.entryId}`,
+      limit: 1,
+    });
+  }
+  let r = applyAction(state, first, ctx);
+  if (r.ok && batch.length > 1) r = applyAction(r.state, batch[1], ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
   return advance(
     {
@@ -68,7 +93,7 @@ export function startEffect(state: GameState, ctx: Ctx, uid: string, effect: Eff
       effect,
       stepIndex: 0,
       temp: r.state,
-      batch: [first],
+      batch,
       stage: 'pick',
       picked: [],
       mode: 0,

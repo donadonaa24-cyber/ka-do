@@ -110,6 +110,8 @@ export interface CardInstance {
   attackCount: number;
   /** 2回攻撃できるターン */
   doubleAttackTurn: number | null;
+  /** フィールドに出るたびに変わる番号（「召喚した時」の効果を1回に限るため） */
+  entryId: number;
 }
 
 /** 効果で得た追加の召喚権・リリースなし召喚 */

@@ -14,16 +14,33 @@ interface Props {
   onCardClick: (uid: string) => void;
   onZoneClick: (loc: Location) => void;
   onPileClick: (zone: PileZone) => void;
+  /** カードのドラッグ開始 */
+  dragStart?: (uid: string) => (e: React.PointerEvent) => void;
+  /** ドラッグ中に指している落とし先（data-drop の値） */
+  dropTarget?: string | null;
 }
 
-export function Board({ state, ctx, selected, picked, zoneSelectable, onCardClick, onZoneClick, onPileClick }: Props) {
+export function Board({
+  state,
+  ctx,
+  selected,
+  picked,
+  zoneSelectable,
+  onCardClick,
+  onZoneClick,
+  onPileClick,
+  dragStart,
+  dropTarget,
+}: Props) {
   const linked = linkedMainZones(state, (u) => getDef(state, ctx, u));
 
   const slot = (loc: Location, uid: string | null, label: string, extraCls = '') => {
     const selectable = zoneSelectable(loc);
+    const drop = 'index' in loc ? `${loc.zone}:${loc.index}` : loc.zone;
     return (
       <div
-        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''}`}
+        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''} ${dropTarget === drop ? 'drop-over' : ''}`}
+        data-drop={drop}
         onClick={() => (selectable ? onZoneClick(loc) : uid && onCardClick(uid))}
       >
         {uid ? (
@@ -32,6 +49,7 @@ export function Board({ state, ctx, selected, picked, zoneSelectable, onCardClic
             inst={state.cards[uid]}
             selected={selected === uid}
             highlighted={picked.includes(uid)}
+            onPointerDown={dragStart?.(uid)}
           />
         ) : (
           <span className="zone-label">{label}</span>
@@ -44,7 +62,7 @@ export function Board({ state, ctx, selected, picked, zoneSelectable, onCardClic
     const list = state[zone];
     const top = zone === 'gy' || zone === 'banished' ? list[list.length - 1] : undefined;
     return (
-      <div className="zone pile" onClick={() => onPileClick(zone)}>
+      <div className={`zone pile ${dropTarget === zone ? 'drop-over' : ''}`} data-drop={zone} onClick={() => onPileClick(zone)}>
         {top ? (
           <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} />
         ) : (

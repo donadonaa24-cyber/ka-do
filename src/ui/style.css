@@ -642,3 +642,133 @@ body::before {
     z-index: 60;
   }
 }
+
+/* ===== ドラッグ＆ドロップ ===== */
+.card {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.app.dragging {
+  cursor: grabbing;
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  transform: translate(-50%, -60%) rotate(-4deg);
+  opacity: 0.9;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+.drop-over {
+  outline: 2px solid var(--warn);
+  outline-offset: -2px;
+  background: rgba(255, 179, 71, 0.15);
+}
+.drop-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+}
+.drop-menu {
+  position: fixed;
+  width: 250px;
+  max-width: calc(100vw - 16px);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.drop-menu button {
+  text-align: left;
+}
+
+/* ===== ルート ===== */
+.routes-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tabs,
+.route-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tabs button.on,
+.route-tabs button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.progress {
+  height: 6px;
+  background: var(--panel2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.route-summary {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.route-steps {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.route-steps .head {
+  color: var(--text);
+}
+.route-steps .sub {
+  color: var(--muted);
+  padding-left: 8px;
+}
+.route-steps li.done {
+  opacity: 0.45;
+}
+.route-steps li.current {
+  outline: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.guide {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide.active {
+  border-top-color: var(--accent);
+}
+.note.warn {
+  color: var(--warn);
+}
+.note.ok {
+  color: var(--ok);
+  font-weight: 700;
+}

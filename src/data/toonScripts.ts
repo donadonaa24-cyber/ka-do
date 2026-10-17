@@ -40,7 +40,12 @@ export const TOON_OVERRIDES: Record<string, Partial<CardDef>> = {
 
 // ===== 部品 =====
 
-const move = (uid: string, to: Location, reason?: string, extra: Partial<Extract<Action, { type: 'MOVE' }>> = {}): Action => ({
+const move = (
+  uid: string,
+  to: Location,
+  reason?: string,
+  extra: Partial<Extract<Action, { type: 'MOVE' }>> = {},
+): Action => ({
   type: 'MOVE',
   uid,
   to,
@@ -75,7 +80,12 @@ const search = (prompt: string, filter: CardFilter, from: ('deck' | 'gy')[] = ['
   filter,
   min: 1,
   max: 1,
-  then: (env, p) => withShuffle(env, p, p.map((u) => toHand(u, from[0] === 'deck' ? 'サーチ' : 'サルベージ'))),
+  then: (env, p) =>
+    withShuffle(
+      env,
+      p,
+      p.map((u) => toHand(u, from[0] === 'deck' ? 'サーチ' : 'サルベージ')),
+    ),
 });
 
 const selfTo = (zone: 'gy' | 'banished', reason = 'コスト'): Step => ({
@@ -96,8 +106,12 @@ const logOnly = (label: string, from: EffectDef['from'], key?: string, cost: Ste
   from,
   key,
   limit: key ? 1 : undefined,
+  opponentOnly: true,
   steps: cost,
 });
+
+const isEffectMonster = (d: CardDef) => d.kind === 'monster' && d.frame !== 'normal' && d.frame !== 'token';
+const exactly = (n: number, m: string[]) => (m.length === n ? null : `素材はちょうど${n}体です`);
 
 const levelSum = (env: Env, uids: string[]) => uids.reduce((s, u) => s + (env.def(u).level ?? 0), 0);
 
@@ -233,7 +247,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
               withShuffle(
                 env,
                 p,
-                p.map((u) => (mode === 0 ? toHand(u, 'サーチ') : move(u, firstEmptyStz(env), 'セット', { faceUp: false }))),
+                p.map((u) =>
+                  mode === 0 ? toHand(u, 'サーチ') : move(u, firstEmptyStz(env), 'セット', { faceUp: false }),
+                ),
               ),
           },
         ],
@@ -289,7 +305,12 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             filter: { name: ['心を見通す眼'] },
             min: 1,
             max: 1,
-            then: (env, p) => withShuffle(env, p, p.map((u) => move(u, firstEmptyStz(env), '表側で置く', { faceUp: true }))),
+            then: (env, p) =>
+              withShuffle(
+                env,
+                p,
+                p.map((u) => move(u, firstEmptyStz(env), '表側で置く', { faceUp: true })),
+              ),
           },
         ],
       },
@@ -344,6 +365,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     effects: [
       {
         label: '① 召喚・特殊召喚時：「トゥーン・ワールド」記載モンスターの追加召喚',
+        onSummon: true,
         from: ['monster'],
         steps: [
           {
@@ -399,7 +421,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 幽鬼うさぎ
   '59438930': {
-    effects: [logOnly('① 墓地へ送り、効果を発動したカードを破壊（相手用）', ['hand', 'monster'], '幽鬼うさぎ', [selfTo('gy')])],
+    effects: [
+      logOnly('① 墓地へ送り、効果を発動したカードを破壊（相手用）', ['hand', 'monster'], '幽鬼うさぎ', [selfTo('gy')]),
+    ],
   },
   // 灰流うらら
   '14558127': { effects: [logOnly('① 捨てて効果を無効（相手用）', ['hand'], '灰流うらら', [selfTo('gy')])] },
@@ -429,6 +453,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     effects: [
       {
         label: '① 特殊召喚時：攻撃力か守備力2000の通常召喚できないモンスターをサーチ',
+        onSummon: true,
         from: ['monster'],
         steps: [
           search('デッキから手札に加える、攻撃力か守備力が2000の通常召喚できないモンスター', {
@@ -554,7 +579,12 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             from: ['deck'],
             min: 1,
             max: 1,
-            then: (env, p) => withShuffle(env, p, p.map((u) => banish(u, '抹殺の指名者'))),
+            then: (env, p) =>
+              withShuffle(
+                env,
+                p,
+                p.map((u) => banish(u, '抹殺の指名者')),
+              ),
           },
         ],
       },
@@ -588,7 +618,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             min: 1,
             max: 1,
             zone: 'monster',
-            then: (_, p, z) => [ss(p[0], z, '「ティマイオスの眼」の効果扱いで融合召喚。次のターンのエンドフェイズに除外')],
+            then: (_, p, z) => [
+              ss(p[0], z, '「ティマイオスの眼」の効果扱いで融合召喚。次のターンのエンドフェイズに除外'),
+            ],
           },
         ],
       },
@@ -611,7 +643,11 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         limit: 1,
         perCard: true,
         condition: mainPhase,
-        steps: [search('デッキから手札に加える「トゥーン」カードか「トゥーン・ワールド」記載カード', { any: [{ archetype: 'トゥーン' }, { mentions: TW }] })],
+        steps: [
+          search('デッキから手札に加える「トゥーン」カードか「トゥーン・ワールド」記載カード', {
+            any: [{ archetype: 'トゥーン' }, { mentions: TW }],
+          }),
+        ],
       },
     ],
   },
@@ -626,7 +662,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'do',
-            then: (env) => env.state.deck.slice(0, 3).map((u) => move(u, { zone: 'banished' }, '裏側で除外', { faceUp: false })),
+            then: (env) =>
+              env.state.deck.slice(0, 3).map((u) => move(u, { zone: 'banished' }, '裏側で除外', { faceUp: false })),
           },
         ],
       },
@@ -640,6 +677,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // ブルーアイズ・トゥーン・アルティメットドラゴン
   '71808988': {
+    materialCheck: () => 'このカードは手札・フィールド・墓地の素材をデッキに戻す方法でのみ特殊召喚できます',
+
     procedures: [
       {
         label: '「ブルーアイズ・トゥーン・ドラゴン」＋トゥーンモンスター×2をデッキに戻す',
@@ -649,7 +688,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         summonFrom: ['extra'],
         validate: (env, m) => {
           if (m.length !== 3) return '素材を3体選んでください';
-          if (!m.some((u) => env.def(u).name === 'ブルーアイズ・トゥーン・ドラゴン')) return '「ブルーアイズ・トゥーン・ドラゴン」が必要です';
+          if (!m.some((u) => env.def(u).name === 'ブルーアイズ・トゥーン・ドラゴン'))
+            return '「ブルーアイズ・トゥーン・ドラゴン」が必要です';
           if (m.some((u) => !env.isToon(u))) return 'トゥーンモンスター以外が含まれています';
           return null;
         },
@@ -663,13 +703,30 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         limit: 1,
         perCard: true,
         condition: mainPhase,
-        steps: [search('墓地から手札に加える「トゥーン」カードか「トゥーン・ワールド」記載カード', { any: [{ archetype: 'トゥーン' }, { mentions: TW }] }, ['gy'])],
+        steps: [
+          search(
+            '墓地から手札に加える「トゥーン」カードか「トゥーン・ワールド」記載カード',
+            { any: [{ archetype: 'トゥーン' }, { mentions: TW }] },
+            ['gy'],
+          ),
+        ],
       },
     ],
   },
 
   // 超魔導竜騎士－ドラグーン・オブ・レッドアイズ
   '37818794': {
+    materialCheck: (env, m) => {
+      if (m.length !== 2) return '融合素材は2体です';
+      const bm = m.find((u) => env.matches(u, { name: ['ブラック・マジシャン'] }));
+      const other = m.find((u) => u !== bm);
+      if (!bm || !other) return '「ブラック・マジシャン」が必要です';
+      const d = env.def(other);
+      return d.name === '真紅眼の黒竜' || (d.race === 'ドラゴン族' && isEffectMonster(d))
+        ? null
+        : '「真紅眼の黒竜」かドラゴン族の効果モンスターが必要です';
+    },
+
     effects: [
       logOnly('② 相手モンスターを破壊（相手用）', ['monster']),
       {
@@ -694,6 +751,13 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 滅びの黒魔術師
   '59400890': {
+    materialCheck: (env, m) => {
+      if (m.length !== 2) return '融合素材は2体です';
+      const bm = m.find((u) => env.matches(u, { name: ['ブラック・マジシャン'] }));
+      const other = m.find((u) => u !== bm);
+      if (!bm || !other) return '「ブラック・マジシャン」が必要です';
+      return ['光', '闇'].includes(env.def(other).attribute ?? '') ? null : '光・闇属性モンスターが必要です';
+    },
     procedures: [
       {
         label: '魔法の効果が発動したターン、Lv6以上の闇属性魔法使い族を除外',
@@ -716,9 +780,14 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     effects: [
       {
         label: '② 特殊召喚時：「ブラック・マジシャン」か記載カードをサーチ',
+        onSummon: true,
         from: ['monster'],
         key: '滅びの黒魔術師②',
-        steps: [search('デッキから手札に加える「ブラック・マジシャン」かその記載カード', { mentions: 'ブラック・マジシャン' })],
+        steps: [
+          search('デッキから手札に加える「ブラック・マジシャン」かその記載カード', {
+            mentions: 'ブラック・マジシャン',
+          }),
+        ],
       },
     ],
   },
@@ -734,7 +803,10 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         perCard: true,
         condition: (env) => (env.state.cards[env.self].overlay.length ? null : 'X素材がありません'),
         steps: [
-          { op: 'do', then: (env) => [{ type: 'DETACH', target: env.self, uid: env.state.cards[env.self].overlay[0] }] },
+          {
+            op: 'do',
+            then: (env) => [{ type: 'DETACH', target: env.self, uid: env.state.cards[env.self].overlay[0] }],
+          },
           {
             op: 'pick',
             prompt: '手札に戻すフィールドのモンスター',
@@ -750,6 +822,13 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 光なき影 ア＝バオ・ア・クゥー
   '4731783': {
+    materialCheck: (env, m) =>
+      m.length < 2
+        ? '素材は2体以上です'
+        : m.some((u) => env.def(u).race === '悪魔族')
+          ? null
+          : '悪魔族モンスターを含める必要があります',
+
     effects: [
       {
         label: '① 手札1枚を捨て、フィールドのカード1枚を破壊',
@@ -758,8 +837,22 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         limit: 1,
         condition: mainPhase,
         steps: [
-          { op: 'pick', prompt: 'コスト：捨てる手札', from: ['hand'], min: 1, max: 1, then: (_, p) => p.map((u) => toGy(u)) },
-          { op: 'pick', prompt: '破壊するフィールドのカード', from: ['field'], min: 1, max: 1, then: (_, p) => p.map((u) => toGy(u, '破壊')) },
+          {
+            op: 'pick',
+            prompt: 'コスト：捨てる手札',
+            from: ['hand'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toGy(u)),
+          },
+          {
+            op: 'pick',
+            prompt: '破壊するフィールドのカード',
+            from: ['field'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toGy(u, '破壊')),
+          },
         ],
       },
       {
@@ -769,7 +862,14 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         limit: 1,
         condition: mainPhase,
         steps: [
-          { op: 'pick', prompt: 'コスト：捨てる手札', from: ['hand'], min: 1, max: 1, then: (_, p) => p.map((u) => toGy(u)) },
+          {
+            op: 'pick',
+            prompt: 'コスト：捨てる手札',
+            from: ['hand'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toGy(u)),
+          },
           selfTo('banished', 'エンドフェイズまで除外'),
           {
             op: 'pick',
@@ -792,7 +892,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'do',
             then: (env) => {
-              const n = new Set(env.state.gy.filter((u) => env.def(u).kind === 'monster').map((u) => env.def(u).race)).size;
+              const n = new Set(env.state.gy.filter((u) => env.def(u).kind === 'monster').map((u) => env.def(u).race))
+                .size;
               return n ? [{ type: 'DRAW', count: n }] : [];
             },
           },
@@ -800,7 +901,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             op: 'pick',
             prompt: 'デッキの下に戻す手札（ドローした数）',
             from: ['hand'],
-            count: (env) => new Set(env.state.gy.filter((u) => env.def(u).kind === 'monster').map((u) => env.def(u).race)).size,
+            count: (env) =>
+              new Set(env.state.gy.filter((u) => env.def(u).kind === 'monster').map((u) => env.def(u).race)).size,
             then: (_, p) => p.map((u) => move(u, { zone: 'deck' }, '効果', { toBottom: true })),
           },
         ],
@@ -810,9 +912,17 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 神聖魔皇后セレーネ
   '45819647': {
+    materialCheck: (env, m) =>
+      m.length < 2
+        ? '素材は2体以上です'
+        : m.some((u) => env.def(u).race === '魔法使い族')
+          ? null
+          : '魔法使い族モンスターを含める必要があります',
+
     effects: [
       {
         label: '① L召喚時：フィールド・墓地の魔法の数だけ魔力カウンターを置く',
+        onSummon: true,
         from: ['monster'],
         steps: [
           {
@@ -855,6 +965,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 神書の使いラハムゥ
   '53904087': {
+    materialCheck: (env, m) =>
+      exactly(2, m) ?? (m.every((u) => isEffectMonster(env.def(u))) ? null : '効果モンスター2体が必要です'),
+
     effects: [
       {
         label: '① レベル5以上をリリースなしで召喚できるようにする',
@@ -867,7 +980,13 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             then: () => [
               {
                 type: 'GRANT_SUMMON',
-                grant: { source: '神書の使いラハムゥ', extraSummon: false, noTribute: true, filter: { minLevel: 5 }, thisTurnOnly: false },
+                grant: {
+                  source: '神書の使いラハムゥ',
+                  extraSummon: false,
+                  noTribute: true,
+                  filter: { minLevel: 5 },
+                  thisTurnOnly: false,
+                },
               },
             ],
           },
@@ -912,7 +1031,10 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             max: 60,
             then: (_, p) =>
               p.length
-                ? [...p.map((u) => move(u, { zone: 'deck' }, '効果', { toBottom: true })), { type: 'DRAW', count: p.length }]
+                ? [
+                    ...p.map((u) => move(u, { zone: 'deck' }, '効果', { toBottom: true })),
+                    { type: 'DRAW', count: p.length },
+                  ]
                 : [],
           },
         ],
@@ -921,13 +1043,21 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
   },
 
   // Ｉ：Ｐマスカレーナ
-  '65741786': { effects: [logOnly('① 相手メインフェイズにL召喚（相手用）', ['monster'], 'Ｉ：Ｐマスカレーナ①')] },
+  '65741786': {
+    materialCheck: (env, m) =>
+      exactly(2, m) ?? (m.some((u) => env.def(u).frame === 'link') ? 'リンクモンスターは素材にできません' : null),
+    effects: [logOnly('① 相手メインフェイズにL召喚（相手用）', ['monster'], 'Ｉ：Ｐマスカレーナ①')],
+  },
 
   // Ｓ：Ｐリトルナイト
   '29301450': {
+    materialCheck: (env, m) =>
+      exactly(2, m) ?? (m.every((u) => isEffectMonster(env.def(u))) ? null : '効果モンスター2体が必要です'),
+
     effects: [
       {
         label: '① 融合・S・X・Lを素材にL召喚時：フィールド・墓地のカード1枚を除外',
+        onSummon: true,
         from: ['monster'],
         key: 'Ｓ：Ｐリトルナイト①',
         limit: 1,
@@ -962,8 +1092,20 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
     ],
   },
 
+  // クロシープ
+  '50277355': {
+    materialCheck: (env, m) =>
+      exactly(2, m) ?? (env.def(m[0]).name === env.def(m[1]).name ? 'カード名が異なるモンスター2体が必要です' : null),
+  },
+
   // サクリファイス・アニマ
   '94259633': {
+    materialCheck: (env, m) => {
+      if (m.length !== 1) return '素材は1体です';
+      const d = env.def(m[0]);
+      return d.frame !== 'token' && d.level === 1 ? null : 'トークン以外のレベル1モンスターが必要です';
+    },
+
     effects: [
       {
         label: '① リンク先の表側モンスターを装備する',

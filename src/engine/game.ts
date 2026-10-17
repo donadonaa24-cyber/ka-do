@@ -74,7 +74,7 @@ export type Action =
   | { type: 'SET_SPELL_TRAP'; uid: string; index?: number }
   | { type: 'ACTIVATE_CARD'; uid: string; index?: number }
   | { type: 'RESOLVE'; uid: string }
-  | { type: 'ACTIVATE_EFFECT'; uid: string; label?: string; key?: string; limit?: number }
+  | { type: 'ACTIVATE_EFFECT'; uid: string; label?: string; key?: string; limit?: number; silent?: boolean }
   | {
       type: 'MOVE';
       uid: string;
@@ -200,6 +200,7 @@ function newInstance(uid: string, defId: string): CardInstance {
     faceUpInExtra: false,
     attackCount: 0,
     doubleAttackTurn: null,
+    entryId: 0,
   };
 }
 
@@ -357,6 +358,7 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   if (leavingField || !isOnField(to)) resetInstance(inst);
   if (pendulumToExtra) inst.faceUpInExtra = true;
   placeRaw(state, uid, dest, opts);
+  if (isOnField(dest) && !isOnField(from)) inst.entryId = state.nextUid++;
   return dest;
 }
 
@@ -639,6 +641,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         fail(`${def.name}のこの効果は1ターンに${action.limit}度までです`);
       }
       state.effectUses[key] = count;
+      if (action.silent) return;
       if (def.kind === 'spell') state.spellActivatedThisTurn = true;
       const label = action.label ? `「${action.label}」` : '';
       log(state, `${def.name}の効果${label}を発動`, 'activate');
@@ -940,6 +943,9 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
       break;
     }
   }
+
+  const materialErr = strict ? ctx.scripts?.[def.id]?.materialCheck?.(makeEnv(state, ctx, uid), materials, method) : null;
+  if (materialErr) fail(materialErr);
 
   // 素材を送ってから置き場所をチェックする（リンク先の判定は素材が離れた後）
   if (method === 'xyz') {

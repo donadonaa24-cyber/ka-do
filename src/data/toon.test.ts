@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type Action, applyAction, createGame, type Ctx, findLocation } from '../engine/game';
 import type { GameState, Location } from '../engine/types';
-import { afterPick, completeStep, type RunResult, type Running, startEffect, stepCandidates } from '../ui/effectRunner';
+import { afterPick, completeStep, type RunResult, type Running, startEffect, stepCandidates } from '../engine/effectRunner';
 import { CARD_DB, CARD_SCRIPTS, TOON_DECK } from '.';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };

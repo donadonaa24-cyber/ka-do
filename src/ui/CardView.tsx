@@ -34,10 +34,11 @@ interface Props {
   selected?: boolean;
   highlighted?: boolean;
   onClick?: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   small?: boolean;
 }
 
-export function CardView({ def, inst, showFaceDown = true, selected, highlighted, onClick, small }: Props) {
+export function CardView({ def, inst, showFaceDown = true, selected, highlighted, onClick, onPointerDown, small }: Props) {
   const faceDown = inst ? !inst.faceUp : false;
   const isDef = inst?.position === 'def';
   const cls = [
@@ -54,10 +55,10 @@ export function CardView({ def, inst, showFaceDown = true, selected, highlighted
     .join(' ');
 
   if (faceDown && !showFaceDown) {
-    return <div className={cls} onClick={onClick} />;
+    return <div className={cls} onClick={onClick} onPointerDown={onPointerDown} />;
   }
   return (
-    <div className={cls} onClick={onClick} title={`${def.name}\n${def.text}`}>
+    <div className={cls} onClick={onClick} onPointerDown={onPointerDown} title={`${def.name}\n${def.text}`}>
       <div className="card-name">{def.name}</div>
       <div className="card-stat">{statLine(def)}</div>
       {def.tuner && <div className="card-tag">チューナー</div>}

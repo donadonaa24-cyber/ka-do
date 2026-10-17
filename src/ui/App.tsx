@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CARD_DB, CARD_SCRIPTS, DECKS } from '../data';
 import {
   type Action,
@@ -22,6 +22,10 @@ import { Board } from './Board';
 import { CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
+import { RoutePanel } from './RoutePanel';
+import { useDrag } from './useDrag';
+import { TOON_GUIDES } from '../data/toonGuides';
+import { type Guide, stepMatches } from '../engine/guide';
 import {
   afterPick,
   completeStep,
@@ -33,7 +37,7 @@ import {
   runZoneKind,
   startEffect,
   stepCandidates,
-} from './effectRunner';
+} from '../engine/effectRunner';
 import { matchesFilter } from '../engine/filters';
 import type { EffectDef } from '../engine/scripts';
 
@@ -50,13 +54,19 @@ interface Pending {
   zone: 'monster' | 'stz' | 'none';
   /** EXモンスターゾーンを選べる（EXデッキからの特殊召喚） */
   allowEmz?: boolean;
+  /** ドラッグで先に決まっている出し先 */
+  presetZone?: Location;
   build: (picked: string[], zone: Location | null) => Action;
 }
+
+/** ドラッグで落とせる先（ボタンの操作でカードが行く場所） */
+type DropDest = 'monster' | 'stz' | 'fz' | 'hand' | 'gy' | 'banished' | 'deck';
 
 interface Btn {
   label: string;
   onClick: () => void;
   primary?: boolean;
+  dest?: DropDest;
 }
 
 const defaultSession = (): SessionData => ({
@@ -81,6 +91,10 @@ export function App() {
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
+  const [guideId, setGuideId] = useState<string | null>(null);
+  const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
+  /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
+  const presetRef = useRef<Location | null>(null);
 
   const ctx: Ctx = useMemo(
     () => ({ db: CARD_DB, options: { strict: session.strict }, scripts: CARD_SCRIPTS }),
@@ -108,18 +122,22 @@ export function App() {
     }
   }, [appliedCount, session.actions.length]);
 
+  // 続けて dispatch しても最新の盤面に適用されるよう、盤面は ref でも持つ
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const dispatch = useCallback(
     (action: Action): boolean => {
-      const r = applyAction(state, action, ctx);
+      const r = applyAction(stateRef.current, action, ctx);
       if (!r.ok) {
         setError(r.error);
         return false;
       }
+      stateRef.current = r.state;
       setError(null);
       setSession((s) => ({ ...s, actions: [...s.actions, action] }));
       return true;
     },
-    [state, ctx],
+    [ctx],
   );
 
   const undo = useCallback(() => {
@@ -152,14 +170,17 @@ export function App() {
 
   const start = (p: Omit<Pending, 'picked' | 'stage'>) => {
     setError(null);
-    if (p.pickFrom) setPending({ ...p, picked: [], stage: 'pick' });
+    const presetZone = presetRef.current ?? undefined;
+    presetRef.current = null;
+    if (p.pickFrom) setPending({ ...p, presetZone, picked: [], stage: 'pick' });
+    else if (p.zone !== 'none' && presetZone) dispatch(p.build([], presetZone));
     else if (p.zone !== 'none') setPending({ ...p, picked: [], stage: 'zone' });
     else dispatch(p.build([], null));
   };
 
   const confirmPick = (p: Pending, picked = p.picked) => {
-    if (p.zone === 'none') {
-      if (dispatch(p.build(picked, null))) setPending(null);
+    if (p.zone === 'none' || p.presetZone) {
+      if (dispatch(p.build(picked, p.presetZone ?? null))) setPending(null);
     } else {
       setPending({ ...p, picked, stage: 'zone' });
     }
@@ -189,7 +210,12 @@ export function App() {
   const runEffect = (uid: string, effect: EffectDef) => {
     setError(null);
     setPending(null);
-    onRunResult(startEffect(state, ctx, uid, effect));
+    const preset = presetRef.current;
+    presetRef.current = null;
+    let r = startEffect(state, ctx, uid, effect, preset ?? undefined);
+    // ドラッグで出し先が決まっていれば最初のゾーン選択に使う
+    if (preset && r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, preset);
+    onRunResult(r);
   };
 
   const toggleRunPick = (uid: string) => {
@@ -254,6 +280,7 @@ export function App() {
   const summonButtons = (uid: string): Btn[] => {
     const ss = (position: BattlePosition, faceDown = false): Btn => ({
       label: faceDown ? '特殊召喚（裏守備）' : `特殊召喚（${position === 'atk' ? '攻撃' : '守備'}）`,
+      dest: 'monster',
       onClick: () =>
         start({
           title: `${def(uid).name}を特殊召喚`,
@@ -269,6 +296,7 @@ export function App() {
   const procedure = (uid: string, method: SummonMethod, label: string): Btn => ({
     label: `${label}召喚`,
     primary: true,
+    dest: 'monster',
     onClick: () =>
       start({
         title: `${def(uid).name}を${label}召喚`,
@@ -287,14 +315,18 @@ export function App() {
 
   const commonMoves = (uid: string, loc: Location): Btn[] => {
     const btns: Btn[] = [];
-    if (loc.zone !== 'hand') btns.push({ label: '手札へ', onClick: () => dispatch(move(uid, { zone: 'hand' })) });
-    if (loc.zone !== 'gy') btns.push({ label: '墓地へ', onClick: () => dispatch(move(uid, { zone: 'gy' })) });
-    if (loc.zone !== 'banished') btns.push({ label: '除外', onClick: () => dispatch(move(uid, { zone: 'banished' })) });
+    if (loc.zone !== 'hand') btns.push({ label: '手札へ', dest: 'hand', onClick: () => dispatch(move(uid, { zone: 'hand' })) });
+    if (loc.zone !== 'gy') btns.push({ label: '墓地へ', dest: 'gy', onClick: () => dispatch(move(uid, { zone: 'gy' })) });
+    if (loc.zone !== 'banished') btns.push({ label: '除外', dest: 'banished', onClick: () => dispatch(move(uid, { zone: 'banished' })) });
     if (loc.zone === 'banished' || loc.zone === 'gy' || loc.zone === 'hand') {
-      btns.push({ label: '裏側で除外', onClick: () => dispatch({ type: 'MOVE', uid, to: { zone: 'banished' }, faceUp: false }) });
+      btns.push({
+        label: '裏側で除外',
+        dest: 'banished',
+        onClick: () => dispatch({ type: 'MOVE', uid, to: { zone: 'banished' }, faceUp: false }),
+      });
     }
-    btns.push({ label: 'デッキの上へ', onClick: () => dispatch(move(uid, { zone: 'deck' })) });
-    btns.push({ label: 'デッキの下へ', onClick: () => dispatch(move(uid, { zone: 'deck' }, undefined, true)) });
+    btns.push({ label: 'デッキの上へ', dest: 'deck', onClick: () => dispatch(move(uid, { zone: 'deck' })) });
+    btns.push({ label: 'デッキの下へ', dest: 'deck', onClick: () => dispatch(move(uid, { zone: 'deck' }, undefined, true)) });
     return btns;
   };
 
@@ -307,7 +339,17 @@ export function App() {
     const script = CARD_SCRIPTS[d.id];
     const scriptedActivation = !!script?.effects?.some((e) => e.isCardActivation);
     for (const e of script?.effects ?? []) {
-      if (effectAvailable(state, uid, e)) btns.push({ label: e.label, primary: true, onClick: () => runEffect(uid, e) });
+      if (!effectAvailable(state, uid, e)) continue;
+      // 手札から発動する魔法・罠、自身を出す効果はドラッグでも使える
+      const dest: DropDest | undefined =
+        e.isCardActivation && loc.zone === 'hand'
+          ? d.spellType === 'field'
+            ? 'fz'
+            : 'stz'
+          : e.steps[0]?.op === 'place'
+            ? 'monster'
+            : undefined;
+      btns.push({ label: e.label, primary: true, dest, onClick: () => runEffect(uid, e) });
     }
     (script?.procedures ?? []).forEach((proc, i) => {
       if (!(proc.summonFrom as string[]).includes(loc.zone)) return;
@@ -315,6 +357,7 @@ export function App() {
       btns.push({
         label: `特殊召喚：${proc.label}`,
         primary: true,
+        dest: 'monster',
         onClick: () =>
           start({
             title: `${d.name}を特殊召喚（${proc.label}）`,
@@ -336,6 +379,7 @@ export function App() {
           btns.push({
             label: `追加召喚（${g.source}）`,
             primary: true,
+            dest: 'monster',
             onClick: () =>
               start({
                 title: `${d.name}を${g.source}の効果で召喚`,
@@ -350,6 +394,7 @@ export function App() {
           btns.push({
             label: `リリースなしで召喚（${g.source}）`,
             primary: true,
+            dest: 'monster',
             onClick: () =>
               start({
                 title: `${d.name}をリリースなしで召喚`,
@@ -365,6 +410,7 @@ export function App() {
         const ns = (set: boolean): Btn => ({
           label: set ? 'セット' : need ? `アドバンス召喚（リリース${need}）` : '通常召喚',
           primary: !set,
+          dest: 'monster',
           onClick: () =>
             start({
               title: `${d.name}を${set ? 'セット' : '召喚'}`,
@@ -386,10 +432,12 @@ export function App() {
       btns.push(...summonButtons(uid), effectBtn(uid));
     } else if (loc.zone === 'hand') {
       const toZone = d.spellType === 'field' ? 'none' : 'stz';
+      const dest: DropDest = d.spellType === 'field' ? 'fz' : 'stz';
       if (d.kind === 'spell' && !scriptedActivation) {
         btns.push({
           label: '発動',
           primary: true,
+          dest,
           onClick: () =>
             start({
               title: `${d.name}を発動`,
@@ -401,6 +449,7 @@ export function App() {
       }
       btns.push({
         label: 'セット',
+        dest,
         onClick: () =>
           start({
             title: `${d.name}をセット`,
@@ -424,6 +473,7 @@ export function App() {
       btns.push({ label: 'リリース', onClick: () => dispatch(move(uid, { zone: 'gy' }, 'リリース')) });
       btns.push({
         label: 'ゾーン移動',
+        dest: 'monster',
         onClick: () =>
           start({
             title: `${d.name}を移動`,
@@ -468,6 +518,7 @@ export function App() {
       else {
         btns.push({
           label: '魔法＆罠ゾーンに置く',
+          dest: d.spellType === 'field' ? 'fz' : 'stz',
           onClick: () =>
             start({
               title: `${d.name}を置く`,
@@ -482,6 +533,67 @@ export function App() {
 
     btns.push(...commonMoves(uid, loc));
     return btns;
+  };
+
+  // ===== ドラッグ＆ドロップ =====
+
+  const onDrop = (uid: string, target: string, x: number, y: number) => {
+    if (run || pending || !state.cards[uid]) return;
+    const [zone, idx] = target.split(':');
+    const loc: Location | null =
+      zone === 'mz' || zone === 'emz' || zone === 'stz' ? ({ zone, index: Number(idx) } as Location) : zone === 'fz' ? { zone: 'fz' } : null;
+    const destOf: Record<string, DropDest> = { mz: 'monster', emz: 'monster', stz: 'stz', fz: 'fz', hand: 'hand', gy: 'gy', banished: 'banished', deck: 'deck' };
+    const dest = destOf[zone];
+    const from = findLocation(state, uid);
+    if (!dest || (from && loc && JSON.stringify(from) === JSON.stringify(loc))) return;
+    if (from?.zone === zone && !loc) return;
+    const options = buttonsFor(uid)
+      .filter((b) => b.dest === dest)
+      .map((b) => ({
+        ...b,
+        onClick: () => {
+          presetRef.current = loc;
+          b.onClick();
+          presetRef.current = null;
+        },
+      }));
+    if (options.length === 0) setError(`${def(uid).name}はそこに置けません`);
+    else if (options.length === 1) options[0].onClick();
+    else setDropMenu({ x, y, title: def(uid).name, options });
+  };
+
+  const { drag, dragStart, onClickCapture } = useDrag(onDrop);
+
+  // ===== ルートガイド =====
+
+  const guide = TOON_GUIDES.find((g) => g.id === guideId) ?? null;
+  /** ログを先頭から見て、ガイドの手順が何手目まで終わっているか */
+  const guideDone = useMemo(() => {
+    if (!guide) return 0;
+    let pos = 0;
+    let done = 0;
+    for (const step of guide.steps) {
+      let found = -1;
+      for (let j = pos; j < state.log.length; j++) {
+        const text = state.log.slice(pos, j + 1).map((l) => l.text).join('\n');
+        if (stepMatches(step, text)) {
+          found = j;
+          break;
+        }
+      }
+      if (found < 0) break;
+      pos = found + 1;
+      done++;
+    }
+    return done;
+  }, [guide, state.log]);
+
+  const startGuide = (g: Guide) => {
+    setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, strict: true, actions: [] });
+    setGuideId(g.id);
+    setSelected(null);
+    setPending(null);
+    setRun(null);
   };
 
   // ===== 表示 =====
@@ -586,7 +698,7 @@ export function App() {
   );
 
   return (
-    <div className={`app ${run || pending ? 'busy' : ''}`}>
+    <div className={`app ${run || pending ? 'busy' : ''} ${drag ? 'dragging' : ''}`} onClickCapture={onClickCapture}>
       <header className="topbar">
         <h1>遊戯王 一人回し</h1>
         <div className="status">
@@ -661,6 +773,8 @@ export function App() {
             onCardClick={onCardClick}
             onZoneClick={onZoneClick}
             onPileClick={(z) => setPile(pile === z ? null : z)}
+            dragStart={run || pending ? undefined : dragStart}
+            dropTarget={drag?.target}
           />
           {pile && (
             <div className="pile-view">
@@ -680,13 +794,14 @@ export function App() {
                     selected={sel === u}
                     highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                     onClick={() => onCardClick(u)}
+                    onPointerDown={run || pending ? undefined : dragStart(u)}
                     small
                   />
                 ))}
               </div>
             </div>
           )}
-          <div className="hand">
+          <div className={`hand ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
             <div className="hand-label">手札 {view.hand.length}枚</div>
             <div className="hand-cards">
               {view.hand.map((u) => (
@@ -696,6 +811,7 @@ export function App() {
                   selected={sel === u}
                   highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                   onClick={() => onCardClick(u)}
+                  onPointerDown={run || pending ? undefined : dragStart(u)}
                 />
               ))}
             </div>
@@ -749,6 +865,17 @@ export function App() {
               <p className="note">カードをクリックすると操作が表示されます。デッキ・墓地・除外・EXはクリックで中身を表示。</p>
             )}
           </section>
+
+          <RoutePanel
+            state={state}
+            ctx={ctx}
+            actionCount={session.actions.length}
+            guides={TOON_GUIDES}
+            guideProgress={guide ? { id: guide.id, done: guideDone } : null}
+            dispatch={dispatch}
+            onStartGuide={startGuide}
+            onError={setError}
+          />
 
           <section className="log">
             <div className="log-head">
@@ -804,6 +931,40 @@ export function App() {
         </aside>
       </main>
 
+      {drag && state.cards[drag.uid] && (
+        <div className="drag-ghost" style={{ left: drag.x, top: drag.y }}>
+          <CardView def={def(drag.uid)} small />
+        </div>
+      )}
+
+      {dropMenu && (
+        <div className="drop-menu-backdrop" onClick={() => setDropMenu(null)}>
+          <div
+            className="drop-menu"
+            style={{
+              left: Math.max(8, Math.min(dropMenu.x, window.innerWidth - 260)),
+              top: Math.max(8, Math.min(dropMenu.y, window.innerHeight - 90 - dropMenu.options.length * 40)),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <strong>{dropMenu.title}</strong>
+            {dropMenu.options.map((o) => (
+              <button
+                key={o.label}
+                className={o.primary ? 'primary' : ''}
+                onClick={() => {
+                  setDropMenu(null);
+                  o.onClick();
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+            <button onClick={() => setDropMenu(null)}>キャンセル</button>
+          </div>
+        </div>
+      )}
+
       {showSetup && (
         <SetupDialog
           initial={{ ...session, seed: randomSeed() }}
@@ -816,6 +977,7 @@ export function App() {
               return;
             }
             setSession(s);
+            setGuideId(null);
             setSelected(null);
             setPending(null);
             setPile(null);
