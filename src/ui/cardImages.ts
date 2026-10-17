@@ -10,6 +10,10 @@ export type CardImages = Record<string, string>;
 
 export const CardImageContext = createContext<CardImages>({});
 
+/** 非公開ページのビルドで埋め込んだ画像（scripts/build-artifact.mjs）。自分で設定した画像が優先 */
+export const BUILTIN_IMAGES: CardImages =
+  (window as unknown as { __BUILTIN_CARD_IMAGES__?: CardImages }).__BUILTIN_CARD_IMAGES__ ?? {};
+
 export function loadAllImages(): CardImages {
   const out: CardImages = {};
   try {

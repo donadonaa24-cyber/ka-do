@@ -24,7 +24,15 @@ import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type
 import { SetupDialog } from './SetupDialog';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
-import { CardImageContext, type CardImages, fileToDataUrl, loadAllImages, removeImage, saveImage } from './cardImages';
+import {
+  BUILTIN_IMAGES,
+  CardImageContext,
+  type CardImages,
+  fileToDataUrl,
+  loadAllImages,
+  removeImage,
+  saveImage,
+} from './cardImages';
 import { TOON_GUIDES } from '../data/toonGuides';
 import { findGuideAction, type Guide } from '../engine/guide';
 import {
@@ -106,6 +114,8 @@ export function App() {
   const [coach, setCoach] = useState<Coach | null>(null);
   const [modal, setModal] = useState<'routes' | 'menu' | 'images' | null>(null);
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
+  /** 表示する画像：埋め込みの画像に、自分で設定した画像を上書き */
+  const shownImages = useMemo(() => ({ ...BUILTIN_IMAGES, ...images }), [images]);
   /** チェーンを上から順に解決している */
   const [resolvingChain, setResolvingChain] = useState(false);
   /** ナビモード：自動で最適ルートを探し、1手ずつ解説する */
@@ -966,10 +976,11 @@ export function App() {
     </div>
   );
 
-  const showStepPopup = coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup;
+  const showStepPopup =
+    coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup;
 
   return (
-    <CardImageContext.Provider value={images}>
+    <CardImageContext.Provider value={shownImages}>
       <div
         className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''}`}
         style={{ '--hand-w': `${handCardWidth(winWidth, winHeight)}px` } as React.CSSProperties}
@@ -1105,11 +1116,15 @@ export function App() {
                 {isOnField(selLoc) && !state.cards[sel].faceUp && '（裏側）'}
               </div>
               {selDef.materialText && <div className="meta">素材: {selDef.materialText}</div>}
-              {images[selDef.id] && <img className="detail-img" src={images[selDef.id]} alt={selDef.name} />}
+              {shownImages[selDef.id] && <img className="detail-img" src={shownImages[selDef.id]} alt={selDef.name} />}
               <p className="text">{selDef.text}</p>
               <div className="btn-row">
-                {imagePicker(selDef.id, images[selDef.id] ? '画像を変更' : '画像を設定')}
-                {images[selDef.id] && <button onClick={() => clearCardImage(selDef.id)}>画像を外す</button>}
+                {imagePicker(selDef.id, shownImages[selDef.id] ? '画像を変更' : '画像を設定')}
+                {images[selDef.id] && (
+                  <button onClick={() => clearCardImage(selDef.id)}>
+                    {BUILTIN_IMAGES[selDef.id] ? '最初の画像に戻す' : '画像を外す'}
+                  </button>
+                )}
               </div>
               {state.cards[sel].overlay.length > 0 && (
                 <div className="overlay-list">
@@ -1381,7 +1396,7 @@ export function App() {
               </div>
               <p className="note">
                 スマホに保存したカード画像をカードごとに選べます。画像はこのブラウザの中にだけ保存されます（設定済み{' '}
-                {deckCardIds.filter((id) => images[id]).length}/{deckCardIds.length}）。
+                {deckCardIds.filter((id) => shownImages[id]).length}/{deckCardIds.length}）。
               </p>
               <div className="img-settings">
                 {deckCardIds.map((id) => (
@@ -1389,8 +1404,10 @@ export function App() {
                     <CardView def={CARD_DB[id]} small />
                     <div className="grow">
                       <span>{CARD_DB[id].name}</span>
-                      {imagePicker(id, images[id] ? '変更' : '画像を選ぶ', true)}
-                      {images[id] && <button onClick={() => clearCardImage(id)}>外す</button>}
+                      {imagePicker(id, shownImages[id] ? '変更' : '画像を選ぶ', true)}
+                      {images[id] && (
+                        <button onClick={() => clearCardImage(id)}>{BUILTIN_IMAGES[id] ? '最初に戻す' : '外す'}</button>
+                      )}
                     </div>
                   </div>
                 ))}
