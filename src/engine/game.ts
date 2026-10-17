@@ -6,6 +6,8 @@ import {
   linkMaterialOptions,
   tributesRequired,
 } from './rules';
+import { type CardFilter, hasToonWorld, isToonMonster, matchesFilter } from './filters';
+import type { CardScript, Env } from './scripts';
 import type {
   Attribute,
   BattlePosition,
@@ -18,6 +20,7 @@ import type {
   LogEntry,
   Phase,
   PileZone,
+  SummonGrant,
 } from './types';
 import { isExtraDeckCard, PHASE_LABEL, PHASE_ORDER } from './types';
 
@@ -29,7 +32,17 @@ export type Action =
   | { type: 'NEXT_PHASE'; to?: Phase }
   | { type: 'END_TURN' }
   | { type: 'DRAW'; count?: number }
-  | { type: 'NORMAL_SUMMON'; uid: string; index: number; tributes?: string[]; set?: boolean }
+  | {
+      type: 'NORMAL_SUMMON';
+      uid: string;
+      index: number;
+      tributes?: string[];
+      set?: boolean;
+      /** 追加の召喚権を使う（summonGrants の番号） */
+      grant?: number;
+      /** リリースなし召喚の効果を使う（summonGrants の番号） */
+      noTributeGrant?: number;
+    }
   | { type: 'FLIP_SUMMON'; uid: string }
   | {
       type: 'SPECIAL_SUMMON';
@@ -49,10 +62,19 @@ export type Action =
       /** 融合・儀式素材の行き先（既定は墓地） */
       materialsTo?: 'gy' | 'banished';
     }
+  | {
+      /** カード固有の召喚条件による特殊召喚 */
+      type: 'PROC_SUMMON';
+      uid: string;
+      proc: number;
+      materials: string[];
+      to: MonsterLocation;
+      position?: BattlePosition;
+    }
   | { type: 'SET_SPELL_TRAP'; uid: string; index?: number }
   | { type: 'ACTIVATE_CARD'; uid: string; index?: number }
   | { type: 'RESOLVE'; uid: string }
-  | { type: 'ACTIVATE_EFFECT'; uid: string; label?: string }
+  | { type: 'ACTIVATE_EFFECT'; uid: string; label?: string; key?: string; limit?: number }
   | {
       type: 'MOVE';
       uid: string;
@@ -79,11 +101,18 @@ export type Action =
       position?: BattlePosition;
     }
   | { type: 'MILL'; count: number }
-  | { type: 'CHANGE_LP'; delta: number };
+  | { type: 'CHANGE_LP'; delta: number }
+  | { type: 'GRANT_SUMMON'; grant: SummonGrant }
+  | { type: 'SET_COUNTERS'; uid: string; value: number }
+  | { type: 'DOUBLE_ATTACK'; uid: string }
+  /** 複数の操作をまとめて1手として行う（効果処理など） */
+  | { type: 'BATCH'; label?: string; actions: Action[] };
 
 export interface Ctx {
   db: Record<string, CardDef>;
   options: GameOptions;
+  /** カード固有の召喚条件・効果（カードID → スクリプト） */
+  scripts?: Record<string, CardScript>;
 }
 
 export type ActionResult = { ok: true; state: GameState } | { ok: false; error: string };
@@ -148,6 +177,8 @@ export function createGame(
     log: [],
     nextUid,
     shuffleCount: 0,
+    summonGrants: [],
+    spellActivatedThisTurn: false,
   };
   log(state, `デュエル開始（先攻・シード ${seed}）。初手5枚をドロー。`, 'info');
   log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズも行えません。', 'info');
@@ -167,6 +198,8 @@ function newInstance(uid: string, defId: string): CardInstance {
     attackedTurn: null,
     pendingResolve: false,
     faceUpInExtra: false,
+    attackCount: 0,
+    doubleAttackTurn: null,
   };
 }
 
@@ -177,6 +210,21 @@ export function getDef(state: GameState, ctx: Ctx, uid: string): CardDef {
   const def = state.tokenDefs[inst.defId] ?? ctx.db[inst.defId];
   if (!def) throw new Error(`カード定義がありません: ${inst.defId}`);
   return def;
+}
+
+export function makeEnv(state: GameState, ctx: Ctx, self: string): Env {
+  const def = (uid: string) => getDef(state, ctx, uid);
+  const toonWorld = hasToonWorld(state, def);
+  return {
+    state,
+    ctx,
+    self,
+    def,
+    loc: (uid) => findLocation(state, uid),
+    toonWorld,
+    isToon: (uid) => isToonMonster(def(uid), toonWorld),
+    matches: (uid, filter) => matchesFilter(def(uid), filter, toonWorld),
+  };
 }
 
 export function findLocation(state: GameState, uid: string): Location | null {
@@ -261,6 +309,8 @@ function resetInstance(inst: CardInstance) {
   inst.attackedTurn = null;
   inst.pendingResolve = false;
   inst.faceUpInExtra = false;
+  inst.attackCount = 0;
+  inst.doubleAttackTurn = null;
 }
 
 interface PlaceOpts {
@@ -364,8 +414,12 @@ function checkMonsterZoneFree(state: GameState, ctx: Ctx, to: MonsterLocation, i
 }
 
 /** EXデッキから特殊召喚するモンスターの置き場所（マスタールール2020年4月改訂） */
-function checkExtraDeckPlacement(state: GameState, ctx: Ctx, uid: string, to: MonsterLocation) {
+function checkExtraDeckPlacement(state: GameState, ctx: Ctx, uid: string, to: MonsterLocation, from: Location | null) {
   if (!ctx.options.strict) return;
+  if (from?.zone !== 'extra') {
+    if (to.zone === 'emz') fail('EXモンスターゾーンにはEXデッキから特殊召喚するモンスターしか出せません');
+    return;
+  }
   const def = getDef(state, ctx, uid);
   const inst = state.cards[uid];
   const needsLinkedZone = def.frame === 'link' || (def.pendulumScale !== undefined && inst.faceUpInExtra);
@@ -460,6 +514,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       state.phase = 'DP';
       state.normalSummonUsed = false;
       state.effectUses = {};
+      state.spellActivatedThisTurn = false;
+      state.summonGrants = state.summonGrants.filter((g) => !g.thisTurnOnly);
       log(state, `ターン${state.turn}開始（ドローフェイズ）`, 'info');
       drawCards(state, 1);
       return;
@@ -476,15 +532,27 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const def = getDef(state, ctx, uid);
       checkSummonable(state, ctx, uid);
       requireMainPhase(state, ctx, '通常召喚');
+      const toonWorld = hasToonWorld(state, (u) => getDef(state, ctx, u));
+      const grant = action.grant !== undefined ? state.summonGrants[action.grant] : undefined;
+      const noTrib = action.noTributeGrant !== undefined ? state.summonGrants[action.noTributeGrant] : undefined;
+      if (action.grant !== undefined && !grant?.extraSummon) fail('使える追加の召喚権がありません');
+      if (action.noTributeGrant !== undefined && !noTrib?.noTribute) fail('リリースなしで召喚できる効果がありません');
       if (strict) {
         if (!state.hand.includes(uid)) fail('通常召喚は手札のモンスターのみ行えます');
-        if (state.normalSummonUsed) fail('通常召喚（セット）はターンに1度までです');
+        if (!grant && state.normalSummonUsed) fail('通常召喚（セット）はターンに1度までです');
+        if (grant && action.set) fail('追加の召喚権ではセットできません');
+        if (grant && !matchesFilter(def, grant.filter, toonWorld)) fail(`${def.name}は「${grant.source}」の効果で召喚できません`);
+        if (noTrib && !matchesFilter(def, noTrib.filter, toonWorld)) fail(`${def.name}は「${noTrib.source}」の効果の対象外です`);
         if (isExtraDeckCard(def) || def.frame === 'ritual' || def.cannotNormalSummon) {
           fail(`${def.name}は通常召喚できません`);
         }
-        const need = tributesRequired(def.level ?? 0);
+        const need = noTrib ? 0 : tributesRequired(def.level ?? 0);
         if (tributes.length !== need) fail(`${def.name}の召喚にはリリースが${need}体必要です`);
         for (const t of tributes) if (!isMonsterZone(findLocation(state, t))) fail('リリースは自分フィールドのモンスターから選んでください');
+      }
+      // 使った召喚権・効果を消費（番号がずれないよう大きい方から）
+      for (const i of [action.grant, action.noTributeGrant].filter((x): x is number => x !== undefined).sort((a, b) => b - a)) {
+        state.summonGrants.splice(i, 1);
       }
       checkMonsterZoneFree(state, ctx, { zone: 'mz', index }, tributes);
       const tributeNames = tributes.map((t) => name(state, ctx, t));
@@ -494,8 +562,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         position: action.set ? 'def' : 'atk',
       });
       state.cards[uid].enteredTurn = state.turn;
-      state.normalSummonUsed = true;
-      const how = tributes.length ? `${tributeNames.join('・')}をリリースしてアドバンス` : '通常';
+      if (!grant) state.normalSummonUsed = true;
+      const how = grant ? `${grant.source}の効果で` : noTrib ? `${noTrib.source}の効果でリリースなしで` : tributes.length ? `${tributeNames.join('・')}をリリースしてアドバンス` : '通常';
       log(state, action.set ? `${def.name}を${how}セット` : `${def.name}を${how}召喚`, 'summon');
       return;
     }
@@ -516,7 +584,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const from = findLocation(state, uid);
       if (isMonsterZone(from)) fail('既にフィールドにいます');
       checkMonsterZoneFree(state, ctx, to);
-      if (from?.zone === 'extra') checkExtraDeckPlacement(state, ctx, uid, to);
+      checkExtraDeckPlacement(state, ctx, uid, to, from);
       const faceDown = !!action.faceDown;
       moveCard(state, ctx, uid, to, {
         faceUp: !faceDown,
@@ -565,11 +633,18 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'ACTIVATE_EFFECT': {
       const def = getDef(state, ctx, action.uid);
-      const count = (state.effectUses[def.name] ?? 0) + 1;
-      state.effectUses[def.name] = count;
+      const key = action.key ?? def.name;
+      const count = (state.effectUses[key] ?? 0) + 1;
+      if (strict && action.limit !== undefined && count > action.limit) {
+        fail(`${def.name}のこの効果は1ターンに${action.limit}度までです`);
+      }
+      state.effectUses[key] = count;
+      if (def.kind === 'spell') state.spellActivatedThisTurn = true;
       const label = action.label ? `「${action.label}」` : '';
       log(state, `${def.name}の効果${label}を発動`, 'activate');
-      if (count > 1) log(state, `※ ${def.name}の効果はこのターン${count}回目です（ターン1制限に注意）`, 'warn');
+      if (action.limit === undefined && count > 1) {
+        log(state, `※ ${def.name}の効果はこのターン${count}回目です（ターン1制限に注意）`, 'warn');
+      }
       return;
     }
     case 'MOVE': {
@@ -587,6 +662,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         position: action.position,
         toBottom: action.toBottom,
       });
+      // フィールドに出たターンを記録（セットした罠を同じターンに発動できない等の判定用）
+      if (dest && isOnField(dest) && !isOnField(from)) state.cards[uid].enteredTurn = state.turn;
       if (dest) {
         const where = dest.zone === 'deck' ? (action.toBottom ? 'デッキの一番下' : 'デッキの一番上') : locLabel(dest);
         log(
@@ -619,10 +696,17 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (state.phase !== 'BP') fail('攻撃はバトルフェイズに行います');
         if (state.turn === 1) fail('先攻1ターン目は攻撃できません');
         if (!inst.faceUp || inst.position !== 'atk') fail('表側攻撃表示のモンスターのみ攻撃できます');
-        if (inst.attackedTurn === state.turn) fail('このモンスターは既に攻撃しています');
+        const maxAttacks = inst.doubleAttackTurn === state.turn ? 2 : 1;
+        if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks) fail('このモンスターは既に攻撃しています');
+        if (def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn) fail(`${def.name}は召喚・特殊召喚したターンには攻撃できません`);
       }
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
+      inst.attackCount = inst.attackedTurn === state.turn ? inst.attackCount + 1 : 1;
       inst.attackedTurn = state.turn;
+      if (def.attackCost) {
+        state.lp -= def.attackCost;
+        log(state, `攻撃宣言のコストとして${def.attackCost}LPを払った（LP ${state.lp}）`, 'info');
+      }
       const dmg = def.atk ?? 0;
       state.opponentLp = Math.max(0, state.opponentLp - dmg);
       log(state, `${def.name}で直接攻撃！ ${dmg}ダメージ（相手LP ${state.opponentLp}）`, 'activate');
@@ -668,6 +752,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'CREATE_TOKEN': {
       checkMonsterZoneFree(state, ctx, action.to);
+      if (strict && action.to.zone === 'emz') fail('トークンはEXモンスターゾーンに出せません');
       const defId = `token-${state.nextUid}`;
       state.tokenDefs[defId] = {
         id: defId,
@@ -699,6 +784,28 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       log(state, `LP ${action.delta > 0 ? '+' : ''}${action.delta}（${state.lp}）`, 'info');
       return;
     }
+    case 'PROC_SUMMON':
+      return specialProcedure(state, ctx, action);
+    case 'GRANT_SUMMON': {
+      state.summonGrants.push(action.grant);
+      const what = [action.grant.extraSummon && '追加の召喚', action.grant.noTribute && 'リリースなし召喚'].filter(Boolean).join('・');
+      log(state, `${action.grant.source}の効果：${what}が可能になった`, 'info');
+      return;
+    }
+    case 'SET_COUNTERS': {
+      state.cards[action.uid].counters = Math.max(0, action.value);
+      log(state, `${name(state, ctx, action.uid)}のカウンター：${state.cards[action.uid].counters}`, 'info');
+      return;
+    }
+    case 'DOUBLE_ATTACK': {
+      state.cards[action.uid].doubleAttackTurn = state.turn;
+      log(state, `${name(state, ctx, action.uid)}はこのターン2回攻撃できる`, 'info');
+      return;
+    }
+    case 'BATCH': {
+      for (const a of action.actions) reduce(state, a, ctx);
+      return;
+    }
   }
 }
 
@@ -712,6 +819,10 @@ function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
   const fromHand = from.zone === 'hand';
   const isSet = (from.zone === 'stz' || from.zone === 'fz') && !inst.faceUp;
   if (!fromHand && !isSet) fail('手札かセットされたカードのみ発動できます');
+  const activationKey = `${def.name}:発動`;
+  if (strict && def.oncePerTurnActivation && state.effectUses[activationKey]) {
+    fail(`${def.name}は1ターンに1枚しか発動できません`);
+  }
 
   if (strict) {
     if (def.kind === 'trap') {
@@ -746,7 +857,8 @@ function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
     def.spellType === 'field' ||
     def.trapType === 'continuous';
   inst.pendingResolve = !staysOnField;
-  state.effectUses[def.name] = (state.effectUses[def.name] ?? 0) + 1;
+  state.effectUses[activationKey] = (state.effectUses[activationKey] ?? 0) + 1;
+  if (def.kind === 'spell') state.spellActivatedThisTurn = true;
   log(state, `${def.name}を発動${staysOnField ? '' : '（処理後に「解決」で墓地へ）'}`, 'activate');
 }
 
@@ -840,19 +952,58 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
       overlay.push(m);
     }
     checkMonsterZoneFree(state, ctx, to);
-    if (from?.zone === 'extra') checkExtraDeckPlacement(state, ctx, uid, to);
+    checkExtraDeckPlacement(state, ctx, uid, to, from);
     moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
     state.cards[uid].overlay = overlay;
   } else {
     sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy');
     checkMonsterZoneFree(state, ctx, to);
-    if (from?.zone === 'extra') checkExtraDeckPlacement(state, ctx, uid, to);
+    checkExtraDeckPlacement(state, ctx, uid, to, from);
     const position = method === 'link' ? 'atk' : action.position ?? 'atk';
     moveCard(state, ctx, uid, to, { faceUp: true, position });
   }
   state.cards[uid].enteredTurn = state.turn;
   log(state, `${matNames}を素材に${def.name}を${label}召喚（${locLabel(to)}）`, 'summon');
 }
+
+function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { type: 'PROC_SUMMON' }>) {
+  const { uid, materials, to } = action;
+  const def = getDef(state, ctx, uid);
+  const proc = ctx.scripts?.[def.id]?.procedures?.[action.proc];
+  if (!proc) fail(`${def.name}の召喚方法が見つかりません`);
+  const from = findLocation(state, uid);
+  if (ctx.options.strict) {
+    requireMainPhase(state, ctx, '特殊召喚');
+    if (!from || !(proc.summonFrom as string[]).includes(from.zone)) fail(`${def.name}はこの場所から特殊召喚できません`);
+    if (materials.includes(uid)) fail('召喚するモンスター自身は選べません');
+    const key = `${def.name}:召喚条件`;
+    if (proc.oncePerTurn && state.effectUses[key]) fail(`${def.name}のこの方法での特殊召喚は1ターンに1度です`);
+    const err = proc.validate(makeEnv(state, ctx, uid), materials);
+    if (err) fail(err);
+  }
+  if (proc.oncePerTurn) state.effectUses[`${def.name}:召喚条件`] = 1;
+  const matNames = materials.map((m) => name(state, ctx, m));
+  for (const m of materials) moveCard(state, ctx, m, { zone: proc.materialsTo });
+  checkMonsterZoneFree(state, ctx, to);
+  checkExtraDeckPlacement(state, ctx, uid, to, from);
+  moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
+  state.cards[uid].enteredTurn = state.turn;
+  const cost = matNames.length ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、` : '';
+  log(state, `${cost}${def.name}を特殊召喚（${proc.label}）`, 'summon');
+}
+
+/** 効果処理で選べるカード */
+export function candidates(state: GameState, zones: string[]): string[] {
+  const out: string[] = [];
+  for (const z of zones) {
+    if (z === 'deck' || z === 'hand' || z === 'gy' || z === 'banished' || z === 'extra') out.push(...state[z]);
+    if (z === 'monsters' || z === 'field') out.push(...fieldMonsters(state));
+    if (z === 'spelltraps' || z === 'field') out.push(...state.stz.filter((u): u is string => !!u), ...(state.fz ? [state.fz] : []));
+  }
+  return [...new Set(out)];
+}
+
+export type { CardFilter };
 
 // ===== リプレイ =====
 

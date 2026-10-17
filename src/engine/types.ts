@@ -45,6 +45,22 @@ export interface CardDef {
   fusionMaterialCount?: number;
   /** 素材条件の補足（表示用） */
   materialText?: string;
+  /** カテゴリ（「トゥーン」カードなど） */
+  archetypes?: string[];
+  /** トゥーンモンスター */
+  toon?: boolean;
+  /** 「トゥーン・ワールド」が存在する限りトゥーンモンスターとして扱う */
+  toonWithWorld?: boolean;
+  /** フィールドゾーンにある限り「トゥーン・ワールド」として扱う */
+  treatedAsToonWorld?: boolean;
+  /** フィールド・墓地に存在する限りこのカード名として扱う */
+  treatedAsName?: string;
+  /** 召喚・特殊召喚したターンは攻撃できない */
+  cannotAttackTurnSummoned?: boolean;
+  /** 攻撃宣言時に払うLP */
+  attackCost?: number;
+  /** 「このカード名のカードは１ターンに１枚しか発動できない」 */
+  oncePerTurnActivation?: boolean;
   // --- 魔法・罠 ---
   spellType?: SpellType;
   trapType?: TrapType;
@@ -90,6 +106,24 @@ export interface CardInstance {
   pendingResolve: boolean;
   /** エクストラデッキに表側で存在する（Pモンスター） */
   faceUpInExtra: boolean;
+  /** attackedTurn のターンに攻撃した回数 */
+  attackCount: number;
+  /** 2回攻撃できるターン */
+  doubleAttackTurn: number | null;
+}
+
+/** 効果で得た追加の召喚権・リリースなし召喚 */
+export interface SummonGrant {
+  /** 効果の出どころ（表示用） */
+  source: string;
+  /** 通常召喚に加えて行える召喚 */
+  extraSummon: boolean;
+  /** リリースなしで召喚できる */
+  noTribute: boolean;
+  /** 対象にできるモンスター */
+  filter: import('./filters').CardFilter;
+  /** ターン終了時に消える */
+  thisTurnOnly: boolean;
 }
 
 export type Phase = 'DP' | 'SP' | 'M1' | 'BP' | 'M2' | 'EP';
@@ -140,6 +174,9 @@ export interface GameState {
   nextUid: number;
   /** ゲーム中にシャッフルした回数（リプレイの再現用） */
   shuffleCount: number;
+  summonGrants: SummonGrant[];
+  /** このターンに魔法カードの効果が発動したか */
+  spellActivatedThisTurn: boolean;
 }
 
 export interface DeckList {

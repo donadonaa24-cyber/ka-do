@@ -152,6 +152,11 @@ describe('EXデッキからの召喚', () => {
     expect(s3.mz[2]).toBe(link1);
   });
 
+  it('メインデッキのモンスターはEXモンスターゾーンに出せない', () => {
+    const { s, t } = withTwoMonsters();
+    expect(err(s, { type: 'SPECIAL_SUMMON', uid: t, to: { zone: 'emz', index: 0 } })).toMatch('EXデッキから');
+  });
+
   it('リンク素材はリンクモンスターをリンクマーカー数として数えられる', () => {
     const { s, a, b, t } = withTwoMonsters();
     const link2 = extraOf(s, 't-link2');

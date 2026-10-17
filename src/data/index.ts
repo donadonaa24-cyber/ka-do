@@ -1,8 +1,67 @@
+import type { CardScript } from '../engine/scripts';
 import type { CardDef, DeckList } from '../engine/types';
 import { TEST_CARDS, TEST_DECK } from './testCards';
+import { TOON_CARD_DATA } from './toonCards.generated';
+import { TOON_OVERRIDES, TOON_SCRIPTS } from './toonScripts';
 
-export const ALL_CARDS: CardDef[] = [...TEST_CARDS];
+const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
+
+export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...TEST_CARDS];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
 
-export const DECKS: DeckList[] = [TEST_DECK];
+export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS };
+
+const n = (id: string, count: number) => Array<string>(count).fill(id);
+
+/** gachi-matome のデッキレシピ（トゥーン） */
+export const TOON_DECK: DeckList = {
+  name: 'トゥーン',
+  main: [
+    // モンスター 21枚
+    ...n('28711704', 1), // トゥーン・カオス・ソルジャー
+    ...n('53183600', 1), // ブルーアイズ・トゥーン・ドラゴン
+    ...n('21296502', 1), // トゥーン・ブラック・マジシャン
+    ...n('8915275', 2), // エビル・ボックス
+    ...n('90960358', 1), // トゥーン・ブラック・マジシャン・ガール
+    ...n('34314989', 2), // 闇の眼を持つ幻想師・ノー・フェイス
+    ...n('64116319', 1), // トゥーン・ハーピィ・レディ
+    ...n('45536531', 3), // ファニー・ダーク・ラビット
+    ...n('59438930', 1), // 幽鬼うさぎ
+    ...n('14558127', 2), // 灰流うらら
+    ...n('23434538', 1), // 増殖するＧ
+    ...n('55363218', 1), // カートゥーン・シェード
+    ...n('72921536', 3), // コミックキャット
+    ...n('94145021', 1), // ドロール＆ロックバード
+    // 魔法 9枚
+    ...n('91500017', 3), // トゥーンのしおり
+    ...n('89997728', 1), // トゥーンのもくじ
+    ...n('70560957', 1), // トゥーン・ロールバック
+    ...n('65681983', 1), // 抹殺の指名者
+    ...n('22283204', 1), // ティマイオスの眼光
+    ...n('7293697', 1), // 完全なる世界 トゥーン・ワールド
+    ...n('43175858', 1), // トゥーン・キングダム
+    // 罠 10枚
+    ...n('10045474', 3), // 無限泡影
+    ...n('5832914', 1), // トゥーンのかばん
+    ...n('6325660', 3), // 霆王の閃光（ドミナス・スパーク）
+    ...n('24207889', 1), // センサー万別
+    ...n('34298391', 1), // 心を見通す眼
+    ...n('53094821', 1), // トゥーン・テラー
+  ],
+  extra: [
+    ...n('71808988', 2), // ブルーアイズ・トゥーン・アルティメットドラゴン
+    ...n('37818794', 1), // 超魔導竜騎士－ドラグーン・オブ・レッドアイズ
+    ...n('59400890', 1), // 滅びの黒魔術師
+    ...n('93039339', 3), // 厄災の星ティ・フォン（レシピの「3 1」は3枚と解釈）
+    ...n('4731783', 1), // 光なき影 ア＝バオ・ア・クゥー
+    ...n('45819647', 1), // 神聖魔皇后セレーネ
+    ...n('53904087', 1), // 神書の使いラハムゥ
+    ...n('65741786', 1), // Ｉ：Ｐマスカレーナ
+    ...n('29301450', 1), // Ｓ：Ｐリトルナイト
+    ...n('50277355', 1), // クロシープ
+    ...n('94259633', 2), // サクリファイス・アニマ（レシピに2行あったため2枚）
+  ],
+};
+
+export const DECKS: DeckList[] = [TOON_DECK, TEST_DECK];

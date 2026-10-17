@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CARD_DB, DECKS } from '../data';
+import { CARD_DB, CARD_SCRIPTS, DECKS } from '../data';
 import {
   type Action,
   applyAction,
@@ -9,6 +9,7 @@ import {
   getDef,
   isMonsterZone,
   isOnField,
+  makeEnv,
   type MonsterLocation,
   type SummonMethod,
   ZONE_LABEL,
@@ -21,8 +22,22 @@ import { Board } from './Board';
 import { CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
+import {
+  afterPick,
+  completeStep,
+  currentStep,
+  effectAvailable,
+  pickRange,
+  type RunResult,
+  type Running,
+  runZoneKind,
+  startEffect,
+  stepCandidates,
+} from './effectRunner';
+import { matchesFilter } from '../engine/filters';
+import type { EffectDef } from '../engine/scripts';
 
-type PickSource = 'field' | 'hand';
+type PickSource = 'field' | 'hand' | 'gy';
 
 /** 素材やゾーンの選択を伴う操作 */
 interface Pending {
@@ -33,6 +48,8 @@ interface Pending {
   picked: string[];
   stage: 'pick' | 'zone';
   zone: 'monster' | 'stz' | 'none';
+  /** EXモンスターゾーンを選べる（EXデッキからの特殊召喚） */
+  allowEmz?: boolean;
   build: (picked: string[], zone: Location | null) => Action;
 }
 
@@ -51,19 +68,23 @@ const defaultSession = (): SessionData => ({
 });
 
 /** 記録済みの操作は検証済みなので、再生時はルールチェックなしで適用する */
-const replayCtx: Ctx = { db: CARD_DB, options: { strict: false } };
+const replayCtx: Ctx = { db: CARD_DB, options: { strict: false }, scripts: CARD_SCRIPTS };
 
 export function App() {
   const [session, setSession] = useState<SessionData>(() => loadCurrent() ?? defaultSession());
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [run, setRun] = useState<Running | null>(null);
   const [pile, setPile] = useState<PileZone | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
 
-  const ctx: Ctx = useMemo(() => ({ db: CARD_DB, options: { strict: session.strict } }), [session.strict]);
+  const ctx: Ctx = useMemo(
+    () => ({ db: CARD_DB, options: { strict: session.strict }, scripts: CARD_SCRIPTS }),
+    [session.strict],
+  );
   const deck = DECKS.find((d) => d.name === session.deckName) ?? DECKS[0];
 
   const { state, appliedCount } = useMemo(() => {
@@ -102,6 +123,7 @@ export function App() {
 
   const undo = useCallback(() => {
     setPending(null);
+    setRun(null);
     setError(null);
     setSession((s) => ({ ...s, actions: s.actions.slice(0, -1) }));
   }, []);
@@ -113,6 +135,7 @@ export function App() {
         undo();
       } else if (e.key === 'Escape') {
         setPending(null);
+        setRun(null);
         setSelected(null);
       }
     };
@@ -144,11 +167,43 @@ export function App() {
   const canPick = (p: Pending, uid: string) => {
     const loc = findLocation(state, uid);
     return (
-      (p.pickFrom!.includes('field') && isMonsterZone(loc)) || (p.pickFrom!.includes('hand') && loc?.zone === 'hand')
+      (p.pickFrom!.includes('field') && isMonsterZone(loc)) ||
+      (p.pickFrom!.includes('hand') && loc?.zone === 'hand') ||
+      (p.pickFrom!.includes('gy') && loc?.zone === 'gy')
     );
   };
 
+  const onRunResult = (r: RunResult) => {
+    if (r.kind === 'error') {
+      setError(r.error);
+      setRun(null);
+    } else if (r.kind === 'running') {
+      setRun(r.run);
+    } else {
+      setRun(null);
+      dispatch(r.action);
+    }
+  };
+
+  const runEffect = (uid: string, effect: EffectDef) => {
+    setError(null);
+    setPending(null);
+    onRunResult(startEffect(state, ctx, uid, effect));
+  };
+
+  const toggleRunPick = (uid: string) => {
+    if (!run || run.stage !== 'pick' || !stepCandidates(run, ctx).includes(uid)) return;
+    const [, max] = pickRange(run, ctx);
+    if (max === 1) {
+      onRunResult(afterPick({ ...run, picked: [uid] }, ctx));
+      return;
+    }
+    const picked = run.picked.includes(uid) ? run.picked.filter((u) => u !== uid) : [...run.picked, uid];
+    if (picked.length <= max) setRun({ ...run, picked });
+  };
+
   const onCardClick = (uid: string) => {
+    if (run) return toggleRunPick(uid);
     if (pending?.stage === 'pick') {
       if (!canPick(pending, uid)) return;
       if (pending.single) return confirmPick(pending, [uid]);
@@ -162,7 +217,15 @@ export function App() {
   };
 
   const zoneSelectable = (loc: Location) => {
+    if (run) {
+      const kind = runZoneKind(run);
+      if (loc.zone === 'emz' && findLocation(run.temp, run.picked[0] ?? '')?.zone !== 'extra') return false;
+      if (kind === 'monster' && (loc.zone === 'mz' || loc.zone === 'emz')) return !run.temp[loc.zone][loc.index];
+      if (kind === 'stz' && loc.zone === 'stz') return !run.temp.stz[loc.index];
+      return false;
+    }
     if (pending?.stage !== 'zone') return false;
+    if (loc.zone === 'emz' && !pending.allowEmz) return false;
     if (pending.zone === 'monster' && (loc.zone === 'mz' || loc.zone === 'emz')) {
       const occ = state[loc.zone][loc.index];
       return !occ || pending.picked.includes(occ);
@@ -172,6 +235,7 @@ export function App() {
   };
 
   const onZoneClick = (loc: Location) => {
+    if (run) return onRunResult(completeStep(run, ctx, loc));
     if (!pending) return;
     if (dispatch(pending.build(pending.picked, loc))) setPending(null);
   };
@@ -194,6 +258,7 @@ export function App() {
           title: `${def(uid).name}を特殊召喚`,
           hint: '出すゾーンを選択',
           zone: 'monster',
+          allowEmz: findLocation(state, uid)?.zone === 'extra',
           build: (_, z) => ({ type: 'SPECIAL_SUMMON', uid, to: z as MonsterLocation, position, faceDown }),
         }),
     });
@@ -209,6 +274,7 @@ export function App() {
         hint: `${def(uid).materialText ?? ''} 素材を選んで「決定」→ 出すゾーンを選択`,
         pickFrom: method === 'fusion' || method === 'ritual' ? ['hand', 'field'] : ['field'],
         zone: 'monster',
+        allowEmz: method !== 'ritual',
         build: (picked, z) => ({ type: 'PROCEDURE_SUMMON', method, uid, materials: picked, to: z as MonsterLocation }),
       }),
   });
@@ -240,9 +306,63 @@ export function App() {
     const loc = findLocation(state, uid);
     if (!loc) return [];
     const btns: Btn[] = [];
+    const script = CARD_SCRIPTS[d.id];
+    const scriptedActivation = !!script?.effects?.some((e) => e.isCardActivation);
+    for (const e of script?.effects ?? []) {
+      if (effectAvailable(state, uid, e)) btns.push({ label: e.label, primary: true, onClick: () => runEffect(uid, e) });
+    }
+    (script?.procedures ?? []).forEach((proc, i) => {
+      if (!(proc.summonFrom as string[]).includes(loc.zone)) return;
+      const pickFrom: PickSource[] = proc.from.map((f) => (f === 'monsters' ? 'field' : f === 'gy' ? 'gy' : 'hand'));
+      btns.push({
+        label: `特殊召喚：${proc.label}`,
+        primary: true,
+        onClick: () =>
+          start({
+            title: `${d.name}を特殊召喚（${proc.label}）`,
+            hint: `${proc.hint}（墓地のカードは墓地を開いて選択）→「決定」→ ゾーンを選択`,
+            pickFrom: pickFrom.length ? pickFrom : undefined,
+            zone: 'monster',
+            allowEmz: loc.zone === 'extra',
+            build: (picked, z) => ({ type: 'PROC_SUMMON', uid, proc: i, materials: picked, to: z as MonsterLocation }),
+          }),
+      });
+    });
 
     if (loc.zone === 'hand' && d.kind === 'monster') {
-      if (!isExtraDeckCard(d)) {
+      const env = makeEnv(state, ctx, uid);
+      state.summonGrants.forEach((g, gi) => {
+        if (!matchesFilter(d, g.filter, env.toonWorld)) return;
+        if (g.extraSummon) {
+          const need = tributesRequired(d.level ?? 0);
+          btns.push({
+            label: `追加召喚（${g.source}）`,
+            primary: true,
+            onClick: () =>
+              start({
+                title: `${d.name}を${g.source}の効果で召喚`,
+                hint: need ? `リリースするモンスターを${need}体選んで「決定」→ ゾーンを選択` : 'ゾーンを選択',
+                pickFrom: need ? ['field'] : undefined,
+                zone: 'monster',
+                build: (picked, z) => ({ type: 'NORMAL_SUMMON', uid, index: (z as MonsterLocation).index, tributes: picked, grant: gi }),
+              }),
+          });
+        }
+        if (g.noTribute && (d.level ?? 0) >= 5) {
+          btns.push({
+            label: `リリースなしで召喚（${g.source}）`,
+            primary: true,
+            onClick: () =>
+              start({
+                title: `${d.name}をリリースなしで召喚`,
+                hint: 'ゾーンを選択',
+                zone: 'monster',
+                build: (_, z) => ({ type: 'NORMAL_SUMMON', uid, index: (z as MonsterLocation).index, noTributeGrant: gi }),
+              }),
+          });
+        }
+      });
+      if (!isExtraDeckCard(d) && !d.cannotNormalSummon) {
         const need = tributesRequired(d.level ?? 0);
         const ns = (set: boolean): Btn => ({
           label: set ? 'セット' : need ? `アドバンス召喚（リリース${need}）` : '通常召喚',
@@ -268,7 +388,7 @@ export function App() {
       btns.push(...summonButtons(uid), effectBtn(uid));
     } else if (loc.zone === 'hand') {
       const toZone = d.spellType === 'field' ? 'none' : 'stz';
-      if (d.kind === 'spell') {
+      if (d.kind === 'spell' && !scriptedActivation) {
         btns.push({
           label: '発動',
           primary: true,
@@ -311,6 +431,7 @@ export function App() {
             title: `${d.name}を移動`,
             hint: '移動先のゾーンを選択',
             zone: 'monster',
+            allowEmz: true,
             build: (_, z) => ({ type: 'MOVE', uid, to: z!, faceUp: inst.faceUp, position: inst.position }),
           }),
       });
@@ -330,8 +451,8 @@ export function App() {
       }
     } else if (loc.zone === 'stz' || loc.zone === 'fz') {
       if (inst.pendingResolve) btns.push({ label: '解決（墓地へ）', primary: true, onClick: () => dispatch({ type: 'RESOLVE', uid }) });
-      if (!inst.faceUp) btns.push({ label: '発動', primary: true, onClick: () => dispatch({ type: 'ACTIVATE_CARD', uid }) });
-      else btns.push(effectBtn(uid));
+      if (!inst.faceUp && !scriptedActivation) btns.push({ label: '発動', primary: true, onClick: () => dispatch({ type: 'ACTIVATE_CARD', uid }) });
+      else if (inst.faceUp) btns.push(effectBtn(uid));
     } else if (loc.zone === 'extra') {
       const methods: Partial<Record<string, [SummonMethod, string]>> = {
         fusion: ['fusion', '融合'],
@@ -369,7 +490,13 @@ export function App() {
 
   const selDef = sel ? def(sel) : null;
   const selLoc = sel ? findLocation(state, sel) : null;
-  const pileCards = pile ? state[pile] : [];
+  // 効果処理中は途中経過の盤面を表示する
+  const view = run?.temp ?? state;
+  const vdef = (uid: string) => getDef(view, ctx, uid);
+  const pileCards = pile ? view[pile] : [];
+  const runStep = run && currentStep(run);
+  const runCands = run ? stepCandidates(run, ctx) : [];
+  const [runMin, runMax] = run ? pickRange(run, ctx) : [0, 0];
 
   const saveRoute = () => {
     const name = window.prompt('ルート名', `${deck.name} シード${session.seed}`);
@@ -400,6 +527,58 @@ export function App() {
           </button>
         )}
         <button onClick={() => setPending(null)}>キャンセル</button>
+      </div>
+    </div>
+  );
+
+  const runPanel = run && (
+    <div className="pending run">
+      <strong>{run.title}</strong>
+      <span>
+        {run.stage === 'zone'
+          ? runStep?.op === 'place'
+            ? runStep.prompt
+            : '出す（置く）ゾーンを選択してください'
+          : run.stage === 'mode'
+            ? '処理を選択してください'
+            : runStep?.op === 'pick'
+              ? `${runStep.prompt}（${runMin === runMax ? runMin : `${runMin}〜${runMax}`}枚）`
+              : ''}
+      </span>
+      {run.stage === 'pick' && (
+        <div className="run-cands">
+          {runCands.map((u) => (
+            <CardView
+              key={u}
+              def={vdef(u)}
+              small
+              highlighted={run.picked.includes(u)}
+              onClick={() => toggleRunPick(u)}
+            />
+          ))}
+        </div>
+      )}
+      <div className="btn-row">
+        {run.stage === 'pick' && runMax > 1 && (
+          <button
+            className="primary"
+            disabled={run.picked.length < runMin}
+            onClick={() => onRunResult(afterPick(run, ctx))}
+          >
+            決定（{run.picked.length}枚）
+          </button>
+        )}
+        {run.stage === 'pick' && runMin === 0 && (
+          <button onClick={() => onRunResult(afterPick({ ...run, picked: [] }, ctx))}>選ばない</button>
+        )}
+        {run.stage === 'mode' &&
+          runStep?.op === 'pick' &&
+          runStep.modes?.map((m, i) => (
+            <button key={m} className="primary" onClick={() => onRunResult(afterPick({ ...run, mode: i, stage: 'mode' }, ctx))}>
+              {m}
+            </button>
+          ))}
+        <button onClick={() => setRun(null)}>キャンセル</button>
       </div>
     </div>
   );
@@ -454,6 +633,7 @@ export function App() {
           </div>
         )}
         {pendingButtons}
+        {runPanel}
         {showToken && (
           <TokenForm
             onCreate={(t) =>
@@ -471,7 +651,7 @@ export function App() {
       <main className="main">
         <section className="play">
           <Board
-            state={state}
+            state={view}
             ctx={ctx}
             selected={sel}
             picked={pending?.picked ?? []}
@@ -493,10 +673,11 @@ export function App() {
                 {(pile === 'gy' || pile === 'banished' ? [...pileCards].reverse() : pileCards).map((u) => (
                   <CardView
                     key={u}
-                    def={def(u)}
-                    inst={pile === 'banished' ? state.cards[u] : undefined}
+                    def={vdef(u)}
+                    inst={pile === 'banished' ? view.cards[u] : undefined}
                     selected={sel === u}
-                    onClick={() => setSelected(u)}
+                    highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
+                    onClick={() => onCardClick(u)}
                     small
                   />
                 ))}
@@ -504,14 +685,14 @@ export function App() {
             </div>
           )}
           <div className="hand">
-            <div className="hand-label">手札 {state.hand.length}枚</div>
+            <div className="hand-label">手札 {view.hand.length}枚</div>
             <div className="hand-cards">
-              {state.hand.map((u) => (
+              {view.hand.map((u) => (
                 <CardView
                   key={u}
-                  def={def(u)}
+                  def={vdef(u)}
                   selected={sel === u}
-                  highlighted={pending?.picked.includes(u)}
+                  highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                   onClick={() => onCardClick(u)}
                 />
               ))}
@@ -546,8 +727,12 @@ export function App() {
                   </div>
                 )}
                 <div className="btn-grid">
-                  {buttonsFor(sel).map((b) => (
-                    <button key={b.label} className={b.primary ? 'primary' : ''} onClick={b.onClick}>
+                  {(run ? [] : buttonsFor(sel)).map((b) => (
+                    <button
+                      key={b.label}
+                      className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
+                      onClick={b.onClick}
+                    >
                       {b.label}
                     </button>
                   ))}

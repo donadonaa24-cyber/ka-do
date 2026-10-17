@@ -407,6 +407,10 @@ select {
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
+.btn-grid button.wide {
+  grid-column: 1 / -1;
+  text-align: left;
+}
 .overlay-list {
   display: flex;
   flex-wrap: wrap;
@@ -537,4 +541,17 @@ select {
   .pile-count {
     font-size: 9px;
   }
+}
+
+/* ===== 効果処理パネル ===== */
+.pending.run {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.run-cands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
 }
