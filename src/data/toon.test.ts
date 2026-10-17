@@ -33,8 +33,9 @@ function useEffect(
 ): GameState {
   const effect = CARD_SCRIPTS[s.cards[uid].defId].effects!.find((e) => e.label.includes(label));
   if (!effect) throw new Error(`効果がありません: ${label}`);
-  let r: RunResult = startEffect(s, ctx, uid, effect);
+  let r: RunResult = skipTempBanish(startEffect(s, ctx, uid, effect));
   for (const c of choices) {
+    r = skipTempBanish(r);
     if (r.kind !== 'running') break;
     let run: Running = r.run;
     if (c.pick) {
@@ -52,9 +53,16 @@ function useEffect(
       r = completeStep(run, ctx, c.zone);
     }
   }
+  r = skipTempBanish(r);
   if (r.kind === 'error') throw new Error(r.error);
   if (r.kind === 'running') throw new Error(`効果処理が終わっていません（step ${r.run.stepIndex}）`);
   return act(s, r.action);
+}
+
+/** 完全なる世界③（処理後まで除外）を聞かれたら使わない */
+function skipTempBanish(r: RunResult): RunResult {
+  while (r.kind === 'running' && r.run.extraStep) r = afterPick({ ...r.run, picked: [] }, ctx);
+  return r;
 }
 
 const mz = (index: number) => ({ zone: 'mz' as const, index });
@@ -214,12 +222,12 @@ describe('チェーン', () => {
 
     // チェーン2：コミックキャット②
     const catEffect = CARD_SCRIPTS['72921536'].effects![0];
-    r = startEffect(s, ctx, cat, catEffect, undefined, 'auto');
+    r = skipTempBanish(startEffect(s, ctx, cat, catEffect, undefined, 'auto'));
     s = act(s, (r as { action: Action }).action);
     expect(s.chain).toHaveLength(2);
 
     // チェーン2から解決：キャットをリリースしてデッキからBEトゥーン
-    r = startResolve(s, ctx);
+    r = skipTempBanish(startResolve(s, ctx));
     expect(r.kind).toBe('running');
     let run = (r as { run: Running }).run;
     r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'コミックキャット') }, ctx);
@@ -232,7 +240,7 @@ describe('チェーン', () => {
     expect(name(s, s.mz[1]!)).toBe('ブルーアイズ・トゥーン・ドラゴン');
 
     // チェーン1：しおりのサーチ
-    r = startResolve(s, ctx);
+    r = skipTempBanish(startResolve(s, ctx));
     run = (r as { run: Running }).run;
     const box = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'エビル・ボックス')!;
     r = afterPick({ ...run, picked: [box] }, ctx);
@@ -246,5 +254,60 @@ describe('チェーン', () => {
     const s = createGame(TOON_DECK, ctx, 22, ['89997728']);
     const r = startEffect(s, ctx, inHand(s, 'トゥーンのもくじ'), CARD_SCRIPTS['89997728'].effects![0], undefined, 'auto');
     expect(r.kind).toBe('running');
+  });
+});
+
+describe('完全なる世界③（効果処理後まで除外）', () => {
+  it('TBM③の処理中にTBM自身を除外すると、戻った後にもう一度③を使える', () => {
+    let s = createGame(TOON_DECK, ctx, 31, ['7293697', '21296502', '89997728', '70560957']);
+    s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
+    s = act(s, { type: 'SPECIAL_SUMMON', uid: inHand(s, 'トゥーン・ブラック・マジシャン'), to: mz(2), position: 'def' });
+    const tbm = s.mz[2]!;
+    const effect = CARD_SCRIPTS['21296502'].effects![0];
+
+    // 1回目：コストでもくじを捨てる → 処理の前に③でTBMを除外 → ハーピィを特殊召喚 → TBMが戻る
+    let r: RunResult = startEffect(s, ctx, tbm, effect);
+    let run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーンのもくじ') }, ctx);
+    run = (r as { run: Running }).run;
+    expect(run.extraStep).toBeDefined();
+    r = afterPick({ ...run, picked: [tbm] }, ctx);
+    run = (r as { run: Running }).run;
+    expect(findLocation(run.temp, tbm)).toEqual({ zone: 'banished' });
+    const harpy = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'トゥーン・ハーピィ・レディ')!;
+    r = afterPick({ ...run, picked: [harpy] }, ctx);
+    r = completeStep((r as { run: Running }).run, ctx, mz(3));
+    s = act(s, (r as { action: Action }).action);
+    // 同じゾーンに同じ表示形式で戻る
+    expect(s.mz[2]).toBe(tbm);
+    expect(s.cards[tbm].position).toBe('def');
+    expect(s.mz[3]).toBe(harpy);
+
+    // 2回目：戻ったTBMは別のカード扱いなので③をもう一度使える。TBMは③でもう除外できない
+    r = startEffect(s, ctx, tbm, effect);
+    run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーン・ロールバック') }, ctx);
+    run = (r as { run: Running }).run;
+    if (run.extraStep) expect(stepCandidates(run, ctx)).not.toContain(tbm);
+  });
+
+  it('除外されて戻ったラビットは「召喚した時」の効果を使えない', () => {
+    let s = createGame(TOON_DECK, ctx, 32, ['7293697', '45536531', '89997728']);
+    s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: inHand(s, 'ファニー・ダーク・ラビット'), index: 0 });
+    const rabbit = s.mz[0]!;
+    // もくじの処理中にラビットを除外して戻す
+    let r: RunResult = startEffect(s, ctx, inHand(s, 'トゥーンのもくじ'), CARD_SCRIPTS['89997728'].effects![0]);
+    let run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: [rabbit] }, ctx);
+    run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: [stepCandidates(run, ctx)[0]] }, ctx);
+    s = act(s, (r as { action: Action }).action);
+    expect(s.mz[0]).toBe(rabbit);
+    const onSummon = CARD_SCRIPTS['45536531'].effects!.find((e) => e.onSummon)!;
+    expect(startEffect(s, ctx, rabbit, onSummon).kind).toBe('error');
+    // ③（カード名の付かない1ターンに1度）は使える
+    const third = CARD_SCRIPTS['45536531'].effects!.find((e) => e.label.startsWith('③'))!;
+    expect(startEffect(s, ctx, rabbit, third).kind).toBe('running');
   });
 });

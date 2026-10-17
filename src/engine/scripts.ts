@@ -74,6 +74,8 @@ export interface EffectDef {
   opponentOnly?: boolean;
   /** 「召喚・特殊召喚した場合」の効果：そのターンに出た時に1回だけ使える */
   onSummon?: boolean;
+  /** 発動しない効果（「〜時に適用する」など）。チェーンに乗らず、完全なる世界③の対象にもならない */
+  applied?: boolean;
   /** スペルスピード。省略時は速攻魔法・罠の発動なら2（カウンター罠は3）、それ以外は1 */
   speed?: 1 | 2 | 3;
   steps: Step[];
@@ -82,6 +84,11 @@ export interface EffectDef {
 export interface CardScript {
   procedures?: ProcedureDef[];
   effects?: EffectDef[];
+  /**
+   * 表側で存在する限り、他のカードが発動した効果が処理される際に、条件に合う自分のモンスター1体を
+   * その処理後まで除外できる（発動しない効果。元々のカード名が同じモンスターには1ターンに1度まで）
+   */
+  tempBanish?: { label: string; key: string; filter: CardFilter };
   /** 融合・S・X・L召喚の素材のカード固有の条件。満たさない場合はメッセージを返す */
   materialCheck?: (env: Env, materials: string[], method: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual') => string | null;
 }

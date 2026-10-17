@@ -2,13 +2,13 @@
 import { CARD_DB, CARD_SCRIPTS } from '../data';
 import { TOON_EVALUATOR } from '../data/toonEval';
 import type { Ctx } from '../engine/game';
-import { solve } from '../engine/solver';
+import { solveBest } from '../engine/solver';
 import type { GameState } from '../engine/types';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
 
 self.onmessage = (e: MessageEvent<{ state: GameState }>) => {
-  const routes = solve(e.data.state, ctx, TOON_EVALUATOR, {
+  const routes = solveBest(e.data.state, ctx, TOON_EVALUATOR, {
     onProgress: (ratio) => self.postMessage({ type: 'progress', ratio }),
   });
   self.postMessage({

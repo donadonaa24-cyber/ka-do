@@ -371,6 +371,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       {
         label: '① 召喚・特殊召喚時：「トゥーン・ワールド」記載モンスターの追加召喚',
         onSummon: true,
+        // 「召喚・特殊召喚した時に適用する」発動しない効果
+        applied: true,
         from: ['monster'],
         steps: [
           {
@@ -635,6 +637,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
 
   // 完全なる世界 トゥーン・ワールド
   '7293697': {
+    // ③ 他のカードの効果処理の間だけトゥーンモンスターを除外（戻ったモンスターは「1ターンに1度」をもう一度使える）
+    tempBanish: { label: '完全なる世界 トゥーン・ワールド③', key: '完全なる世界③', filter: { toonMonster: true } },
     effects: [
       {
         label: '発動',

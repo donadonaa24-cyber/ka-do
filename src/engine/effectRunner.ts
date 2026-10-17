@@ -1,5 +1,5 @@
-import { type Action, applyAction, candidates, type Ctx, findLocation, makeEnv } from './game';
-import type { EffectDef, Step } from './scripts';
+import { type Action, applyAction, candidates, type Ctx, findLocation, isMonsterZone, makeEnv } from './game';
+import type { EffectDef, Env, Step } from './scripts';
 import type { GameState, Location } from './types';
 
 /** 実行中の効果処理。途中の盤面（temp）を見ながら1ステップずつ選ばせる */
@@ -20,6 +20,12 @@ export interface Running {
   chainMode: 'auto' | 'force' | 'never';
   /** チェーンを解決している */
   resolving: boolean;
+  /** 効果のステップとは別に、今選ばせているステップ（「処理後まで除外」など） */
+  extraStep?: Step;
+  /** 処理の前の「処理後まで除外」を確認済み */
+  tempBanishChecked?: boolean;
+  /** 処理後まで除外したモンスター（処理が終わったら戻す） */
+  tempBanished?: { uid: string; index: number; position: 'atk' | 'def' };
 }
 
 export type RunResult =
@@ -72,33 +78,39 @@ export function effectSpeed(state: GameState, ctx: Ctx, uid: string, effect: Eff
   return 1;
 }
 
-function effectKey(uid: string, effect: EffectDef): string | undefined {
-  return effect.key ? (effect.perCard ? `${effect.key}:${uid}` : effect.key) : undefined;
+/**
+ * ターン制限の管理キー。カード名の付かない「1ターンに1度」（perCard）は、
+ * フィールドを離れて戻ると別のカードとして扱うので entryId も含める
+ */
+function effectKey(state: GameState, uid: string, effect: EffectDef): string | undefined {
+  if (!effect.key) return undefined;
+  return effect.perCard ? `${effect.key}:${uid}:${state.cards[uid]?.entryId ?? 0}` : effect.key;
 }
 
 /** 今のチェーンに続けて発動できる効果（スペルスピード2以上・使用回数が残っている） */
 export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): { uid: string; effect: EffectDef }[] {
   const out: { uid: string; effect: EffectDef }[] = [];
   const env = makeEnv(state, ctx, '');
-  const uids = [
-    ...state.hand,
-    ...state.mz,
-    ...state.emz,
-    ...state.stz,
-    state.fz,
-    ...state.gy,
-  ].filter((u): u is string => !!u);
+  const uids = [...state.hand, ...state.mz, ...state.emz, ...state.stz, state.fz, ...state.gy].filter(
+    (u): u is string => !!u,
+  );
   for (const uid of uids) {
     for (const effect of ctx.scripts?.[env.def(uid).id]?.effects ?? []) {
       if (effect.opponentOnly || !effectAvailable(state, uid, effect)) continue;
       const speed = effectSpeed(state, ctx, uid, effect);
       if (speed < 2 || speed < minSpeed) continue;
-      const key = effectKey(uid, effect);
+      const key = effectKey(state, uid, effect);
       if (key && effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit) continue;
-      if (effect.isCardActivation && env.def(uid).oncePerTurnActivation && state.effectUses[`${env.def(uid).name}:発動`]) continue;
+      if (
+        effect.isCardActivation &&
+        env.def(uid).oncePerTurnActivation &&
+        state.effectUses[`${env.def(uid).name}:発動`]
+      )
+        continue;
       if (effect.condition?.(makeEnv(state, ctx, uid))) continue;
       // 罠はセットしたターンには発動できない
-      if (effect.isCardActivation && env.def(uid).kind === 'trap' && state.cards[uid].enteredTurn === state.turn) continue;
+      if (effect.isCardActivation && env.def(uid).kind === 'trap' && state.cards[uid].enteredTurn === state.turn)
+        continue;
       out.push({ uid, effect });
     }
   }
@@ -117,14 +129,14 @@ export function startEffect(
   const env = makeEnv(state, ctx, uid);
   const cond = effect.condition?.(env);
   if (cond) return { kind: 'error', error: cond };
-  const key = effectKey(uid, effect);
+  const key = effectKey(state, uid, effect);
   const first: Action = effect.isCardActivation
     ? { type: 'ACTIVATE_CARD', uid, index: activationZone?.zone === 'stz' ? activationZone.index : undefined }
     : { type: 'ACTIVATE_EFFECT', uid, label: effect.label, key, limit: effect.limit };
   const batch: Action[] = [first];
   if (effect.onSummon) {
     const inst = state.cards[uid];
-    if (inst.enteredTurn !== state.turn)
+    if (inst.enteredTurn !== state.turn || inst.summonedEntry !== inst.entryId)
       return { kind: 'error', error: 'このターンに召喚・特殊召喚されたカードではありません' };
     // 召喚1回につき1度だけ（ターン1の制限とは別に管理）
     batch.push({
@@ -183,7 +195,7 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
 
 /** コストを払い終えたところでチェーンに積むか決める */
 function pushToChain(run: Running, ctx: Ctx): RunResult | null {
-  if (run.chainMode === 'never' || run.resolving) return null;
+  if (run.chainMode === 'never' || run.resolving || run.effect.applied) return null;
   const speed = effectSpeed(run.temp, ctx, run.self, run.effect);
   const responses = chainableEffects(run.temp, ctx, Math.max(2, speed)).filter((c) => c.uid !== run.self);
   if (run.chainMode === 'auto' && responses.length === 0) return null;
@@ -214,7 +226,43 @@ function applyAll(run: Running, ctx: Ctx, actions: Action[]): Running | string {
 }
 
 export function currentStep(run: Running): Step | undefined {
-  return run.effect.steps[run.stepIndex];
+  return run.extraStep ?? run.effect.steps[run.stepIndex];
+}
+
+/**
+ * 「他のカードが発動した効果が処理される際に、モンスターを処理後まで除外できる」効果（完全なる世界③）を
+ * 使えるなら、その選択ステップを返す
+ */
+function tempBanishStep(run: Running, ctx: Ctx): Step | undefined {
+  const state = run.temp;
+  const env = makeEnv(state, ctx, run.self);
+  const sources = [state.fz, ...state.stz, ...state.mz, ...state.emz].filter(
+    (u): u is string => !!u && u !== run.self && state.cards[u].faceUp,
+  );
+  for (const src of sources) {
+    const tb = ctx.scripts?.[env.def(src).id]?.tempBanish;
+    if (!tb) continue;
+    const usedKey = (uid: string) => `${tb.key}:${env.def(uid).name}`;
+    const where = (e: Env, uid: string) =>
+      isMonsterZone(e.loc(uid)) && e.state.cards[uid].faceUp && !e.state.effectUses[usedKey(uid)];
+    const any = [...state.mz, ...state.emz].some((u) => u && env.matches(u, tb.filter) && where(env, u));
+    if (!any) continue;
+    return {
+      op: 'pick',
+      prompt: `${tb.label}：この効果の処理後まで除外するモンスター（任意。戻ると「1ターンに1度」をもう一度使える）`,
+      from: ['monsters'],
+      filter: tb.filter,
+      where,
+      min: 0,
+      max: 1,
+      then: (_, picked) =>
+        picked.flatMap((uid) => [
+          { type: 'ACTIVATE_EFFECT', uid: src, key: usedKey(uid), limit: 1, silent: true } as Action,
+          { type: 'MOVE', uid, to: { zone: 'banished' }, reason: `${tb.label}：効果処理後まで除外` } as Action,
+        ]),
+    };
+  }
+  return undefined;
 }
 
 export function pickRange(run: Running, ctx: Ctx): [number, number] {
@@ -247,6 +295,15 @@ export function advance(run: Running, ctx: Ctx): RunResult {
       if (pushed) return pushed;
       cur = { ...cur, chainMode: 'never' };
     }
+    // 効果の処理に入る前に「処理後まで除外」を使うか聞く
+    if (!cur.extraStep && !cur.tempBanishChecked && !cur.effect.applied && (!step || !step.cost)) {
+      cur = { ...cur, tempBanishChecked: true };
+      const extra = tempBanishStep(cur, ctx);
+      if (extra) {
+        cur = { ...cur, extraStep: extra };
+        continue;
+      }
+    }
     if (!step) return finish(cur, ctx);
     if (step.op === 'do') {
       const next = applyAll(cur, ctx, step.then(makeEnv(cur.temp, ctx, cur.self)));
@@ -259,7 +316,7 @@ export function advance(run: Running, ctx: Ctx): RunResult {
     const cands = stepCandidates(cur, ctx);
     if (cands.length === 0) {
       if (min > 0) return { kind: 'error', error: `選べるカードがありません（${step.prompt}）` };
-      cur = { ...cur, stepIndex: cur.stepIndex + 1 };
+      cur = cur.extraStep ? { ...cur, extraStep: undefined } : { ...cur, stepIndex: cur.stepIndex + 1 };
       continue;
     }
     return { kind: 'running', run: { ...cur, stage: 'pick', picked: [], mode: 0 } };
@@ -268,6 +325,18 @@ export function advance(run: Running, ctx: Ctx): RunResult {
 
 function finish(run: Running, ctx: Ctx): RunResult {
   let cur = run;
+  // 処理後まで除外したモンスターを、除外前と同じ表示形式でメインモンスターゾーンに戻す（空きが無ければ墓地へ）
+  if (cur.tempBanished && cur.temp.banished.includes(cur.tempBanished.uid)) {
+    const { uid, index, position } = cur.tempBanished;
+    const free = cur.temp.mz[index] === null && index >= 0 ? index : cur.temp.mz.indexOf(null);
+    const back: Action =
+      free >= 0
+        ? { type: 'MOVE', uid, to: { zone: 'mz', index: free }, faceUp: true, position, reason: '効果処理後に戻る' }
+        : { type: 'MOVE', uid, to: { zone: 'gy' }, reason: '戻るゾーンが無いため墓地へ' };
+    const next = applyAll(cur, ctx, [back]);
+    if (typeof next === 'string') return { kind: 'error', error: next };
+    cur = next;
+  }
   // 発動した魔法・罠は効果処理の後に墓地へ
   if (run.effect.isCardActivation && cur.temp.cards[run.self]?.pendingResolve) {
     const next = applyAll(cur, ctx, [{ type: 'RESOLVE', uid: run.self }]);
@@ -282,6 +351,23 @@ function finish(run: Running, ctx: Ctx): RunResult {
 export function completeStep(run: Running, ctx: Ctx, zone: Location | null): RunResult {
   const step = currentStep(run)!;
   const env = makeEnv(run.temp, ctx, run.self);
+  if (run.extraStep && step.op === 'pick') {
+    // 処理後まで除外：戻す場所と表示形式を覚えておく
+    const uid = run.picked[0];
+    const loc = uid ? env.loc(uid) : null;
+    const next = applyAll(run, ctx, step.then(env, run.picked, zone, run.mode));
+    if (typeof next === 'string') return { kind: 'error', error: next };
+    return advance(
+      {
+        ...next,
+        extraStep: undefined,
+        tempBanished: uid
+          ? { uid, index: loc?.zone === 'mz' ? loc.index : -1, position: run.temp.cards[uid].position }
+          : undefined,
+      },
+      ctx,
+    );
+  }
   let actions: Action[];
   if (step.op === 'place') actions = step.then(env, zone!);
   else if (step.op === 'pick') actions = step.then(env, run.picked, zone, run.mode);

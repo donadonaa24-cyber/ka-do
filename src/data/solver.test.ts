@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { coachFromRoute, explainStep } from '../engine/coach';
 import { applyAction, createGame, type Ctx } from '../engine/game';
 import { findGuideAction } from '../engine/guide';
-import { solve } from '../engine/solver';
+import { solveBest as solve } from '../engine/solver';
 import { CARD_DB, CARD_SCRIPTS, TOON_DECK } from '.';
 import { TOON_EVALUATOR } from './toonEval';
 import { TOON_GUIDES } from './toonGuides';

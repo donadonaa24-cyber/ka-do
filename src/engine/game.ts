@@ -1,11 +1,5 @@
 import { mulberry32, shuffle } from './rng';
-import {
-  canMakeLinkRating,
-  levelOf,
-  linkedMainZones,
-  linkMaterialOptions,
-  tributesRequired,
-} from './rules';
+import { canMakeLinkRating, levelOf, linkedMainZones, linkMaterialOptions, tributesRequired } from './rules';
 import { type CardFilter, hasToonWorld, isToonMonster, matchesFilter } from './filters';
 import type { CardScript, Env } from './scripts';
 import type {
@@ -215,7 +209,15 @@ function newInstance(uid: string, defId: string): CardInstance {
     attackCount: 0,
     doubleAttackTurn: null,
     entryId: 0,
+    summonedEntry: null,
   };
+}
+
+/** 召喚・特殊召喚した（「召喚した時」の効果の判定に使う。効果で戻っただけのカードは含まない） */
+function markSummoned(state: GameState, uid: string) {
+  const inst = state.cards[uid];
+  inst.enteredTurn = state.turn;
+  inst.summonedEntry = inst.entryId;
 }
 
 // ===== 参照ヘルパー =====
@@ -237,9 +239,14 @@ export function makeEnv(state: GameState, ctx: Ctx, self: string): Env {
     def,
     loc: (uid) => findLocation(state, uid),
     toonWorld,
-    isToon: (uid) => isToonMonster(def(uid), toonWorld),
-    matches: (uid, filter) => matchesFilter(def(uid), filter, toonWorld),
+    isToon: (uid) => isToonMonster(def(uid), toonWorldFor(uid)),
+    matches: (uid, filter) => matchesFilter(def(uid), filter, toonWorldFor(uid)),
   };
+
+  /** 「トゥーン・ワールドがある限りトゥーンとして扱う」はフィールドにいる間だけ適用する */
+  function toonWorldFor(uid: string): boolean {
+    return toonWorld && isMonsterZone(findLocation(state, uid));
+  }
 }
 
 export function findLocation(state: GameState, uid: string): Location | null {
@@ -326,6 +333,7 @@ function resetInstance(inst: CardInstance) {
   inst.faceUpInExtra = false;
   inst.attackCount = 0;
   inst.doubleAttackTurn = null;
+  inst.summonedEntry = null;
 }
 
 interface PlaceOpts {
@@ -365,8 +373,7 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
 
   let dest = to;
   if (isExtraDeckCard(def) && (to.zone === 'hand' || to.zone === 'deck')) dest = { zone: 'extra' };
-  const pendulumToExtra =
-    def.pendulumScale !== undefined && isOnField(from) && to.zone === 'gy';
+  const pendulumToExtra = def.pendulumScale !== undefined && isOnField(from) && to.zone === 'gy';
   if (pendulumToExtra) dest = { zone: 'extra' };
 
   if (leavingField || !isOnField(to)) resetInstance(inst);
@@ -575,40 +582,59 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (!state.hand.includes(uid)) fail('通常召喚は手札のモンスターのみ行えます');
         if (!grant && state.normalSummonUsed) fail('通常召喚（セット）はターンに1度までです');
         if (grant && action.set) fail('追加の召喚権ではセットできません');
-        if (grant && !matchesFilter(def, grant.filter, toonWorld)) fail(`${def.name}は「${grant.source}」の効果で召喚できません`);
-        if (noTrib && !matchesFilter(def, noTrib.filter, toonWorld)) fail(`${def.name}は「${noTrib.source}」の効果の対象外です`);
+        if (grant && !matchesFilter(def, grant.filter, toonWorld))
+          fail(`${def.name}は「${grant.source}」の効果で召喚できません`);
+        if (noTrib && !matchesFilter(def, noTrib.filter, toonWorld))
+          fail(`${def.name}は「${noTrib.source}」の効果の対象外です`);
         if (isExtraDeckCard(def) || def.frame === 'ritual' || def.cannotNormalSummon) {
           fail(`${def.name}は通常召喚できません`);
         }
         const need = noTrib ? 0 : tributesRequired(def.level ?? 0);
         if (tributes.length !== need) fail(`${def.name}の召喚にはリリースが${need}体必要です`);
-        for (const t of tributes) if (!isMonsterZone(findLocation(state, t))) fail('リリースは自分フィールドのモンスターから選んでください');
+        for (const t of tributes)
+          if (!isMonsterZone(findLocation(state, t))) fail('リリースは自分フィールドのモンスターから選んでください');
       }
       // 使った召喚権・効果を消費（番号がずれないよう大きい方から）
-      for (const i of [action.grant, action.noTributeGrant].filter((x): x is number => x !== undefined).sort((a, b) => b - a)) {
+      for (const i of [action.grant, action.noTributeGrant]
+        .filter((x): x is number => x !== undefined)
+        .sort((a, b) => b - a)) {
         state.summonGrants.splice(i, 1);
       }
       checkMonsterZoneFree(state, ctx, { zone: 'mz', index }, tributes);
       const tributeNames = tributes.map((t) => name(state, ctx, t));
       sendMaterials(state, ctx, tributes, 'gy');
-      moveCard(state, ctx, uid, { zone: 'mz', index }, {
-        faceUp: !action.set,
-        position: action.set ? 'def' : 'atk',
-      });
-      state.cards[uid].enteredTurn = state.turn;
+      moveCard(
+        state,
+        ctx,
+        uid,
+        { zone: 'mz', index },
+        {
+          faceUp: !action.set,
+          position: action.set ? 'def' : 'atk',
+        },
+      );
+      markSummoned(state, uid);
       if (!grant) state.normalSummonUsed = true;
-      const how = grant ? `${grant.source}の効果で` : noTrib ? `${noTrib.source}の効果でリリースなしで` : tributes.length ? `${tributeNames.join('・')}をリリースしてアドバンス` : '通常';
+      const how = grant
+        ? `${tributes.length ? `${tributeNames.join('・')}をリリースし、` : ''}${grant.source}の効果で`
+        : noTrib
+          ? `${noTrib.source}の効果でリリースなしで`
+          : tributes.length
+            ? `${tributeNames.join('・')}をリリースしてアドバンス`
+            : '通常';
       log(state, action.set ? `${def.name}を${how}セット` : `${def.name}を${how}召喚`, 'summon');
       return;
     }
     case 'FLIP_SUMMON': {
       const inst = state.cards[action.uid];
       requireMainPhase(state, ctx, '反転召喚');
-      if (!isMonsterZone(findLocation(state, action.uid)) || inst.faceUp) fail('裏側守備表示のモンスターのみ反転召喚できます');
+      if (!isMonsterZone(findLocation(state, action.uid)) || inst.faceUp)
+        fail('裏側守備表示のモンスターのみ反転召喚できます');
       if (strict && inst.enteredTurn === state.turn) fail('セットしたターンには反転召喚できません');
       inst.faceUp = true;
       inst.position = 'atk';
       inst.positionChangedTurn = state.turn;
+      inst.summonedEntry = inst.entryId;
       log(state, `${name(state, ctx, action.uid)}を反転召喚`, 'summon');
       return;
     }
@@ -622,9 +648,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const faceDown = !!action.faceDown;
       moveCard(state, ctx, uid, to, {
         faceUp: !faceDown,
-        position: faceDown ? 'def' : action.position ?? 'atk',
+        position: faceDown ? 'def' : (action.position ?? 'atk'),
       });
-      state.cards[uid].enteredTurn = state.turn;
+      markSummoned(state, uid);
       const pos = faceDown ? '裏側守備表示' : action.position === 'def' ? '守備表示' : '攻撃表示';
       log(
         state,
@@ -732,8 +758,10 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (state.turn === 1) fail('先攻1ターン目は攻撃できません');
         if (!inst.faceUp || inst.position !== 'atk') fail('表側攻撃表示のモンスターのみ攻撃できます');
         const maxAttacks = inst.doubleAttackTurn === state.turn ? 2 : 1;
-        if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks) fail('このモンスターは既に攻撃しています');
-        if (def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn) fail(`${def.name}は召喚・特殊召喚したターンには攻撃できません`);
+        if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks)
+          fail('このモンスターは既に攻撃しています');
+        if (def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn)
+          fail(`${def.name}は召喚・特殊召喚したターンには攻撃できません`);
       }
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
       inst.attackCount = inst.attackedTurn === state.turn ? inst.attackCount + 1 : 1;
@@ -782,7 +810,11 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (!target.overlay.includes(action.uid)) fail('そのカードは素材ではありません');
       target.overlay = target.overlay.filter((u) => u !== action.uid);
       placeRaw(state, action.uid, { zone: 'gy' }, {});
-      log(state, `${name(state, ctx, action.target)}のエクシーズ素材（${name(state, ctx, action.uid)}）を取り除いた`, 'move');
+      log(
+        state,
+        `${name(state, ctx, action.target)}のエクシーズ素材（${name(state, ctx, action.uid)}）を取り除いた`,
+        'move',
+      );
       return;
     }
     case 'CREATE_TOKEN': {
@@ -804,7 +836,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const uid = `c${state.nextUid++}`;
       state.cards[uid] = newInstance(uid, defId);
       placeRaw(state, uid, action.to, { faceUp: true, position: action.position ?? 'atk' });
-      state.cards[uid].enteredTurn = state.turn;
+      markSummoned(state, uid);
       log(state, `${action.name}を特殊召喚`, 'summon');
       return;
     }
@@ -823,7 +855,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return specialProcedure(state, ctx, action);
     case 'GRANT_SUMMON': {
       state.summonGrants.push(action.grant);
-      const what = [action.grant.extraSummon && '追加の召喚', action.grant.noTribute && 'リリースなし召喚'].filter(Boolean).join('・');
+      const what = [action.grant.extraSummon && '追加の召喚', action.grant.noTribute && 'リリースなし召喚']
+        .filter(Boolean)
+        .join('・');
       log(state, `${action.grant.source}の効果：${what}が可能になった`, 'info');
       return;
     }
@@ -960,7 +994,8 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
         if (tuners.length !== 1) fail('シンクロ召喚にはチューナー1体とチューナー以外のモンスターが必要です');
         if (materials.length < 2) fail('チューナー以外のモンスターが1体以上必要です');
         const sum = matDefs.reduce((s, d) => s + (levelOf(d) ?? NaN), 0);
-        if (sum !== def.level) fail(`素材のレベル合計（${sum}）がシンクロモンスターのレベル（${def.level}）と一致しません`);
+        if (sum !== def.level)
+          fail(`素材のレベル合計（${sum}）がシンクロモンスターのレベル（${def.level}）と一致しません`);
       }
       break;
     }
@@ -993,13 +1028,16 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
           if (l?.zone !== 'hand' && !isMonsterZone(l)) fail('儀式のリリースは手札かフィールドから選んでください');
         }
         const sum = matDefs.reduce((s, d) => s + (levelOf(d) ?? 0), 0);
-        if (sum < (def.level ?? 0)) fail(`リリースするモンスターのレベル合計（${sum}）が足りません（${def.level}以上）`);
+        if (sum < (def.level ?? 0))
+          fail(`リリースするモンスターのレベル合計（${sum}）が足りません（${def.level}以上）`);
       }
       break;
     }
   }
 
-  const materialErr = strict ? ctx.scripts?.[def.id]?.materialCheck?.(makeEnv(state, ctx, uid), materials, method) : null;
+  const materialErr = strict
+    ? ctx.scripts?.[def.id]?.materialCheck?.(makeEnv(state, ctx, uid), materials, method)
+    : null;
   if (materialErr) fail(materialErr);
 
   // 素材を送ってから置き場所をチェックする（リンク先の判定は素材が離れた後）
@@ -1020,10 +1058,10 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy');
     checkMonsterZoneFree(state, ctx, to);
     checkExtraDeckPlacement(state, ctx, uid, to, from);
-    const position = method === 'link' ? 'atk' : action.position ?? 'atk';
+    const position = method === 'link' ? 'atk' : (action.position ?? 'atk');
     moveCard(state, ctx, uid, to, { faceUp: true, position });
   }
-  state.cards[uid].enteredTurn = state.turn;
+  markSummoned(state, uid);
   log(state, `${matNames}を素材に${def.name}を${label}召喚（${locLabel(to)}）`, 'summon');
 }
 
@@ -1035,7 +1073,8 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
   const from = findLocation(state, uid);
   if (ctx.options.strict) {
     requireMainPhase(state, ctx, '特殊召喚');
-    if (!from || !(proc.summonFrom as string[]).includes(from.zone)) fail(`${def.name}はこの場所から特殊召喚できません`);
+    if (!from || !(proc.summonFrom as string[]).includes(from.zone))
+      fail(`${def.name}はこの場所から特殊召喚できません`);
     if (materials.includes(uid)) fail('召喚するモンスター自身は選べません');
     const key = `${def.name}:召喚条件`;
     if (proc.oncePerTurn && state.effectUses[key]) fail(`${def.name}のこの方法での特殊召喚は1ターンに1度です`);
@@ -1048,8 +1087,10 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
   checkMonsterZoneFree(state, ctx, to);
   checkExtraDeckPlacement(state, ctx, uid, to, from);
   moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
-  state.cards[uid].enteredTurn = state.turn;
-  const cost = matNames.length ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、` : '';
+  markSummoned(state, uid);
+  const cost = matNames.length
+    ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、`
+    : '';
   log(state, `${cost}${def.name}を特殊召喚（${proc.label}）`, 'summon');
 }
 
@@ -1059,7 +1100,8 @@ export function candidates(state: GameState, zones: string[]): string[] {
   for (const z of zones) {
     if (z === 'deck' || z === 'hand' || z === 'gy' || z === 'banished' || z === 'extra') out.push(...state[z]);
     if (z === 'monsters' || z === 'field') out.push(...fieldMonsters(state));
-    if (z === 'spelltraps' || z === 'field') out.push(...state.stz.filter((u): u is string => !!u), ...(state.fz ? [state.fz] : []));
+    if (z === 'spelltraps' || z === 'field')
+      out.push(...state.stz.filter((u): u is string => !!u), ...(state.fz ? [state.fz] : []));
   }
   return [...new Set(out)];
 }

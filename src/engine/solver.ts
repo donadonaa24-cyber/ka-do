@@ -108,7 +108,9 @@ function expandEffect(state: GameState, ctx: Ctx, uid: string, effect: Parameter
     const run = r.run;
     if (run.stage === 'pick') {
       const [min, max] = pickRange(run, ctx);
-      const cands = dedupe(run.temp, stepCandidates(run, ctx));
+      let cands = dedupe(run.temp, stepCandidates(run, ctx));
+      // 「処理後まで除外」は、カード名の付かない1ターンに1度の効果を使い終えたモンスターにだけ試す（それ以外は得をしない）
+      if (run.extraStep) cands = cands.filter((u) => softOncePerTurnUsed(run.temp, ctx, u));
       const sizes = min === 0 ? [0, Math.min(1, max)] : [min];
       for (const k of [...new Set(sizes)]) {
         for (const picked of k === 0 ? [[]] : combinations(cands, k, 12)) walk(afterPick({ ...run, picked }, ctx));
@@ -137,6 +139,14 @@ function expandEffect(state: GameState, ctx: Ctx, uid: string, effect: Parameter
   };
   walk(startEffect(state, ctx, uid, effect));
   return out;
+}
+
+/** カード名の付かない「1ターンに1度」の効果を、今フィールドにいるこのカードで使い終えたか */
+function softOncePerTurnUsed(state: GameState, ctx: Ctx, uid: string): boolean {
+  const inst = state.cards[uid];
+  return (ctx.scripts?.[getDef(state, ctx, uid).id]?.effects ?? []).some(
+    (e) => e.perCard && e.key && (state.effectUses[`${e.key}:${uid}:${inst.entryId}`] ?? 0) >= (e.limit ?? 1),
+  );
 }
 
 function cardsInPlay(state: GameState): string[] {
@@ -211,7 +221,9 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
       if (!loc || !(proc.summonFrom as string[]).includes(loc.zone)) return;
       const pool = dedupe(
         state,
-        proc.from.flatMap((z) => (z === 'monsters' ? monsters : z === 'hand' ? state.hand : z === 'gy' ? state.gy : [])),
+        proc.from.flatMap((z) =>
+          z === 'monsters' ? monsters : z === 'hand' ? state.hand : z === 'gy' ? state.gy : [],
+        ),
       ).filter((u) => u !== uid);
       const sets = proc.from.length === 0 ? [[]] : [1, 2, 3].flatMap((k) => combinations(pool, k, 30));
       for (const materials of sets) {
@@ -239,7 +251,8 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
           ...(fieldMat ? [findLocation(state, fieldMat) as MonsterLocation] : []),
           ...zones.filter((z) => z.zone === 'mz'),
         ];
-        for (const to of candidatesTo.slice(0, 2)) actions.push({ type: 'PROCEDURE_SUMMON', method, uid, materials, to });
+        for (const to of candidatesTo.slice(0, 2))
+          actions.push({ type: 'PROCEDURE_SUMMON', method, uid, materials, to });
       }
     }
   }
@@ -360,3 +373,30 @@ function boardKey(state: GameState, initialHand: Set<string>): string {
   return [ids([...state.mz, ...state.emz]), ids(state.stz), state.fz ? state.cards[state.fz].defId : ''].join('/');
 }
 
+/**
+ * 「処理後まで除外」（完全なる世界③）は選択肢が増えて探索が薄くなるので、
+ * 使わない探索と使う探索を両方行い、良いルートを合わせて返す（使える分だけ必ず良くなる）
+ */
+export function solveBest(initial: GameState, ctx: Ctx, evaluator: Evaluator, opts: SolveOptions = {}): Route[] {
+  const scripts = ctx.scripts ?? {};
+  const hasTempBanish = Object.values(scripts).some((s) => s.tempBanish);
+  if (!hasTempBanish) return solve(initial, ctx, evaluator, opts);
+  const plain: Ctx = {
+    ...ctx,
+    scripts: Object.fromEntries(Object.entries(scripts).map(([id, s]) => [id, { ...s, tempBanish: undefined }])),
+  };
+  const half = (offset: number) => (ratio: number) => opts.onProgress?.(offset + ratio / 2);
+  const a = solve(initial, plain, evaluator, { ...opts, onProgress: half(0) });
+  const b = solve(initial, ctx, evaluator, { ...opts, onProgress: half(0.5) });
+  const maxRoutes = opts.maxRoutes ?? 3;
+  const seen = new Set<string>();
+  return [...a, ...b]
+    .sort((x, y) => y.score - x.score || x.steps.length - y.steps.length)
+    .filter((r) => {
+      const key = r.summary.join('\n');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxRoutes);
+}

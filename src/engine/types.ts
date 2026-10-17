@@ -112,6 +112,8 @@ export interface CardInstance {
   doubleAttackTurn: number | null;
   /** フィールドに出るたびに変わる番号（「召喚した時」の効果を1回に限るため） */
   entryId: number;
+  /** 召喚・特殊召喚でフィールドに出た時の entryId（効果で除外されて戻っただけなら一致しない） */
+  summonedEntry: number | null;
 }
 
 /** チェーンに積まれた効果。解決はスクリプトの effect 番号の stepStart 以降を実行する */
