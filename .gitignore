@@ -1,3 +1,6 @@
 node_modules
 dist
 *.log
+
+# 非公開ページにだけ埋め込む画像（公開リポジトリには入れない）
+private/

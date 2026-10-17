@@ -360,6 +360,63 @@ select {
   background: linear-gradient(135deg, #5a3a1e, #2b1a0c);
   border: 2px solid #8a6a3a;
 }
+.card.has-img {
+  background-size: cover;
+  background-position: center;
+  background-color: #222;
+  justify-content: flex-end;
+}
+.img-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.img-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 0;
+}
+.img-item .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.img-item button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.file-btn.small {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.file-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.detail-img {
+  width: 120px;
+  border-radius: 6px;
+  align-self: center;
+}
 .empty-pile {
   background: transparent;
   border: 1px dashed var(--line);

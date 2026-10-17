@@ -1,4 +1,6 @@
+import { useContext } from 'react';
 import { MARKER_ARROW } from '../engine/rules';
+import { CardImageContext } from './cardImages';
 import type { CardDef, CardInstance } from '../engine/types';
 
 export function frameClass(def: CardDef): string {
@@ -39,6 +41,7 @@ interface Props {
 }
 
 export function CardView({ def, inst, showFaceDown = true, selected, highlighted, onClick, onPointerDown, small }: Props) {
+  const image = useContext(CardImageContext)[def.id];
   const faceDown = inst ? !inst.faceUp : false;
   const isDef = inst?.position === 'def';
   const cls = [
@@ -50,12 +53,30 @@ export function CardView({ def, inst, showFaceDown = true, selected, highlighted
     highlighted ? 'highlighted' : '',
     inst?.pendingResolve ? 'resolving' : '',
     small ? 'small' : '',
+    image ? 'has-img' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   if (faceDown && !showFaceDown) {
     return <div className={cls} onClick={onClick} onPointerDown={onPointerDown} />;
+  }
+  if (image) {
+    // 自分で設定した画像があれば、名前の代わりに画像を表示する
+    return (
+      <div
+        className={cls}
+        onClick={onClick}
+        onPointerDown={onPointerDown}
+        title={`${def.name}\n${def.text}`}
+        style={{ backgroundImage: `url(${image})` }}
+        role="img"
+        aria-label={def.name}
+      >
+        {inst && inst.overlay.length > 0 && <div className="card-overlay">素材{inst.overlay.length}</div>}
+        {faceDown && <div className="card-tag">裏側</div>}
+      </div>
+    );
   }
   return (
     <div className={cls} onClick={onClick} onPointerDown={onPointerDown} title={`${def.name}\n${def.text}`}>
