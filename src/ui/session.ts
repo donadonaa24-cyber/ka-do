@@ -5,6 +5,8 @@ export interface SessionData {
   deckName: string;
   seed: number;
   fixedHand: string[];
+  /** 初手の枚数（5=先攻、6=後攻）。古い保存データには無い */
+  handSize?: 5 | 6;
   strict: boolean;
   actions: Action[];
 }

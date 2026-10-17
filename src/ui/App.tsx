@@ -22,10 +22,11 @@ import { Board } from './Board';
 import { CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
-import { RoutePanel } from './RoutePanel';
+import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
 import { TOON_GUIDES } from '../data/toonGuides';
-import { type Guide, stepMatches } from '../engine/guide';
+import { findGuideAction, type Guide } from '../engine/guide';
+import { actionHighlights, type Coach, coachFromGuide, coachProgress } from '../engine/coach';
 import {
   afterPick,
   completeStep,
@@ -91,7 +92,11 @@ export function App() {
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
-  const [guideId, setGuideId] = useState<string | null>(null);
+  const [coach, setCoach] = useState<Coach | null>(null);
+  const [modal, setModal] = useState<'routes' | 'menu' | null>(null);
+  const [autoSearch, setAutoSearch] = useState(false);
+  const { w: winWidth, h: winHeight } = useWindowSize();
+  const routeSearch = useRouteSearch(useCallback((m: string) => setError(m), []));
   const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
   /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
   const presetRef = useRef<Location | null>(null);
@@ -103,7 +108,7 @@ export function App() {
   const deck = DECKS.find((d) => d.name === session.deckName) ?? DECKS[0];
 
   const { state, appliedCount } = useMemo(() => {
-    let s: GameState = createGame(deck, replayCtx, session.seed, session.fixedHand);
+    let s: GameState = createGame(deck, replayCtx, session.seed, session.fixedHand, session.handSize ?? 5);
     let n = 0;
     for (const a of session.actions) {
       const r = applyAction(s, a, replayCtx);
@@ -112,7 +117,7 @@ export function App() {
       n++;
     }
     return { state: s, appliedCount: n };
-  }, [deck, session.seed, session.fixedHand, session.actions]);
+  }, [deck, session.seed, session.fixedHand, session.handSize, session.actions]);
 
   useEffect(() => saveCurrent(session), [session]);
   useEffect(() => {
@@ -564,37 +569,54 @@ export function App() {
 
   const { drag, dragStart, onClickCapture } = useDrag(onDrop);
 
-  // ===== ルートガイド =====
+  // ===== 練習（次の手の表示） =====
 
-  const guide = TOON_GUIDES.find((g) => g.id === guideId) ?? null;
-  /** ログを先頭から見て、ガイドの手順が何手目まで終わっているか */
-  const guideDone = useMemo(() => {
-    if (!guide) return 0;
-    let pos = 0;
-    let done = 0;
-    for (const step of guide.steps) {
-      let found = -1;
-      for (let j = pos; j < state.log.length; j++) {
-        const text = state.log.slice(pos, j + 1).map((l) => l.text).join('\n');
-        if (stepMatches(step, text)) {
-          found = j;
-          break;
-        }
-      }
-      if (found < 0) break;
-      pos = found + 1;
-      done++;
-    }
-    return done;
-  }, [guide, state.log]);
+  const coachDone = useMemo(() => (coach ? coachProgress(coach, state) : 0), [coach, state]);
+  const coachStep = coach?.steps[coachDone];
+  /** 次の手で実行する操作（ガイドは今の盤面から探す） */
+  const coachAction = useMemo(() => {
+    if (!coach || !coachStep) return undefined;
+    if (coachStep.action) return applyAction(state, coachStep.action, ctx).ok ? coachStep.action : undefined;
+    const guideDef = TOON_GUIDES.find((g) => g.id === coach.guideId);
+    const gs = guideDef?.steps[coachDone];
+    return gs ? (findGuideAction(state, ctx, gs) ?? undefined) : undefined;
+  }, [coach, coachStep, coachDone, state, ctx]);
+  const hl = actionHighlights(coach && !run && !pending ? coachAction : undefined);
 
   const startGuide = (g: Guide) => {
-    setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, strict: true, actions: [] });
-    setGuideId(g.id);
+    setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
+    setCoach(coachFromGuide(g));
+    setModal(null);
     setSelected(null);
     setPending(null);
     setRun(null);
   };
+
+  const autoPlay = (actions: Action[]) => {
+    setModal(null);
+    let i = 0;
+    const tick = () => {
+      if (i >= actions.length || !dispatch(actions[i])) return;
+      i++;
+      if (i < actions.length) setTimeout(tick, 400);
+    };
+    tick();
+  };
+
+  // 「開始してルートを探す」：新しい盤面になってから探索を始める
+  useEffect(() => {
+    if (!autoSearch || session.actions.length > 0) return;
+    setAutoSearch(false);
+    routeSearch.search(state, 0);
+    setModal('routes');
+  }, [autoSearch, session.actions.length, state, routeSearch]);
+
+  // エラーは数秒で消す
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 4000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   // ===== 表示 =====
 
@@ -607,6 +629,7 @@ export function App() {
   const runStep = run && currentStep(run);
   const runCands = run ? stepCandidates(run, ctx) : [];
   const [runMin, runMax] = run ? pickRange(run, ctx) : [0, 0];
+  const busy = !!(run || pending);
 
   const saveRoute = () => {
     const name = routeName.trim() || `${deck.name} シード${session.seed}`;
@@ -625,60 +648,59 @@ export function App() {
     }
   };
 
-  const pendingButtons = pending && (
-    <div className="pending">
-      <strong>{pending.title}</strong>
-      <span>{pending.stage === 'pick' ? pending.hint : '出す（置く）ゾーンを選択してください'}</span>
-      {pending.stage === 'pick' && (
-        <span className="picked">
-          選択中: {pending.picked.map((u) => def(u).name).join('、') || 'なし'}
-        </span>
-      )}
+  // 手札は画面幅に収まるよう重ねて並べる
+  const handStep = (() => {
+    const n = view.hand.length;
+    const avail = Math.min(winWidth, 960) - 24;
+    const w = handCardWidth(winWidth, winHeight);
+    if (n <= 1) return w + 6;
+    return Math.min(w + 6, (avail - w) / (n - 1));
+  })();
+
+  const actionPanel = pending ? (
+    <div className="action-panel">
+      <div className="ap-title">{pending.title}</div>
+      <div className="ap-hint">
+        {pending.stage === 'pick'
+          ? `${pending.hint}　選択中：${pending.picked.map((u) => def(u).name).join('、') || 'なし'}`
+          : '光っているゾーンを選んでください'}
+      </div>
       <div className="btn-row">
         {pending.stage === 'pick' && !pending.single && (
           <button className="primary" onClick={() => confirmPick(pending)}>
             決定
           </button>
         )}
+        {pending.stage === 'pick' && pending.pickFrom?.includes('gy') && (
+          <button onClick={() => setPile('gy')}>墓地を開く</button>
+        )}
         <button onClick={() => setPending(null)}>キャンセル</button>
       </div>
     </div>
-  );
-
-  const runPanel = run && (
-    <div className="pending run">
-      <strong>{run.title}</strong>
-      <span>
+  ) : run ? (
+    <div className="action-panel">
+      <div className="ap-title">{run.title}</div>
+      <div className="ap-hint">
         {run.stage === 'zone'
           ? runStep?.op === 'place'
             ? runStep.prompt
-            : '出す（置く）ゾーンを選択してください'
+            : '光っているゾーンを選んでください'
           : run.stage === 'mode'
-            ? '処理を選択してください'
+            ? '処理を選んでください'
             : runStep?.op === 'pick'
               ? `${runStep.prompt}（${runMin === runMax ? runMin : `${runMin}〜${runMax}`}枚）`
               : ''}
-      </span>
+      </div>
       {run.stage === 'pick' && (
         <div className="run-cands">
           {runCands.map((u) => (
-            <CardView
-              key={u}
-              def={vdef(u)}
-              small
-              highlighted={run.picked.includes(u)}
-              onClick={() => toggleRunPick(u)}
-            />
+            <CardView key={u} def={vdef(u)} small highlighted={run.picked.includes(u)} onClick={() => toggleRunPick(u)} />
           ))}
         </div>
       )}
       <div className="btn-row">
         {run.stage === 'pick' && runMax > 1 && (
-          <button
-            className="primary"
-            disabled={run.picked.length < runMin}
-            onClick={() => onRunResult(afterPick(run, ctx))}
-          >
+          <button className="primary" disabled={run.picked.length < runMin} onClick={() => onRunResult(afterPick(run, ctx))}>
             決定（{run.picked.length}枚）
           </button>
         )}
@@ -695,75 +717,82 @@ export function App() {
         <button onClick={() => setRun(null)}>キャンセル</button>
       </div>
     </div>
+  ) : null;
+
+  const coachBar = coach && !busy && (
+    <div className={`coach ${coachStep ? '' : 'finished'}`}>
+      {coachStep ? (
+        <>
+          <div className="coach-head">
+            <span className="coach-count">
+              次の手 {coachDone + 1}/{coach.steps.length}
+            </span>
+            <span className="coach-title">{coach.title}</span>
+          </div>
+          <div className="coach-text">{coachStep.text}</div>
+          {coachStep.sub.length > 0 && <div className="coach-sub">{coachStep.sub.join(' → ')}</div>}
+          {!coachAction && <div className="coach-sub warn">今の盤面ではこの手を実行できません（ルートから外れたかもしれません）</div>}
+        </>
+      ) : (
+        <>
+          <div className="coach-head">
+            <span className="coach-count">完成</span>
+            <span className="coach-title">{coach.title}</span>
+          </div>
+          <div className="coach-sub">{coach.summary.slice(0, 4).join(' ／ ')}</div>
+        </>
+      )}
+      <div className="coach-btns">
+        {coachStep && (
+          <button className="primary" disabled={!coachAction} onClick={() => coachAction && dispatch(coachAction)}>
+            お手本
+          </button>
+        )}
+        <button onClick={() => setModal('routes')}>手順</button>
+        <button onClick={() => setCoach(null)} aria-label="練習をやめる">
+          ×
+        </button>
+      </div>
+    </div>
   );
 
   return (
-    <div className={`app ${run || pending ? 'busy' : ''} ${drag ? 'dragging' : ''}`} onClickCapture={onClickCapture}>
-      <header className="topbar">
-        <h1>遊戯王 一人回し</h1>
-        <div className="status">
-          <span>ターン{state.turn}</span>
-          <span className="phase">{PHASE_LABEL[state.phase]}</span>
-          <span>LP {state.lp}</span>
-          <span>相手LP {state.opponentLp}</span>
-          <span className={state.normalSummonUsed ? 'used' : 'avail'}>
-            通常召喚{state.normalSummonUsed ? '済' : '可'}
-          </span>
-          {!session.strict && <span className="free">フリー操作</span>}
-          {state.status !== 'playing' && (
-            <span className="result">{state.status === 'won' ? '勝利' : '敗北'}：{state.statusReason}</span>
-          )}
+    <div
+      className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''}`}
+      style={{ '--hand-w': `${handCardWidth(winWidth, winHeight)}px` } as React.CSSProperties}
+      onClickCapture={onClickCapture}
+    >
+      <header className="hud">
+        <div className="hud-status">
+          <span className="chip">T{state.turn}</span>
+          <span className="chip phase">{PHASE_LABEL[state.phase]}</span>
+          <span className="chip">LP {state.lp}</span>
+          {state.opponentLp < 8000 && <span className="chip">相手 {state.opponentLp}</span>}
+          <span className={`chip ${state.normalSummonUsed ? 'used' : 'avail'}`}>召喚{state.normalSummonUsed ? '済' : '可'}</span>
+          {state.summonGrants.length > 0 && <span className="chip avail">追加召喚あり</span>}
+          {!session.strict && <span className="chip free">フリー</span>}
+          {state.status !== 'playing' && <span className="chip result">{state.status === 'won' ? '勝利' : '敗北'}</span>}
         </div>
-        <div className="btn-row">
+        <div className="hud-actions">
+          <button onClick={undo} disabled={session.actions.length === 0} aria-label="1手戻す">
+            戻す
+          </button>
           <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
             次のフェイズ
           </button>
-          <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
-          <button onClick={() => dispatch({ type: 'DRAW' })}>ドロー</button>
-          <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
-          <button onClick={() => setShowToken((v) => !v)}>トークン</button>
-          <button onClick={undo} disabled={session.actions.length === 0}>
-            戻す (Ctrl+Z)
+          <button className="accent" onClick={() => setModal('routes')}>
+            ルート
           </button>
-          <button
-            onClick={() => setSession((s) => ({ ...s, actions: [] }))}
-            disabled={session.actions.length === 0}
-          >
-            最初から
+          <button onClick={() => setModal('menu')} aria-label="メニュー">
+            ≡
           </button>
-          <button onClick={() => setShowSetup(true)}>新しいゲーム</button>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={session.strict}
-              onChange={(e) => setSession((s) => ({ ...s, strict: e.target.checked }))}
-            />
-            ルールチェック
-          </label>
         </div>
-        {error && (
-          <div className="error" onClick={() => setError(null)}>
-            {error}
-          </div>
-        )}
-        {pendingButtons}
-        {runPanel}
-        {showToken && (
-          <TokenForm
-            onCreate={(t) =>
-              start({
-                title: `${t.name}を生成`,
-                hint: '',
-                zone: 'monster',
-                build: (_, z) => ({ type: 'CREATE_TOKEN', ...t, to: z as MonsterLocation }),
-              })
-            }
-          />
-        )}
       </header>
 
-      <main className="main">
-        <section className="play">
+      <main className="table">
+        {coachBar}
+        {actionPanel}
+        <div className="board-wrap">
           <Board
             state={view}
             ctx={ctx}
@@ -773,123 +802,182 @@ export function App() {
             onCardClick={onCardClick}
             onZoneClick={onZoneClick}
             onPileClick={(z) => setPile(pile === z ? null : z)}
-            dragStart={run || pending ? undefined : dragStart}
+            dragStart={busy ? undefined : dragStart}
             dropTarget={drag?.target}
+            hintCards={hl.cards}
+            hintZones={hl.zones}
           />
-          {pile && (
-            <div className="pile-view">
-              <div className="pile-head">
-                <strong>
-                  {ZONE_LABEL[pile]}（{pileCards.length}枚）
-                </strong>
-                {pile === 'deck' && <small>左がデッキトップ</small>}
-                <button onClick={() => setPile(null)}>閉じる</button>
-              </div>
-              <div className="pile-cards">
-                {(pile === 'gy' || pile === 'banished' ? [...pileCards].reverse() : pileCards).map((u) => (
-                  <CardView
-                    key={u}
-                    def={vdef(u)}
-                    inst={pile === 'banished' ? view.cards[u] : undefined}
-                    selected={sel === u}
-                    highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
-                    onClick={() => onCardClick(u)}
-                    onPointerDown={run || pending ? undefined : dragStart(u)}
-                    small
-                  />
+        </div>
+      </main>
+
+      <section className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
+        <div className="hand-cards">
+          {view.hand.map((u, i) => (
+            <div
+              key={u}
+              className={`hand-slot ${hl.cards.includes(u) ? 'hint' : ''}`}
+              style={{ marginLeft: i === 0 ? 0 : handStep - handCardWidth(winWidth, winHeight), zIndex: i }}
+            >
+              <CardView
+                def={vdef(u)}
+                selected={sel === u}
+                highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
+                onClick={() => onCardClick(u)}
+                onPointerDown={busy ? undefined : dragStart(u)}
+              />
+            </div>
+          ))}
+          {view.hand.length === 0 && <span className="note">手札なし</span>}
+        </div>
+      </section>
+
+      {error && (
+        <div className="toast" role="alert" onClick={() => setError(null)}>
+          {error}
+        </div>
+      )}
+
+      {/* カード詳細 */}
+      {sel && selDef && selLoc && !busy && !dropMenu && (
+        <div className="sheet-backdrop" onClick={() => setSelected(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{selDef.name}</h2>
+              <button onClick={() => setSelected(null)}>閉じる</button>
+            </div>
+            <div className="meta">
+              {selDef.attribute && `${selDef.attribute}属性 `}
+              {selDef.race && `${selDef.race} `}
+              {statLine(selDef)}
+              {selDef.tuner && ' / チューナー'}
+              {' ・ '}
+              {ZONE_LABEL[selLoc.zone]}
+              {isOnField(selLoc) && !state.cards[sel].faceUp && '（裏側）'}
+            </div>
+            {selDef.materialText && <div className="meta">素材: {selDef.materialText}</div>}
+            <p className="text">{selDef.text}</p>
+            {state.cards[sel].overlay.length > 0 && (
+              <div className="overlay-list">
+                エクシーズ素材:
+                {state.cards[sel].overlay.map((m) => (
+                  <button key={m} onClick={() => dispatch({ type: 'DETACH', target: sel, uid: m })}>
+                    {def(m).name} を取り除く
+                  </button>
                 ))}
               </div>
+            )}
+            <div className="btn-grid">
+              {buttonsFor(sel).map((b) => (
+                <button
+                  key={b.label}
+                  className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
+                  onClick={() => {
+                    b.onClick();
+                    setSelected(null);
+                    setPile(null);
+                  }}
+                >
+                  {b.label}
+                </button>
+              ))}
             </div>
-          )}
-          <div className={`hand ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
-            <div className="hand-label">手札 {view.hand.length}枚</div>
-            <div className="hand-cards">
-              {view.hand.map((u) => (
+          </div>
+        </div>
+      )}
+
+      {/* デッキ・墓地・除外・EXの中身 */}
+      {pile && (
+        <div className="modal-backdrop" onClick={() => setPile(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>
+                {ZONE_LABEL[pile]}（{pileCards.length}枚）
+              </h2>
+              <button onClick={() => setPile(null)}>閉じる</button>
+            </div>
+            {pile === 'deck' && <p className="note">左上がデッキの一番上です。</p>}
+            {busy && <p className="note">カードをタップして選択できます。</p>}
+            <div className="pile-cards">
+              {(pile === 'gy' || pile === 'banished' ? [...pileCards].reverse() : pileCards).map((u) => (
                 <CardView
                   key={u}
                   def={vdef(u)}
+                  inst={pile === 'banished' ? view.cards[u] : undefined}
                   selected={sel === u}
                   highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                   onClick={() => onCardClick(u)}
-                  onPointerDown={run || pending ? undefined : dragStart(u)}
+                  small
                 />
               ))}
             </div>
           </div>
-        </section>
+        </div>
+      )}
 
-        <aside className="side">
-          <section className={`detail ${sel ? 'has-sel' : ''}`}>
-            {sel && selDef && selLoc ? (
-              <>
-                <div className="detail-head">
-                  <h2>{selDef.name}</h2>
-                  <button className="sheet-close" onClick={() => setSelected(null)} aria-label="閉じる">
-                    閉じる
-                  </button>
-                </div>
-                <div className="meta">
-                  {selDef.attribute && `${selDef.attribute}属性 `}
-                  {selDef.race && `${selDef.race} `}
-                  {statLine(selDef)}
-                  {selDef.tuner && ' / チューナー'}
-                  {' ・ '}
-                  {ZONE_LABEL[selLoc.zone]}
-                  {isOnField(selLoc) && !state.cards[sel].faceUp && '（裏側）'}
-                </div>
-                {selDef.materialText && <div className="meta">素材: {selDef.materialText}</div>}
-                <p className="text">{selDef.text}</p>
-                {state.cards[sel].overlay.length > 0 && (
-                  <div className="overlay-list">
-                    エクシーズ素材:
-                    {state.cards[sel].overlay.map((m) => (
-                      <button key={m} onClick={() => dispatch({ type: 'DETACH', target: sel, uid: m })}>
-                        {def(m).name} を取り除く
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="btn-grid">
-                  {(run ? [] : buttonsFor(sel)).map((b) => (
-                    <button
-                      key={b.label}
-                      className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
-                      onClick={b.onClick}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="note">カードをクリックすると操作が表示されます。デッキ・墓地・除外・EXはクリックで中身を表示。</p>
-            )}
-          </section>
+      {/* ルート（探索・ガイド） */}
+      <div className="modal-backdrop" hidden={modal !== 'routes'} onClick={() => setModal(null)}>
+        <RoutePanel
+          search={routeSearch}
+          state={state}
+          actionCount={session.actions.length}
+          guides={TOON_GUIDES}
+          coach={coach}
+          coachDone={coachDone}
+          onPractice={(c) => {
+            setCoach(c);
+            setModal(null);
+          }}
+          onAutoPlay={autoPlay}
+          onStartGuide={startGuide}
+          onClose={() => setModal(null)}
+        />
+      </div>
 
-          <RoutePanel
-            state={state}
-            ctx={ctx}
-            actionCount={session.actions.length}
-            guides={TOON_GUIDES}
-            guideProgress={guide ? { id: guide.id, done: guideDone } : null}
-            dispatch={dispatch}
-            onStartGuide={startGuide}
-            onError={setError}
-          />
-
-          <section className="log">
-            <div className="log-head">
-              <strong>ルート記録（{session.actions.length}手）</strong>
-              <button onClick={copyLog}>コピー</button>
+      {/* メニュー */}
+      {modal === 'menu' && (
+        <div className="modal-backdrop" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>メニュー</h2>
+              <button onClick={() => setModal(null)}>閉じる</button>
             </div>
-            <div className="route-save">
-              <input
-                id="route-name"
-                value={routeName}
-                placeholder={`ルート名（例：${deck.name} シード${session.seed}）`}
-                onChange={(e) => setRouteName(e.target.value)}
+            <div className="btn-grid">
+              <button className="primary" onClick={() => { setModal(null); setShowSetup(true); }}>
+                新しいゲーム（手札を選ぶ）
+              </button>
+              <button onClick={() => { setSession((s) => ({ ...s, actions: [] })); setModal(null); }} disabled={session.actions.length === 0}>
+                同じ初手で最初から
+              </button>
+              <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+              <button onClick={() => dispatch({ type: 'DRAW' })}>1枚ドロー</button>
+              <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
+              <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>
+              <label className="toggle wide">
+                <input
+                  id="strict-toggle"
+                  type="checkbox"
+                  checked={session.strict}
+                  onChange={(e) => setSession((s) => ({ ...s, strict: e.target.checked }))}
+                />
+                ルールチェック
+              </label>
+            </div>
+            {showToken && (
+              <TokenForm
+                onCreate={(t) => {
+                  setModal(null);
+                  start({
+                    title: `${t.name}を生成`,
+                    hint: '',
+                    zone: 'monster',
+                    build: (_, z) => ({ type: 'CREATE_TOKEN', ...t, to: z as MonsterLocation }),
+                  });
+                }}
               />
-              <button onClick={saveRoute}>保存</button>
+            )}
+            <div className="log-head">
+              <strong>記録（{session.actions.length}手）</strong>
+              <button onClick={copyLog}>コピー</button>
             </div>
             <ol className="log-list">
               {state.log.map((l, i) => (
@@ -899,17 +987,27 @@ export function App() {
                 </li>
               ))}
             </ol>
+            <div className="route-save">
+              <input
+                id="route-name"
+                value={routeName}
+                placeholder={`記録の名前（例：${deck.name} シード${session.seed}）`}
+                onChange={(e) => setRouteName(e.target.value)}
+              />
+              <button onClick={saveRoute}>保存</button>
+            </div>
             {routes.length > 0 && (
               <div className="routes">
-                <strong>保存したルート</strong>
                 {routes.map((r, i) => (
                   <div key={i} className="route-row">
                     <span className="grow">{r.name}</span>
                     <button
                       onClick={() => {
-                        setSession({ deckName: r.deckName, seed: r.seed, fixedHand: r.fixedHand, strict: r.strict, actions: r.actions });
+                        setSession({ deckName: r.deckName, seed: r.seed, fixedHand: r.fixedHand, handSize: r.handSize, strict: r.strict, actions: r.actions });
                         setPending(null);
                         setSelected(null);
+                        setCoach(null);
+                        setModal(null);
                       }}
                     >
                       読込
@@ -927,9 +1025,9 @@ export function App() {
                 ))}
               </div>
             )}
-          </section>
-        </aside>
-      </main>
+          </div>
+        </div>
+      )}
 
       {drag && state.cards[drag.uid] && (
         <div className="drag-ghost" style={{ left: drag.x, top: drag.y }}>
@@ -969,24 +1067,41 @@ export function App() {
         <SetupDialog
           initial={{ ...session, seed: randomSeed() }}
           onClose={() => setShowSetup(false)}
-          onStart={(s) => {
+          onStart={(s, search) => {
             try {
-              createGame(DECKS.find((d) => d.name === s.deckName) ?? DECKS[0], replayCtx, s.seed, s.fixedHand);
+              createGame(DECKS.find((d) => d.name === s.deckName) ?? DECKS[0], replayCtx, s.seed, s.fixedHand, s.handSize);
             } catch (e) {
               setError((e as Error).message);
               return;
             }
             setSession(s);
-            setGuideId(null);
+            setCoach(null);
             setSelected(null);
             setPending(null);
+            setRun(null);
             setPile(null);
             setShowSetup(false);
+            setAutoSearch(search);
           }}
         />
       )}
     </div>
   );
+}
+
+/** 手札のカードの幅（画面の大きさに合わせる） */
+function handCardWidth(w: number, h: number): number {
+  return Math.round(Math.max(58, Math.min(110, w / 5.4, (h - 120) / 6.2)));
+}
+
+function useWindowSize() {
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const on = () => setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return size;
 }
 
 interface TokenSpec {

@@ -18,6 +18,9 @@ interface Props {
   dragStart?: (uid: string) => (e: React.PointerEvent) => void;
   /** ドラッグ中に指している落とし先（data-drop の値） */
   dropTarget?: string | null;
+  /** 練習中の「次の手」で使うカード・出し先 */
+  hintCards?: string[];
+  hintZones?: Location[];
 }
 
 export function Board({
@@ -31,7 +34,11 @@ export function Board({
   onPileClick,
   dragStart,
   dropTarget,
+  hintCards = [],
+  hintZones = [],
 }: Props) {
+  const isHintZone = (loc: Location) =>
+    hintZones.some((z) => z.zone === loc.zone && ('index' in z ? z.index : -1) === ('index' in loc ? loc.index : -1));
   const linked = linkedMainZones(state, (u) => getDef(state, ctx, u));
 
   const slot = (loc: Location, uid: string | null, label: string, extraCls = '') => {
@@ -39,7 +46,9 @@ export function Board({
     const drop = 'index' in loc ? `${loc.zone}:${loc.index}` : loc.zone;
     return (
       <div
-        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''} ${dropTarget === drop ? 'drop-over' : ''}`}
+        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''} ${dropTarget === drop ? 'drop-over' : ''} ${
+          isHintZone(loc) ? 'hint-zone' : ''
+        } ${uid && hintCards.includes(uid) ? 'hint' : ''}`}
         data-drop={drop}
         onClick={() => (selectable ? onZoneClick(loc) : uid && onCardClick(uid))}
       >
@@ -62,7 +71,11 @@ export function Board({
     const list = state[zone];
     const top = zone === 'gy' || zone === 'banished' ? list[list.length - 1] : undefined;
     return (
-      <div className={`zone pile ${dropTarget === zone ? 'drop-over' : ''}`} data-drop={zone} onClick={() => onPileClick(zone)}>
+      <div
+        className={`zone pile ${dropTarget === zone ? 'drop-over' : ''} ${list.some((u) => hintCards.includes(u)) ? 'hint' : ''}`}
+        data-drop={zone}
+        onClick={() => onPileClick(zone)}
+      >
         {top ? (
           <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} />
         ) : (

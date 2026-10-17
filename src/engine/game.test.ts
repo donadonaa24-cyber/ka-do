@@ -41,6 +41,14 @@ describe('ゲーム開始', () => {
     expect(a.hand.map((u) => a.cards[u].defId)).toEqual(b.hand.map((u) => b.cards[u].defId));
   });
 
+  it('6枚（後攻）で始めるとバトルフェイズを行える', () => {
+    let s = createGame(TEST_DECK, ctx, 1, [], 6);
+    expect(s.hand).toHaveLength(6);
+    expect(s.turn).toBe(2);
+    s = run(s, { type: 'NEXT_PHASE' });
+    expect(s.phase).toBe('BP');
+  });
+
   it('初手指定ができる', () => {
     const s = createGame(TEST_DECK, ctx, 1, ['t-lv7', 't-tuner3']);
     const ids = s.hand.map((u) => s.cards[u].defId);

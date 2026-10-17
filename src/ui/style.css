@@ -1,42 +1,71 @@
+/* 一画面に収まる卓のレイアウト：上部バー／盤面（次の手の表示つき）／手札。それ以外はモーダル */
 :root {
-  --bg: #12141a;
+  --bg: #11131a;
+  --felt: #16202b;
   --panel: #1c1f28;
-  --panel2: #252935;
+  --panel2: #262a36;
   --line: #343a48;
   --text: #e6e8ee;
   --muted: #9aa1b2;
   --accent: #4f8cff;
+  --gold: #f2c14e;
   --warn: #ffb347;
   --danger: #ff6b6b;
   --ok: #5bd18b;
-  --card-w: 64px;
-  --card-h: 90px;
+  --vh: 100vh;
+  /* 盤面のカードの大きさ：画面の幅（7列）と高さ（3段＋上部バー・次の手・手札）の小さい方 */
+  --hand-w: 72px;
+  --reserve: calc(84px + 78px + var(--hand-w) * 1.43 + 44px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+  --card-w: max(
+    30px,
+    min(calc((min(100vw, 780px) - 24px) / 7 - 7px), calc((var(--vh) - var(--reserve)) / 3 / 1.43 - 9px), 92px)
+  );
+  --card-h: calc(var(--card-w) * 1.43);
   color-scheme: dark;
+}
+@supports (height: 100dvh) {
+  :root {
+    --vh: 100dvh;
+  }
 }
 
 * {
   box-sizing: border-box;
 }
-
+[hidden] {
+  display: none !important;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   font-size: 14px;
+  overscroll-behavior: none;
 }
 
 button {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 10px;
+  border-radius: 8px;
+  padding: 6px 10px;
   font: inherit;
   cursor: pointer;
+  touch-action: manipulation;
 }
 button:hover:not(:disabled) {
   border-color: var(--accent);
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 button:disabled {
   opacity: 0.4;
@@ -47,152 +76,111 @@ button.primary {
   border-color: var(--accent);
   color: #fff;
 }
+button.accent {
+  background: transparent;
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+}
 input,
 select {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 5px 7px;
   font: inherit;
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
-/* ===== ヘッダー ===== */
-.topbar {
+/* ===== 上部バー ===== */
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  padding-block: 8px 6px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
-.topbar h1 {
-  font-size: 16px;
-  margin: 0;
-}
-.status {
+.hud-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  font-weight: 600;
+  gap: 4px;
+  min-width: 0;
 }
-.status .phase {
+.chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.chip.phase {
   color: var(--accent);
 }
-.status .used {
+.chip.used {
   color: var(--muted);
 }
-.status .avail {
+.chip.avail {
   color: var(--ok);
 }
-.status .free {
+.chip.free {
   color: var(--warn);
 }
-.status .result {
+.chip.result {
   color: var(--danger);
 }
-.btn-row {
+.hud-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
-  align-items: center;
-}
-.toggle {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.error {
-  background: #4a1f24;
-  border: 1px solid var(--danger);
-  color: #ffd5d5;
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.pending {
-  background: #1f2d4a;
-  border: 1px solid var(--accent);
-  padding: 6px 10px;
-  border-radius: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-.pending .picked {
-  color: var(--warn);
-}
-.token-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.token-form input[type='number'] {
-  width: 70px;
+  margin-left: auto;
 }
 
-/* ===== レイアウト ===== */
-.main {
+/* ===== 卓 ===== */
+.table {
+  position: relative;
+  min-height: 0;
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-block: 6px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  background: radial-gradient(ellipse at 50% 40%, var(--felt), var(--bg) 75%);
 }
-.play {
+.board-wrap {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
-.side {
-  width: 340px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-@media (max-width: 900px) {
-  .main {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .side {
-    width: 100%;
-  }
-  :root {
-    --card-w: 50px;
-    --card-h: 72px;
-  }
-}
-/* ===== 盤面 ===== */
 .board {
   display: grid;
-  grid-template-columns: repeat(7, calc(var(--card-h) + 8px));
-  gap: 6px;
+  grid-template-columns: repeat(7, calc(var(--card-w) + 4px));
+  gap: 3px;
   justify-content: center;
-  background: var(--panel);
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  overflow-x: auto;
 }
 .zone-wrap {
   display: contents;
 }
 .zone {
-  height: calc(var(--card-h) + 8px);
+  height: calc(var(--card-h) + 6px);
   border: 1px dashed var(--line);
   border-radius: 6px;
   display: flex;
@@ -210,7 +198,7 @@ select {
   border-color: #3f8f5f;
 }
 .zone.linked {
-  border-color: #4f8cff;
+  border-color: var(--accent);
   border-style: solid;
   box-shadow: inset 0 0 8px rgba(79, 140, 255, 0.4);
 }
@@ -221,7 +209,8 @@ select {
 }
 .zone-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: max(8px, calc(var(--card-w) * 0.16));
+  text-align: center;
 }
 .pile {
   flex-direction: column;
@@ -229,15 +218,40 @@ select {
   cursor: pointer;
 }
 .pile .card {
-  transform: scale(0.85);
+  transform: scale(0.88);
 }
 .pile-count {
   position: absolute;
-  bottom: -2px;
-  font-size: 11px;
+  bottom: -3px;
+  font-size: max(9px, calc(var(--card-w) * 0.15));
   background: var(--panel);
   padding: 0 4px;
   border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 次の手のヒント */
+.zone.hint-zone {
+  border: 2px dashed var(--gold) !important;
+  background: rgba(242, 193, 78, 0.12);
+}
+.zone.hint .card,
+.zone.pile.hint,
+.hand-slot.hint .card {
+  box-shadow:
+    0 0 0 2px var(--gold),
+    0 0 14px 2px rgba(242, 193, 78, 0.7);
+  animation: hint-pulse 1.1s ease-in-out infinite alternate;
+}
+.hand-slot.hint {
+  transform: translateY(-8px);
+}
+@keyframes hint-pulse {
+  to {
+    box-shadow:
+      0 0 0 2px var(--gold),
+      0 0 4px 0 rgba(242, 193, 78, 0.3);
+  }
 }
 
 /* ===== カード ===== */
@@ -245,8 +259,8 @@ select {
   width: var(--card-w);
   height: var(--card-h);
   border-radius: 4px;
-  padding: 3px;
-  font-size: 10px;
+  padding: 2px 3px;
+  font-size: max(7px, calc(var(--card-w) * 0.15));
   line-height: 1.2;
   color: #111;
   cursor: pointer;
@@ -257,12 +271,15 @@ select {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .card.def-pos {
-  transform: rotate(90deg);
+  transform: rotate(90deg) scale(0.72);
 }
 .card.face-down {
-  opacity: 0.7;
+  opacity: 0.75;
   background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0, 0, 0, 0.15) 6px 12px);
 }
 .card.selected {
@@ -288,12 +305,12 @@ select {
   overflow: hidden;
 }
 .card-stat {
-  font-size: 9px;
+  font-size: 0.85em;
 }
 .card-tag,
 .card-overlay,
 .card-markers {
-  font-size: 9px;
+  font-size: 0.85em;
   background: rgba(0, 0, 0, 0.25);
   color: #fff;
   border-radius: 3px;
@@ -301,10 +318,10 @@ select {
   align-self: flex-start;
 }
 .card.small {
-  --card-w: 56px;
-  --card-h: 78px;
+  --card-w: 58px;
+  --card-h: 82px;
+  font-size: 9px;
 }
-
 .f-normal {
   background: #e8c96a;
 }
@@ -348,50 +365,221 @@ select {
   border: 1px dashed var(--line);
 }
 
-/* ===== 手札・山札表示 ===== */
-.hand,
-.pile-view {
+/* ===== 手札 ===== */
+.hand-strip {
+  padding-block: 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: var(--panel);
-  border: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+.hand-cards {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: calc(var(--hand-w) * 1.43);
+}
+.hand-slot {
+  position: relative;
+  transition: transform 0.15s;
+}
+.hand-slot .card {
+  --card-w: var(--hand-w);
+  --card-h: calc(var(--hand-w) * 1.43);
+  font-size: max(9px, calc(var(--hand-w) * 0.14));
+  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.35);
+}
+
+/* ===== 次の手（練習中） ===== */
+.coach {
+  width: min(100%, 760px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  background: rgba(28, 31, 40, 0.95);
+  border: 1px solid var(--gold);
   border-radius: 10px;
-  padding: 10px;
 }
-.hand-label {
+.coach.finished {
+  border-color: var(--ok);
+}
+.coach-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.coach-count {
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.coach.finished .coach-count {
+  color: var(--ok);
+}
+.coach-title {
   color: var(--muted);
-  margin-bottom: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.hand-cards,
-.pile-cards {
+.coach-text {
+  grid-column: 1;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.coach-sub {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.coach-sub.warn {
+  color: var(--warn);
+}
+.coach-btns {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+.coach-btns button {
+  padding: 4px 10px;
+}
+
+/* ===== 操作中のパネル（素材・ゾーン選択） ===== */
+.action-panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  width: min(calc(100vw - 16px), 720px);
+  z-index: 60;
+  background: #1f2d4a;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.5);
+}
+.ap-title {
+  font-weight: 700;
+}
+.ap-hint {
+  font-size: 12px;
+  color: #c9d6f0;
+}
+.run-cands {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.btn-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.hand .card {
-  --card-w: 80px;
-  --card-h: 112px;
-  font-size: 11px;
-}
-.pile-head {
-  display: flex;
-  gap: 10px;
   align-items: center;
-  margin-bottom: 8px;
-}
-.pile-head button {
-  margin-left: auto;
 }
 
-/* ===== サイドパネル ===== */
-.detail,
-.log {
+/* ===== トースト ===== */
+.toast {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  z-index: 300;
+  background: #4a1f24;
+  border: 1px solid var(--danger);
+  color: #ffd5d5;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* ===== モーダル・シート ===== */
+.modal-backdrop,
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.sheet-backdrop {
+  align-items: flex-end;
+  padding-bottom: 0;
+}
+.modal,
+.sheet {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 14px;
+  padding: 14px;
+  width: min(560px, 100%);
+  max-height: 88%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.detail h2 {
-  font-size: 16px;
-  margin: 0 0 4px;
+.sheet {
+  border-radius: 14px 14px 0 0;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  max-height: 72%;
+}
+.route-modal {
+  width: min(680px, 100%);
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.modal-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  text-wrap: balance;
+}
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seg {
+  display: flex;
+  gap: 4px;
+}
+.seg.wrap {
+  flex-wrap: wrap;
+}
+.seg button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
 }
 .meta {
   color: var(--muted);
@@ -400,13 +588,17 @@ select {
 .text {
   white-space: pre-wrap;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 9.5em;
+  overflow-y: auto;
 }
 .btn-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
+.btn-grid .wide,
 .btn-grid button.wide {
   grid-column: 1 / -1;
   text-align: left;
@@ -416,11 +608,37 @@ select {
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  margin-bottom: 8px;
+}
+.pile-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .note {
   color: var(--muted);
   font-size: 12px;
+  margin: 0;
+}
+.note.warn {
+  color: var(--warn);
+}
+.note.ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+.toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.token-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.token-form input[type='number'] {
+  width: 70px;
 }
 .log-head {
   display: flex;
@@ -431,12 +649,12 @@ select {
   flex: 1;
 }
 .log-list {
-  max-height: 360px;
+  max-height: 30vh;
   overflow-y: auto;
   padding-left: 0;
   list-style: none;
   font-size: 12px;
-  margin: 8px 0;
+  margin: 0;
 }
 .log-list li {
   padding: 2px 0;
@@ -458,7 +676,7 @@ select {
 .log-info {
   color: var(--muted);
 }
-.routes,
+.route-save,
 .route-row,
 .hand-picker-row,
 .row {
@@ -466,189 +684,111 @@ select {
   gap: 6px;
   align-items: center;
 }
+.route-save input {
+  flex: 1;
+  min-width: 0;
+}
 .routes {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
+  gap: 4px;
+}
+.row.end {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 .grow {
   flex: 1;
+  min-width: 0;
 }
 
-/* ===== モーダル ===== */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 16px;
+/* ルート */
+.progress {
+  height: 6px;
+  background: var(--panel2);
+  border-radius: 3px;
+  overflow: hidden;
 }
-.modal {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
-  width: min(520px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
+.progress div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.route-final {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+.route-final ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.route-final li {
+  margin-left: 18px;
+  list-style: disc;
+}
+.route-steps {
+  margin: 0;
+  padding-left: 24px;
+  font-size: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-.modal h2,
-.modal h3 {
-  margin: 4px 0;
+.route-steps .head {
+  color: var(--text);
+}
+.route-steps .sub {
+  color: var(--muted);
+  padding-left: 8px;
+}
+.route-steps li.done {
+  opacity: 0.45;
+}
+.guide {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide.active {
+  border-top-color: var(--gold);
+}
+
+/* 新しいゲーム */
+.hand-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chips .chip {
+  font-weight: 400;
+  padding: 3px 8px;
 }
 .hand-picker {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 34vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
 }
 .hand-picker .count {
   width: 20px;
   text-align: center;
 }
-.row.end {
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
-/* ===== スマホ幅（他の指定より後に置く） ===== */
-@media (max-width: 600px) {
-  :root {
-    --card-w: 34px;
-    --card-h: 46px;
-  }
-  .main {
-    padding-top: 8px;
-  }
-  .board {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 3px;
-    padding: 6px;
-  }
-  .board .card {
-    font-size: 7px;
-    padding: 1px;
-  }
-  .board .card-stat,
-  .board .card-tag {
-    display: none;
-  }
-  .zone-label,
-  .pile-count {
-    font-size: 9px;
-  }
-}
-
-/* ===== 効果処理パネル ===== */
-.pending.run {
-  flex-direction: column;
-  align-items: flex-start;
-}
-.run-cands {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-/* ===== 非公開ページ（Artifact）・スマホ向け ===== */
-.detail-head {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-.detail-head h2 {
-  flex: 1;
-  min-width: 0;
-}
-.sheet-close {
-  display: none;
-}
-.route-save {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-.route-save input {
-  flex: 1;
-  min-width: 0;
-}
-.topbar {
-  top: env(safe-area-inset-top, 0px);
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0 0 auto;
-  height: env(safe-area-inset-top, 0px);
-  z-index: 10;
-  background: var(--panel);
-}
-.main {
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-@media (max-width: 900px) {
-  /* 上部バーは固定せず、操作パネルを画面下に出す */
-  .topbar {
-    position: static;
-  }
-  .main {
-    padding-bottom: 45vh;
-  }
-  .pending,
-  .detail.has-sel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 50;
-    max-height: 55vh;
-    overflow-y: auto;
-    border-radius: 14px 14px 0 0;
-    border: 1px solid var(--accent);
-    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px))
-      max(16px, env(safe-area-inset-left, 0px));
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
-  }
-  .pending {
-    background: #1f2d4a;
-  }
-  .detail.has-sel {
-    background: var(--panel);
-  }
-  .detail .text {
-    max-height: 7.5em;
-    overflow-y: auto;
-  }
-  .app.busy .detail.has-sel {
-    display: none;
-  }
-  .sheet-close {
-    display: inline-block;
-  }
-  .error {
-    position: fixed;
-    left: 8px;
-    right: 8px;
-    top: calc(8px + env(safe-area-inset-top, 0px));
-    z-index: 60;
-  }
-}
 
 /* ===== ドラッグ＆ドロップ ===== */
-.card {
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
 .app.dragging {
   cursor: grabbing;
 }
@@ -687,88 +827,11 @@ body::before {
   text-align: left;
 }
 
-/* ===== ルート ===== */
-.routes-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.tabs,
-.route-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.tabs button.on,
-.route-tabs button.on {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.tab-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.progress {
-  height: 6px;
-  background: var(--panel2);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.progress div {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.2s;
-}
-.route-summary {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.route-steps {
-  margin: 0;
-  padding-left: 22px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 420px;
-  overflow-y: auto;
-}
-.route-steps .head {
-  color: var(--text);
-}
-.route-steps .sub {
-  color: var(--muted);
-  padding-left: 8px;
-}
-.route-steps li.done {
-  opacity: 0.45;
-}
-.route-steps li.current {
-  outline: 1px solid var(--accent);
-  border-radius: 4px;
-  padding: 2px 4px;
-}
-.guide {
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.guide.active {
-  border-top-color: var(--accent);
-}
-.note.warn {
-  color: var(--warn);
-}
-.note.ok {
-  color: var(--ok);
-  font-weight: 700;
+@media (prefers-reduced-motion: reduce) {
+  .zone.hint .card,
+  .zone.pile.hint,
+  .hand-slot.hint .card,
+  .card.resolving {
+    animation: none;
+  }
 }

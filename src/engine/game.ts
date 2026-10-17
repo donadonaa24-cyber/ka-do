@@ -131,6 +131,8 @@ export function createGame(
   seed: number,
   /** 初手に必ず含めるカードID（ルート練習用の初手指定） */
   fixedHand: string[] = [],
+  /** 初手の枚数。6枚なら後攻（1ターン目のドロー後）として始める */
+  handSize: 5 | 6 = 5,
 ): GameState {
   const cards: Record<string, CardInstance> = {};
   let nextUid = 1;
@@ -152,7 +154,9 @@ export function createGame(
     hand.push(shuffled[i]);
     shuffled = [...shuffled.slice(0, i), ...shuffled.slice(i + 1)];
   }
-  while (hand.length < 5 && shuffled.length > 0) hand.push(shuffled.shift()!);
+  if (fixedHand.length > handSize) throw new Error(`初手は${handSize}枚までです`);
+  while (hand.length < handSize && shuffled.length > 0) hand.push(shuffled.shift()!);
+  const second = handSize === 6;
 
   const state: GameState = {
     seed,
@@ -167,7 +171,8 @@ export function createGame(
     emz: [null, null],
     stz: [null, null, null, null, null],
     fz: null,
-    turn: 1,
+    // 後攻は「2ターン目」として扱う（バトルフェイズを行える）
+    turn: second ? 2 : 1,
     phase: 'M1',
     lp: 8000,
     opponentLp: 8000,
@@ -180,8 +185,12 @@ export function createGame(
     summonGrants: [],
     spellActivatedThisTurn: false,
   };
-  log(state, `デュエル開始（先攻・シード ${seed}）。初手5枚をドロー。`, 'info');
-  log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズも行えません。', 'info');
+  if (second) {
+    log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
+  } else {
+    log(state, `デュエル開始（先攻・シード ${seed}）。初手5枚をドロー。`, 'info');
+    log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズも行えません。', 'info');
+  }
   return state;
 }
 
