@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { type Ctx, findLocation } from '../engine/game';
-import type { CardInstance, GameState, Location } from '../engine/types';
+import type { CardInstance, GameState, LinkMarker, Location } from '../engine/types';
 import { CardView } from './CardView';
 
 // カードの移動（サーチ・ドロー・捨てる・コスト・召喚など）を、移動元から移動先へ飛ばして見せる演出
@@ -38,6 +38,8 @@ interface Flight {
   burst?: BurstKind;
   /** 移動元に出す演出（破壊・除外など） */
   leave?: BurstKind;
+  /** 飛ばさずに、その場に現れる（EXデッキからの召喚の演出の後） */
+  appear?: boolean;
 }
 
 interface Burst {
@@ -46,10 +48,20 @@ interface Burst {
   at: Rect;
   delay: number;
   label?: string;
+  /** 召喚したカード（演出の間、そのカードの位置に合わせる） */
+  uid?: string;
+  /** リンク召喚：出すモンスターのリンクマーカー */
+  arrows?: LinkMarker[];
+  /** 相手のカード（向きが逆） */
+  mirror?: boolean;
 }
 
 const FLIGHT_MS = 560;
+const APPEAR_MS = 520;
 const STAGGER_MS = 140;
+
+/** 融合・シンクロ・エクシーズ・リンク召喚は、演出を見せてからカードが現れる */
+const PRELUDE_MS: Partial<Record<BurstKind, number>> = { fusion: 1100, synchro: 900, xyz: 1150, link: 1100 };
 
 const reduceMotion = () => {
   try {
@@ -75,6 +87,28 @@ function measure(root: HTMLElement | null) {
   });
   root.querySelectorAll<HTMLElement>('[data-pile]').forEach((el) => piles.set(el.dataset.pile!, rectOf(el)));
   return { cards, piles };
+}
+
+/** 演出の間に盤面の配置が変わっても（解説が開くなど）、カードの今の位置に合わせる */
+function useLiveRect(uid: string | undefined, initial: Rect): Rect {
+  const [rect, setRect] = useState(initial);
+  useLayoutEffect(() => {
+    if (!uid) return;
+    let raf = 0;
+    const tick = () => {
+      const el = [...document.querySelectorAll(`.app [data-uid="${uid}"]`)].find(
+        (e) => e.closest('.modal, .sheet, .route-modal') === null,
+      );
+      if (el) {
+        const n = rectOf(el);
+        setRect((p) => (Math.abs(p.x - n.x) + Math.abs(p.y - n.y) + Math.abs(p.w - n.w) > 0.5 ? n : p));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [uid]);
+  return rect;
 }
 
 /** カードの場所を、山札などの名前にする（個々のカードが表示されていない場所の代わりの位置） */
@@ -228,39 +262,68 @@ export function MotionLayer({ view, ctx, animate }: Props) {
 
     const step = Math.min(STAGGER_MS, 900 / moved.length);
     const fl: Flight[] = [];
+    const bs: Burst[] = [];
+    // EXデッキからの召喚の演出の間は、後のカードの移動を待たせる
+    let wait = 0;
     moved.forEach((m, i) => {
       const from = before.cards.get(m.uid) ?? (m.from ? before.piles.get(pileOf(m.from)!) : undefined);
       const to = now.cards.get(m.uid) ?? now.piles.get(pileOf(m.to)!);
       if (!from || !to) return;
       const d = describe(old, view, m.uid, m.from, m.to, advance);
+      const inst = view.cards[m.uid];
+      const delay = i * step + wait;
+      const pre = d.burst ? PRELUDE_MS[d.burst] : undefined;
+      if (d.leave) bs.push({ id: nextId.current++, kind: d.leave, at: from, delay });
+      if (pre) {
+        // 演出 → その場にカードが現れる
+        const def = view.tokenDefs[inst.defId] ?? ctx.db[inst.defId];
+        bs.push({
+          id: nextId.current++,
+          kind: d.burst!,
+          at: to,
+          delay,
+          label: d.label,
+          uid: m.uid,
+          arrows: def?.linkMarkers,
+          mirror: m.to.zone.startsWith('o'),
+        });
+        fl.push({
+          id: nextId.current++,
+          uid: m.uid,
+          from: to,
+          to,
+          delay: delay + pre - 120,
+          label: '',
+          inst,
+          defId: inst.defId,
+          appear: true,
+        });
+        wait += pre;
+        return;
+      }
       fl.push({
         id: nextId.current++,
         uid: m.uid,
         from,
         to,
-        delay: i * step,
+        delay,
         label: d.label,
         burst: d.burst,
-        leave: d.leave,
-        inst: view.cards[m.uid],
-        defId: view.cards[m.uid].defId,
+        inst,
+        defId: inst.defId,
       });
+      if (d.burst)
+        bs.push({ id: nextId.current++, kind: d.burst, at: to, delay: delay + FLIGHT_MS - 80, label: d.label });
     });
-    if (!fl.length) return;
+    if (!fl.length && !bs.length) return;
     // 着地するまで、移動先の本物のカードは隠しておく
     for (const f of fl) {
       const el = root?.querySelector<HTMLElement>(`[data-uid="${f.uid}"]`);
       if (!el) continue;
       el.style.visibility = 'hidden';
-      window.setTimeout(() => (el.style.visibility = ''), f.delay + FLIGHT_MS);
+      window.setTimeout(() => (el.style.visibility = ''), f.delay + (f.appear ? APPEAR_MS : FLIGHT_MS));
     }
     setFlights((x) => [...x, ...fl]);
-    const bs: Burst[] = [];
-    for (const f of fl) {
-      if (f.leave) bs.push({ id: nextId.current++, kind: f.leave, at: f.from, delay: f.delay });
-      if (f.burst)
-        bs.push({ id: nextId.current++, kind: f.burst, at: f.to, delay: f.delay + FLIGHT_MS - 80, label: f.label });
-    }
     if (bs.length) setBursts((b) => [...b, ...bs]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
@@ -285,24 +348,34 @@ export function MotionLayer({ view, ctx, animate }: Props) {
 
 function FlightView({ f, ctx, view, onDone }: { f: Flight; ctx: Ctx; view: GameState; onDone: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const live = useLiveRect(f.appear ? f.uid : undefined, f.to);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const dx = f.from.x + f.from.w / 2 - (f.to.x + f.to.w / 2);
     const dy = f.from.y + f.from.h / 2 - (f.to.y + f.to.h / 2);
     const s = f.to.w ? f.from.w / f.to.w : 1;
-    const a = el.animate(
-      [
-        { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0.95 },
-        {
-          transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 28}px) scale(${(s + 1) / 2 + 0.12})`,
-          opacity: 1,
-          offset: 0.55,
-        },
-        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-      ],
-      { duration: FLIGHT_MS, delay: f.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'both' },
-    );
+    const a = f.appear
+      ? el.animate(
+          [
+            { transform: 'scale(1.6)', opacity: 0, filter: 'brightness(3)' },
+            { transform: 'scale(0.94)', opacity: 1, filter: 'brightness(1.7)', offset: 0.6 },
+            { transform: 'scale(1)', opacity: 1, filter: 'brightness(1)' },
+          ],
+          { duration: APPEAR_MS, delay: f.delay, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'both' },
+        )
+      : el.animate(
+          [
+            { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0.95 },
+            {
+              transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 28}px) scale(${(s + 1) / 2 + 0.12})`,
+              opacity: 1,
+              offset: 0.55,
+            },
+            { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+          ],
+          { duration: FLIGHT_MS, delay: f.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'both' },
+        );
     a.onfinish = onDone;
     return () => a.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -316,12 +389,12 @@ function FlightView({ f, ctx, view, onDone }: { f: Flight; ctx: Ctx; view: GameS
       className="flight"
       style={
         {
-          left: f.to.x,
-          top: f.to.y,
-          width: f.to.w,
-          height: f.to.h,
-          '--card-w': `${f.to.w}px`,
-          '--card-h': `${f.to.h}px`,
+          left: live.x,
+          top: live.y,
+          width: live.w,
+          height: live.h,
+          '--card-w': `${live.w}px`,
+          '--card-h': `${live.h}px`,
         } as React.CSSProperties
       }
     >
@@ -332,6 +405,11 @@ function FlightView({ f, ctx, view, onDone }: { f: Flight; ctx: Ctx; view: GameS
 }
 
 function BurstView({ b, onDone }: { b: Burst; onDone: () => void }) {
+  if (PRELUDE_MS[b.kind]) return <SummonFx b={b} onDone={onDone} />;
+  return <RingBurst b={b} onDone={onDone} />;
+}
+
+function RingBurst({ b, onDone }: { b: Burst; onDone: () => void }) {
   useLayoutEffect(() => {
     const t = window.setTimeout(onDone, b.delay + 1100);
     return () => window.clearTimeout(t);
@@ -356,6 +434,107 @@ function BurstView({ b, onDone }: { b: Burst; onDone: () => void }) {
       <span className="burst-ring r2" />
       <span className="burst-glow" />
       {b.label && <span className="burst-label">{b.label}</span>}
+    </div>
+  );
+}
+
+/** リンクマーカーの向き（上が0度） */
+const ARROW_ANGLE: Record<LinkMarker, number> = { T: 0, TR: 45, R: 90, BR: 135, B: 180, BL: 225, L: 270, TL: 315 };
+
+/**
+ * 融合・シンクロ・エクシーズ・リンク召喚の演出（この後にカードが現れる）
+ * 融合：渦を巻いて吸い込む／シンクロ：光の柱がまっすぐ突き抜ける／エクシーズ：黒い靄が集まって爆発／リンク：リンクマーカーが出る
+ */
+function SummonFx({ b, onDone }: { b: Burst; onDone: () => void }) {
+  const pre = PRELUDE_MS[b.kind]!;
+  useLayoutEffect(() => {
+    const t = window.setTimeout(onDone, b.delay + pre + 1000);
+    // エクシーズは爆発の瞬間に盤面を揺らす
+    const board = b.kind === 'xyz' ? document.querySelector('.board') : null;
+    const shake = board?.animate(
+      [
+        { transform: 'translate(0, 0)' },
+        { transform: 'translate(-5px, 3px)' },
+        { transform: 'translate(4px, -3px)' },
+        { transform: 'translate(-3px, -2px)' },
+        { transform: 'translate(0, 0)' },
+      ],
+      { duration: 320, delay: b.delay + pre - 220 },
+    );
+    return () => {
+      window.clearTimeout(t);
+      shake?.cancel();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const at = useLiveRect(b.uid, b.at);
+  const cw = at.w;
+  const ch = at.h;
+  const size = Math.max(cw, ch) * 3;
+  const cx = at.x + cw / 2;
+  const cy = at.y + ch / 2;
+  const style = {
+    left: cx - size / 2,
+    top: cy - size / 2,
+    width: size,
+    height: size,
+    '--delay': `${b.delay}ms`,
+    '--pre': `${pre}ms`,
+    '--cw': `${cw}px`,
+    '--ch': `${ch}px`,
+  } as React.CSSProperties;
+  const corner = Math.hypot(cw / 2, ch / 2);
+  return (
+    <div className={`summon-fx fx-${b.kind}`} style={style}>
+      {b.kind === 'fusion' && (
+        <>
+          <span className="fx-swirl" />
+          <span className="fx-swirl s2" />
+          <span className="fx-core" />
+        </>
+      )}
+      {b.kind === 'synchro' && (
+        <>
+          {/* 光の柱は画面の上下いっぱいに */}
+          <span className="fx-beam" style={{ top: -(cy - size / 2), height: window.innerHeight }} />
+          <span className="fx-bolt" style={{ top: -(cy - size / 2), height: window.innerHeight }} />
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="fx-sring" style={{ '--i': i } as React.CSSProperties} />
+          ))}
+          <span className="fx-core" />
+        </>
+      )}
+      {b.kind === 'xyz' && (
+        <>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span key={i} className="fx-mist" style={{ '--i': i } as React.CSSProperties} />
+          ))}
+          <span className="fx-blast" />
+          <span className="fx-rays" />
+        </>
+      )}
+      {b.kind === 'link' && (
+        <>
+          <span className="fx-circuit" />
+          {(b.arrows ?? []).map((m, i) => {
+            const d = m.length === 2 ? corner + 6 : m === 'L' || m === 'R' ? cw / 2 + 10 : ch / 2 + 10;
+            return (
+              <span
+                key={m}
+                className="fx-arrow"
+                style={
+                  {
+                    '--a': `${ARROW_ANGLE[m] + (b.mirror ? 180 : 0)}deg`,
+                    '--d': `${d}px`,
+                    '--i': i,
+                  } as React.CSSProperties
+                }
+              />
+            );
+          })}
+        </>
+      )}
+      {b.label && <span className="fx-label">{b.label}</span>}
     </div>
   );
 }

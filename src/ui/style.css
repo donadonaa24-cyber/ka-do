@@ -1684,6 +1684,366 @@ button.danger {
 .burst-extra .burst-glow {
   inset: 10%;
 }
+
+/* ===== 融合・シンクロ・エクシーズ・リンク召喚の演出（--pre の間に見せて、その後カードが現れる） ===== */
+.summon-fx {
+  position: fixed;
+  pointer-events: none;
+}
+.summon-fx > span {
+  position: absolute;
+  opacity: 0;
+  /* 始まるまでは見せない（最初のコマを先に出さない） */
+  animation-fill-mode: forwards;
+}
+.fx-label {
+  left: 50%;
+  top: 50%;
+  margin-top: calc(var(--ch) / -2 - 10px);
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(17, 19, 26, 0.92);
+  border: 1px solid rgba(var(--fx), 0.9);
+  color: rgb(var(--fx));
+  box-shadow: 0 0 14px rgba(var(--fx), 0.6);
+  animation: burst-label 1100ms ease-out calc(var(--delay) + var(--pre) - 100ms) both;
+}
+.fx-core {
+  inset: 30%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, rgba(var(--fx), 0.9) 30%, rgba(var(--fx), 0) 70%);
+  animation: fx-flash 520ms ease-out calc(var(--delay) + var(--pre) - 180ms) both;
+}
+@keyframes fx-flash {
+  0% {
+    transform: scale(0.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* 融合：渦を巻いて中心に吸い込まれる */
+.fx-fusion {
+  --fx: 200, 120, 255;
+}
+.fx-swirl {
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(190, 110, 255, 0) 0deg,
+    rgba(190, 110, 255, 0.95) 70deg,
+    rgba(190, 110, 255, 0) 120deg,
+    rgba(100, 140, 255, 0.9) 190deg,
+    rgba(100, 140, 255, 0) 240deg,
+    rgba(255, 120, 220, 0.9) 310deg,
+    rgba(255, 120, 220, 0) 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 10%, #000 20%, #000 46%, transparent 68%);
+  mask: radial-gradient(circle, transparent 10%, #000 20%, #000 46%, transparent 68%);
+  filter: drop-shadow(0 0 8px rgba(190, 110, 255, 0.9));
+  animation: fx-swirl var(--pre) cubic-bezier(0.45, 0, 0.75, 1) var(--delay) both;
+}
+.fx-swirl.s2 {
+  inset: 14%;
+  filter: blur(1.5px) brightness(1.4);
+  animation-name: fx-swirl2;
+}
+@keyframes fx-swirl {
+  0% {
+    transform: rotate(0deg) scale(1.5);
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(900deg) scale(0.12);
+    opacity: 0;
+  }
+}
+@keyframes fx-swirl2 {
+  0% {
+    transform: rotate(120deg) scale(1.3);
+    opacity: 0;
+  }
+  20%,
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: rotate(1260deg) scale(0.1);
+    opacity: 0;
+  }
+}
+
+/* シンクロ：光の柱が下からまっすぐ突き抜ける（緑の輪が上っていく） */
+.fx-synchro {
+  --fx: 200, 255, 225;
+}
+.fx-beam,
+.fx-bolt {
+  left: calc(50% - var(--cw) * 0.32);
+  width: calc(var(--cw) * 0.64);
+}
+.fx-beam {
+  background: linear-gradient(
+    90deg,
+    rgba(120, 255, 180, 0),
+    rgba(120, 255, 180, 0.45) 25%,
+    #fff 50%,
+    rgba(120, 255, 180, 0.45) 75%,
+    rgba(120, 255, 180, 0)
+  );
+  box-shadow: 0 0 24px rgba(140, 255, 190, 0.8);
+  transform-origin: 50% 100%;
+  animation: fx-beam var(--pre) cubic-bezier(0.2, 0.8, 0.3, 1) var(--delay) both;
+}
+@keyframes fx-beam {
+  0% {
+    transform: scaleY(0) scaleX(0.4);
+    opacity: 1;
+  }
+  35% {
+    transform: scaleY(1) scaleX(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scaleY(1) scaleX(0.9);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scaleY(1) scaleX(0.05);
+    opacity: 0;
+  }
+}
+.fx-bolt {
+  height: 100%;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0), #fff 70%, rgba(255, 255, 255, 0));
+  -webkit-mask: linear-gradient(to top, transparent 0 70%, #000 85%, transparent);
+  mask: linear-gradient(to top, transparent 0 70%, #000 85%, transparent);
+  filter: drop-shadow(0 0 10px #fff);
+  animation: fx-bolt 420ms cubic-bezier(0.4, 0, 0.6, 1) var(--delay) both;
+}
+@keyframes fx-bolt {
+  0% {
+    transform: translateY(100%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100%);
+    opacity: 1;
+  }
+}
+.fx-sring {
+  left: calc(50% - var(--cw) * 0.75);
+  width: calc(var(--cw) * 1.5);
+  top: calc(50% - var(--cw) * 0.18);
+  height: calc(var(--cw) * 0.36);
+  border-radius: 50%;
+  border: 2px solid rgba(120, 255, 170, 0.95);
+  box-shadow:
+    0 0 10px rgba(120, 255, 170, 0.9),
+    inset 0 0 6px rgba(120, 255, 170, 0.7);
+  animation: fx-sring 640ms ease-out calc(var(--delay) + 120ms + var(--i) * 140ms) both;
+}
+@keyframes fx-sring {
+  0% {
+    transform: translateY(calc(var(--ch) * 0.9)) scale(0.5);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(calc(var(--ch) * -1.1)) scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* エクシーズ：黒い靄が渦を巻いて集まり、爆発する */
+.fx-xyz {
+  --fx: 255, 214, 120;
+}
+/* 靄の中で金色の光が渦を巻く */
+.fx-xyz::after {
+  content: '';
+  position: absolute;
+  inset: 26%;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(255, 210, 120, 0) 0deg,
+    rgba(255, 210, 120, 0.8) 40deg,
+    rgba(255, 210, 120, 0) 90deg,
+    rgba(255, 210, 120, 0) 180deg,
+    rgba(255, 210, 120, 0.8) 220deg,
+    rgba(255, 210, 120, 0) 270deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 40%, #000 48%, transparent 60%);
+  mask: radial-gradient(circle, transparent 40%, #000 48%, transparent 60%);
+  opacity: 0;
+  animation: fx-xyz-spark var(--pre) ease-in var(--delay) forwards;
+}
+@keyframes fx-xyz-spark {
+  0% {
+    transform: rotate(0deg) scale(1.2);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  80% {
+    transform: rotate(-540deg) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-600deg) scale(0.3);
+    opacity: 0;
+  }
+}
+.fx-mist {
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at calc(40% + var(--i) * 5%) calc(60% - var(--i) * 4%),
+    rgba(0, 0, 0, 0.98),
+    rgba(30, 14, 56, 0.95) 32%,
+    rgba(110, 60, 190, 0.55) 52%,
+    rgba(150, 90, 230, 0) 70%
+  );
+  filter: blur(4px);
+  animation: fx-mist var(--pre) ease-in calc(var(--delay) + var(--i) * 60ms) both;
+}
+@keyframes fx-mist {
+  0% {
+    transform: rotate(calc(var(--i) * 72deg)) translateX(30%) scale(0.6);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.95;
+  }
+  78% {
+    transform: rotate(calc(var(--i) * 72deg + 260deg)) translateX(4%) scale(0.75);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--i) * 72deg + 300deg)) translateX(0) scale(2);
+    opacity: 0;
+  }
+}
+.fx-blast {
+  inset: 20%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #fff 0%,
+    rgba(255, 230, 150, 0.95) 22%,
+    rgba(255, 140, 60, 0.75) 45%,
+    rgba(120, 40, 160, 0) 70%
+  );
+  animation: fx-blast 560ms cubic-bezier(0.1, 0.8, 0.3, 1) calc(var(--delay) + var(--pre) - 220ms) both;
+}
+@keyframes fx-blast {
+  0% {
+    transform: scale(0.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+.fx-rays {
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgba(255, 225, 150, 0.95) 0deg 5deg, transparent 5deg 24deg);
+  -webkit-mask: radial-gradient(circle, transparent 12%, #000 22%, transparent 70%);
+  mask: radial-gradient(circle, transparent 12%, #000 22%, transparent 70%);
+  animation: fx-rays 520ms ease-out calc(var(--delay) + var(--pre) - 200ms) both;
+}
+@keyframes fx-rays {
+  0% {
+    transform: scale(0.3) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6) rotate(25deg);
+    opacity: 0;
+  }
+}
+
+/* リンク：リンクマーカーが外へ伸びて光り、その後カードが現れる */
+.fx-link {
+  --fx: 90, 180, 255;
+}
+.fx-circuit {
+  left: calc(50% - var(--ch) * 0.62);
+  top: calc(50% - var(--ch) * 0.62);
+  width: calc(var(--ch) * 1.24);
+  height: calc(var(--ch) * 1.24);
+  border: 2px solid rgba(90, 180, 255, 0.9);
+  box-shadow:
+    0 0 14px rgba(90, 180, 255, 0.8),
+    inset 0 0 14px rgba(90, 180, 255, 0.5);
+  animation: fx-circuit calc(var(--pre) + 300ms) ease-out var(--delay) both;
+}
+@keyframes fx-circuit {
+  0% {
+    transform: rotate(45deg) scale(0.3);
+    opacity: 0;
+  }
+  25% {
+    transform: rotate(135deg) scale(1);
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(225deg) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: rotate(270deg) scale(1.3);
+    opacity: 0;
+  }
+}
+.fx-arrow {
+  left: calc(50% - var(--cw) * 0.17);
+  top: calc(50% - var(--cw) * 0.12);
+  width: calc(var(--cw) * 0.34);
+  height: calc(var(--cw) * 0.24);
+  background: linear-gradient(#ffd0a0, #ff4a2a);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 0 6px #ff5a2a) drop-shadow(0 0 3px #fff);
+  animation: fx-arrow calc(var(--pre) + 260ms) cubic-bezier(0.2, 0.8, 0.3, 1) calc(var(--delay) + var(--i) * 110ms) both;
+}
+@keyframes fx-arrow {
+  0% {
+    transform: rotate(var(--a)) translateY(0) scale(0.3);
+    opacity: 0;
+  }
+  30% {
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(1.4);
+    opacity: 1;
+  }
+  45% {
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(1);
+    opacity: 1;
+  }
+  85% {
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1 - 8px)) scale(1);
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .motion-layer {
     display: none;
