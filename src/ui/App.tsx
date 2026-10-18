@@ -131,6 +131,8 @@ export function App() {
   /** 最後に自動で探した盤面（同じ盤面で何度も探さないため） */
   const naviKey = useRef('');
   const { w: winWidth, h: winHeight } = useWindowSize();
+  /** 手札の帯の高さ（ナビの解説を手札の上に出すため） */
+  const [handRef, handHeight] = useElementHeight<HTMLElement>();
   const routeSearch = useRouteSearch(useCallback((m: string) => setError(m), []));
   const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
   /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
@@ -1008,7 +1010,12 @@ export function App() {
     <CardImageContext.Provider value={shownImages}>
       <div
         className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''}`}
-        style={{ '--hand-w': `${handCardWidth(winWidth, winHeight)}px` } as React.CSSProperties}
+        style={
+          {
+            '--hand-w': `${handCardWidth(winWidth, winHeight)}px`,
+            '--hand-h': `${handHeight}px`,
+          } as React.CSSProperties
+        }
         onClickCapture={onClickCapture}
       >
         <header className="hud">
@@ -1091,7 +1098,7 @@ export function App() {
           </div>
         </main>
 
-        <section className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
+        <section ref={handRef} className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
           <div className="hand-cards">
             {view.hand.map((u, i) => (
               <div
@@ -1549,6 +1556,21 @@ export function App() {
 /** 手札のカードの幅（画面の大きさに合わせる） */
 function handCardWidth(w: number, h: number): number {
   return Math.round(Math.max(58, Math.min(110, w / 5.4, (h - 120) / 6.2)));
+}
+
+/** 要素の高さを見張る */
+function useElementHeight<T extends HTMLElement>(): [(el: T | null) => void, number] {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: T | null) => {
+    observer.current?.disconnect();
+    if (!el) return;
+    setHeight(el.getBoundingClientRect().height);
+    if (typeof ResizeObserver === 'undefined') return;
+    observer.current = new ResizeObserver(() => setHeight(el.getBoundingClientRect().height));
+    observer.current.observe(el);
+  }, []);
+  return [ref, height];
 }
 
 function useWindowSize() {
