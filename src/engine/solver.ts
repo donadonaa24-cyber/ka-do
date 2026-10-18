@@ -12,6 +12,7 @@ import {
   type Action,
   applyAction,
   type Ctx,
+  currentLevel,
   fieldMonsters,
   findLocation,
   getDef,
@@ -20,7 +21,7 @@ import {
   type MonsterLocation,
   type SummonMethod,
 } from './game';
-import { levelOf, tributesRequired } from './rules';
+import { tributesRequired } from './rules';
 import type { CardDef, GameState, Location } from './types';
 import { isExtraDeckCard } from './types';
 
@@ -85,14 +86,19 @@ function combinations<T>(items: T[], k: number, limit = 40): T[][] {
   return out;
 }
 
-/** 同じ名前・同じ場所のカードは同じ選択とみなして候補を減らす */
-function dedupe(state: GameState, uids: string[]): string[] {
-  const seen = new Set<string>();
+/**
+ * 同じ名前・同じ場所のカードは同じ選択とみなして候補を減らす（keep 枚までは残す。
+ * 「青眼の白龍」3体を素材にするなど同名カードを複数選ぶ場合のため）。フィールドのカードは1枚ずつ区別する
+ */
+function dedupe(state: GameState, uids: string[], keep = 1): string[] {
+  const seen = new Map<string, number>();
   return uids.filter((u) => {
     const loc = findLocation(state, u);
-    const key = `${state.cards[u].defId}@${loc?.zone ?? 'overlay'}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    const onField = loc && (loc.zone === 'mz' || loc.zone === 'emz' || loc.zone === 'stz' || loc.zone === 'fz');
+    const key = onField ? u : `${state.cards[u].defId}@${loc?.zone ?? 'overlay'}`;
+    const n = seen.get(key) ?? 0;
+    if (n >= keep) return false;
+    seen.set(key, n + 1);
     return true;
   });
 }
@@ -124,12 +130,20 @@ function expandEffect(
     const run = r.run;
     if (run.stage === 'pick') {
       const [min, max] = pickRange(run, ctx);
-      let cands = dedupe(run.temp, stepCandidates(run, ctx));
+      let cands = dedupe(run.temp, stepCandidates(run, ctx), Math.max(1, Math.min(max, 3)));
       // 「処理後まで除外」は、カード名の付かない1ターンに1度の効果を使い終えたモンスターにだけ試す（それ以外は得をしない）
       if (run.extraStep) cands = cands.filter((u) => softOncePerTurnUsed(run.temp, ctx, u));
-      const sizes = min === 0 ? [0, Math.min(1, max)] : [min];
+      const step = run.extraStep ?? run.effect.steps[run.stepIndex];
+      // 枚数の範囲が盤面で決まる選択（融合素材など）は全ての枚数を試す
+      const sizes =
+        step.op === 'pick' && step.range
+          ? Array.from({ length: Math.max(0, Math.min(max, min + 3) - min + 1) }, (_, i) => min + i)
+          : min === 0
+            ? [0, Math.min(1, max)]
+            : [min];
       for (const k of [...new Set(sizes)]) {
-        for (const picked of k === 0 ? [[]] : combinations(cands, k, opts.allZones ? 400 : 12)) walk(afterPick({ ...run, picked }, ctx));
+        for (const picked of k === 0 ? [[]] : combinations(cands, k, opts.allZones ? 400 : 12))
+          walk(afterPick({ ...run, picked }, ctx));
       }
     } else if (run.stage === 'mode') {
       const step = run.effect.steps[run.stepIndex];
@@ -170,10 +184,12 @@ function materialZones(state: GameState, materials: string[]): MonsterLocation[]
   return materials.map((m) => findLocation(state, m)).filter((l): l is MonsterLocation => isMonsterZone(l));
 }
 
-/** チューナー1体＋チューナー以外でレベルの合計が合う */
-function synchroMaterialsFit(defs: CardDef[], level: number): boolean {
-  if (defs.filter((d) => d.tuner).length !== 1) return false;
-  return defs.reduce((s, d) => s + (levelOf(d) ?? NaN), 0) === level;
+/** チューナー1体（またはチューナー2体以上＋1体）＋チューナー以外でレベルの合計が合う */
+function synchroMaterialsFit(state: GameState, ctx: Ctx, materials: string[], target: CardDef): boolean {
+  const tuners = materials.filter((u) => getDef(state, ctx, u).tuner).length;
+  const ok = target.multiTunerSynchro ? tuners >= 2 && materials.length - tuners === 1 : tuners === 1;
+  if (!ok) return false;
+  return materials.reduce((s, u) => s + (currentLevel(state, ctx, u) ?? NaN), 0) === target.level;
 }
 
 function cardsInPlay(state: GameState): string[] {
@@ -259,6 +275,7 @@ export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOpti
         proc.from.flatMap((z) =>
           z === 'monsters' ? monsters : z === 'hand' ? state.hand : z === 'gy' ? state.gy : [],
         ),
+        3,
       ).filter((u) => u !== uid && (!proc.materialFilter || proc.materialFilter(makeEnv(state, ctx, uid), u)));
       const sets =
         proc.from.length === 0 ? [[]] : [1, 2, 3].flatMap((k) => combinations(pool, k, opts.allZones ? 1000 : 30));
@@ -285,10 +302,10 @@ export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOpti
         ? [1, 2, 3, 4].filter((k) => k <= (d.link ?? 0))
         : method === 'xyz'
           ? [d.xyzMaterialCount ?? 2]
-          : [2, 3];
+          : [2, 3, 4];
     for (const k of sizes) {
       for (const materials of combinations(faceUp, k, 20)) {
-        if (method === 'synchro' && !synchroMaterialsFit(materials.map(def), d.level ?? 0)) continue;
+        if (method === 'synchro' && !synchroMaterialsFit(state, ctx, materials, d)) continue;
         const fieldMat = materials.find((m) => state.mz.includes(m));
         const zones = monsterZonesFor(state, true);
         const candidatesTo: MonsterLocation[] = opts.allZones

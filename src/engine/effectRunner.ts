@@ -26,6 +26,13 @@ export interface Running {
   tempBanishChecked?: boolean;
   /** 処理後まで除外したモンスター（処理が終わったら戻す） */
   tempBanished?: { uid: string; index: number; position: 'atk' | 'def' };
+  /** これまでのステップで選んだカード（後のステップの条件に使う） */
+  history?: string[][];
+}
+
+/** ステップに渡す盤面の見え方（前のステップで選んだカードを含む） */
+function stepEnv(run: Running, ctx: Ctx): Env {
+  return { ...makeEnv(run.temp, ctx, run.self), picks: run.history ?? [] };
 }
 
 export type RunResult =
@@ -139,6 +146,12 @@ export function startEffect(
     ? { type: 'ACTIVATE_CARD', uid, index: activationZone?.zone === 'stz' ? activationZone.index : undefined }
     : { type: 'ACTIVATE_EFFECT', uid, label: effect.label, key, limit: effect.limit };
   const batch: Action[] = [first];
+  // 魔法・罠の発動そのものに「このカード名の効果は1ターンに1度」がある場合
+  if (effect.isCardActivation && key) {
+    if (effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit)
+      return { kind: 'error', error: `このカード名の効果は1ターンに${effect.limit}度までです` };
+    batch.push({ type: 'ACTIVATE_EFFECT', uid, silent: true, key, limit: effect.limit });
+  }
   if (effect.key && effect.nameLimit !== undefined) {
     if (nameLimitReached(state, effect))
       return { kind: 'error', error: `このカード名の効果は1ターンに${effect.nameLimit}度までです` };
@@ -279,16 +292,17 @@ export function pickRange(run: Running, ctx: Ctx): [number, number] {
   const step = currentStep(run);
   if (!step || step.op !== 'pick') return [0, 0];
   if (step.count) {
-    const n = step.count(makeEnv(run.temp, ctx, run.self));
+    const n = step.count(stepEnv(run, ctx));
     return [n, n];
   }
+  if (step.range) return step.range(stepEnv(run, ctx));
   return [step.min ?? 1, step.max ?? 1];
 }
 
 export function stepCandidates(run: Running, ctx: Ctx): string[] {
   const step = currentStep(run);
   if (!step || step.op !== 'pick') return [];
-  const env = makeEnv(run.temp, ctx, run.self);
+  const env = stepEnv(run, ctx);
   return candidates(run.temp, step.from).filter(
     (u) => (!step.filter || env.matches(u, step.filter)) && (!step.where || step.where(env, u)),
   );
@@ -316,7 +330,7 @@ export function advance(run: Running, ctx: Ctx): RunResult {
     }
     if (!step) return finish(cur, ctx);
     if (step.op === 'do') {
-      const next = applyAll(cur, ctx, step.then(makeEnv(cur.temp, ctx, cur.self)));
+      const next = applyAll(cur, ctx, step.then(stepEnv(cur, ctx)));
       if (typeof next === 'string') return { kind: 'error', error: next };
       cur = { ...next, stepIndex: cur.stepIndex + 1 };
       continue;
@@ -360,7 +374,7 @@ function finish(run: Running, ctx: Ctx): RunResult {
 /** 選択（カード・処理の種類・ゾーン）を確定して次へ */
 export function completeStep(run: Running, ctx: Ctx, zone: Location | null): RunResult {
   const step = currentStep(run)!;
-  const env = makeEnv(run.temp, ctx, run.self);
+  const env = stepEnv(run, ctx);
   if (run.extraStep && step.op === 'pick') {
     // 処理後まで除外：戻す場所と表示形式を覚えておく
     const uid = run.picked[0];
@@ -384,7 +398,7 @@ export function completeStep(run: Running, ctx: Ctx, zone: Location | null): Run
   else actions = [];
   const next = applyAll(run, ctx, actions);
   if (typeof next === 'string') return { kind: 'error', error: next };
-  return advance({ ...next, stepIndex: run.stepIndex + 1 }, ctx);
+  return advance({ ...next, stepIndex: run.stepIndex + 1, history: [...(run.history ?? []), run.picked] }, ctx);
 }
 
 /** カード選択の後に必要な段階（処理の種類 → ゾーン）へ進む。不要なら確定する */

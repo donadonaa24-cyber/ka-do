@@ -13,6 +13,8 @@ export interface Env {
   toonWorld: boolean;
   isToon: (uid: string) => boolean;
   matches: (uid: string, filter: CardFilter) => boolean;
+  /** 同じ効果の処理でこれまでのステップに選んだカード（ステップ順） */
+  picks?: string[][];
 }
 
 /** 「通常召喚できない」モンスターなどの召喚条件による特殊召喚 */
@@ -23,6 +25,8 @@ export interface ProcedureDef {
   from: PickZone[];
   /** コストにできるカード（候補を絞るため。最終的な判定は validate） */
   materialFilter?: (env: Env, uid: string) => boolean;
+  /** コストにしたカードの移動の理由（「リリース」なら「リリースされた場合」の効果が使える） */
+  materialsReason?: string;
   /** コストにしたカードの行き先 */
   materialsTo: 'gy' | 'deck' | 'banished';
   /** 「１ターンに１度」の召喚条件 */
@@ -50,6 +54,8 @@ export type Step =
       max?: number;
       /** 選ぶ枚数を盤面から決める（min=max になる） */
       count?: (env: Env) => number;
+      /** 選ぶ枚数の範囲を盤面（前のステップで選んだカードなど）から決める */
+      range?: (env: Env) => [number, number];
       /** 選んだ後に処理の種類を選ばせる（例: 手札に加える／セットする） */
       modes?: string[];
       /** 選んだ後に出す（置く）ゾーンを選ばせる */
@@ -86,6 +92,8 @@ export interface EffectDef {
   onSummon?: boolean;
   /** 発動しない効果（「〜時に適用する」など）。チェーンに乗らず、完全なる世界③の対象にもならない */
   applied?: boolean;
+  /** フィールドのカードを対象にとる効果（白き乙女③など「対象になった時」の効果をチェーンできる） */
+  targets?: boolean;
   /** スペルスピード。省略時は速攻魔法・罠の発動なら2（カウンター罠は3）、それ以外は1 */
   speed?: 1 | 2 | 3;
   steps: Step[];

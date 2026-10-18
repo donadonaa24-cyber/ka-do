@@ -5,17 +5,19 @@ import { TOON_CARD_DATA } from './toonCards.generated';
 import { TOON_OVERRIDES, TOON_SCRIPTS } from './toonScripts';
 import { OTHER_CARD_DATA } from './otherCards.generated';
 import { OTHER_SCRIPTS } from './otherScripts';
+import { BLUE_CARD_DATA } from './blueCards.generated';
+import { BLUE_SCRIPTS } from './blueScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 
-export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...TEST_CARDS];
+export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA, ...TEST_CARDS];
 
 /** デッキ編集で選べるカード（動作確認用の架空カードは除く） */
-export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA];
+export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
 
-export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS, ...OTHER_SCRIPTS };
+export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS, ...OTHER_SCRIPTS, ...BLUE_SCRIPTS };
 
 const n = (id: string, count: number) => Array<string>(count).fill(id);
 
@@ -121,7 +123,61 @@ export const PRE_LIMIT_TOON_DECK: DeckList = {
   ],
 };
 
+/**
+ * 友達のブルーアイズ（デッキシートのPDFから）。
+ * 「神を超えたしもべ－青眼の究極竜」はカードデータベースに無いため未収録（EX14枚）
+ */
+export const BLUE_EYES_DECK: DeckList = {
+  name: 'ブルーアイズ',
+  main: [
+    // モンスター 25枚
+    ...n('89631139', 3), // 青眼の白龍
+    ...n('97268402', 1), // エフェクト・ヴェーラー
+    ...n('94145021', 1), // ドロール＆ロックバード
+    ...n('23434538', 1), // 増殖するＧ
+    ...n('59438930', 1), // 幽鬼うさぎ
+    ...n('45467446', 1), // 白き霊龍
+    ...n('8240199', 3), // 青き眼の賢士
+    ...n('55410871', 1), // ブルーアイズ・カオス・ＭＡＸ・ドラゴン
+    ...n('14558127', 2), // 灰流うらら
+    ...n('17947697', 3), // 白き乙女
+    ...n('54332792', 1), // ネオ・カイザー・シーホース
+    ...n('67768675', 1), // 正義の伝説 カイバーマン
+    ...n('30397786', 1), // 白き幻獣－青眼の白龍
+    ...n('67886895', 3), // 蒼の深淵 ディープアイズ・ホワイト・ドラゴン
+    ...n('65302903', 2), // 聖王女ローズパメラ
+    // 魔法 11枚
+    ...n('18144506', 1), // ハーピィの羽根帚
+    ...n('24382602', 1), // 光の霊堂
+    ...n('8267140', 1), // コズミック・サイクロン
+    ...n('71143015', 2), // 究極融合
+    ...n('88901994', 1), // シンクロ・ランブル
+    ...n('80326401', 3), // 青き眼の祈り
+    ...n('17725109', 2), // 青眼龍轟臨
+    // 罠 6枚
+    ...n('10045474', 1), // 無限泡影
+    ...n('62089826', 1), // 真の光
+    ...n('97045737', 2), // 聖王の粉砕
+    ...n('43219114', 1), // 白き龍の威光
+    ...n('58053438', 1), // 列王詩篇
+  ],
+  extra: [
+    ...n('23995346', 1), // 青眼の究極竜
+    ...n('26268488', 1), // 聖珖神竜 スターダスト・シフル
+    ...n('59822133', 2), // 青眼の精霊龍
+    ...n('24361622', 1), // 天球の聖刻印
+    ...n('11443677', 1), // ブルーアイズ・タイラント・ドラゴン
+    ...n('63436931', 1), // 赤き竜
+    ...n('12381100', 1), // 究極竜魔導師
+    ...n('89604813', 1), // 青眼の究極霊竜
+    ...n('42097666', 2), // 青き眼の精霊
+    ...n('16699558', 1), // 藍眼の銀龍
+    ...n('10515412', 1), // ライトストーム・ドラゴン
+    ...n('65424481', 1), // 氷結界の龍胤 エクハジャール
+  ],
+};
+
 /** 最初から入っているデッキ（編集はコピーして行う）。テスト用デッキは動作確認専用なので含めない */
-export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK];
+export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK];
 
 export { TEST_DECK };

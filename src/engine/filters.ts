@@ -19,6 +19,7 @@ export interface CardFilter {
   minLevel?: number;
   maxLevel?: number;
   cannotNormalSummon?: boolean;
+  tuner?: boolean;
   /** 攻撃力か守備力がこの値 */
   atkOrDef?: number;
   /** いずれかを満たす */
@@ -52,6 +53,7 @@ export function matchesFilter(def: CardDef, f: CardFilter, toonWorld: boolean): 
   if (f.race && !(def.race && f.race.includes(def.race))) return false;
   if (f.minLevel !== undefined && !((def.level ?? -1) >= f.minLevel)) return false;
   if (f.maxLevel !== undefined && !(def.level !== undefined && def.level <= f.maxLevel)) return false;
+  if (f.tuner !== undefined && !!def.tuner !== f.tuner) return false;
   if (f.cannotNormalSummon !== undefined && !!def.cannotNormalSummon !== f.cannotNormalSummon) return false;
   if (f.atkOrDef !== undefined && def.atk !== f.atkOrDef && def.def !== f.atkOrDef) return false;
   if (f.any && !f.any.some((sub) => matchesFilter(def, sub, toonWorld))) return false;

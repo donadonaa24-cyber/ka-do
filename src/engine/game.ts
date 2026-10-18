@@ -15,6 +15,7 @@ import type {
   Phase,
   PileZone,
   SummonGrant,
+  SummonType,
 } from './types';
 import { isExtraDeckCard, PHASE_LABEL, PHASE_ORDER } from './types';
 
@@ -45,6 +46,10 @@ export type Action =
       position?: BattlePosition;
       faceDown?: boolean;
       note?: string;
+      /** 「S召喚扱い」などで特殊召喚する */
+      as?: SummonMethod;
+      /** このターンのエンドフェイズに破壊される */
+      destroyAtEnd?: boolean;
     }
   | {
       type: 'PROCEDURE_SUMMON';
@@ -54,7 +59,11 @@ export type Action =
       to: MonsterLocation;
       position?: BattlePosition;
       /** 融合・儀式素材の行き先（既定は墓地） */
-      materialsTo?: 'gy' | 'banished';
+      materialsTo?: 'gy' | 'banished' | 'deck';
+      /** 融合素材を選べる場所（既定は手札・フィールド。究極融合などは墓地も） */
+      materialZones?: ('hand' | 'field' | 'gy')[];
+      /** 効果による融合・儀式召喚（ログ用の効果名） */
+      by?: string;
     }
   | {
       /** カード固有の召喚条件による特殊召喚 */
@@ -77,6 +86,8 @@ export type Action =
       position?: BattlePosition;
       toBottom?: boolean;
       reason?: string;
+      /** 装備カードとして、このモンスターに装備する */
+      equipTo?: string;
     }
   | { type: 'CHANGE_POSITION'; uid: string }
   | { type: 'ATTACK'; uid: string }
@@ -98,6 +109,10 @@ export type Action =
   | { type: 'CHANGE_LP'; delta: number }
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
+  | { type: 'LEVEL_MOD'; uid: string; delta: number }
+  /** 効果処理の条件を満たさない（選び方が合わない）ことを伝える */
+  | { type: 'FAIL'; message: string }
+  | { type: 'EXTRA_LOCK'; source: string; filter: CardFilter }
   | { type: 'DOUBLE_ATTACK'; uid: string }
   /** 効果をチェーンに積む（コストは支払い済み） */
   | { type: 'CHAIN_PUSH'; uid: string; effect: number; stepStart: number; speed: number; label: string }
@@ -183,6 +198,7 @@ export function createGame(
     summonGrants: [],
     spellActivatedThisTurn: false,
     chain: [],
+    extraLocks: [],
   };
   if (second) {
     log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
@@ -210,14 +226,68 @@ function newInstance(uid: string, defId: string): CardInstance {
     doubleAttackTurn: null,
     entryId: 0,
     summonedEntry: null,
+    summonType: null,
+    levelMod: 0,
+    movedAt: 0,
+    movedTurn: null,
+    movedFrom: null,
+    movedReason: null,
+    equippedTo: null,
+    properlySummoned: false,
+    destroyAtEnd: false,
   };
 }
 
 /** 召喚・特殊召喚した（「召喚した時」の効果の判定に使う。効果で戻っただけのカードは含まない） */
-function markSummoned(state: GameState, uid: string) {
+function markSummoned(state: GameState, uid: string, type: SummonType = 'special') {
   const inst = state.cards[uid];
   inst.enteredTurn = state.turn;
   inst.summonedEntry = inst.entryId;
+  inst.summonType = type;
+  if (type !== 'normal' && type !== 'special') inst.properlySummoned = true;
+}
+
+const METHOD_LABEL: Record<SummonMethod, string> = {
+  fusion: '融合',
+  synchro: 'シンクロ',
+  xyz: 'エクシーズ',
+  link: 'リンク',
+  ritual: '儀式',
+};
+
+/** 効果で特殊召喚できるか（「〇〇召喚でしか特殊召喚できない」・正規の召喚をしていないEX・儀式モンスター） */
+function checkEffectSummon(state: GameState, ctx: Ctx, uid: string, from: Location | null, as?: SummonMethod) {
+  if (!ctx.options.strict) return;
+  const def = getDef(state, ctx, uid);
+  if (def.onlyBy && as !== def.onlyBy) fail(`${def.name}は${METHOD_LABEL[def.onlyBy]}召喚でしか特殊召喚できません`);
+  const special = isExtraDeckCard(def) || def.frame === 'ritual';
+  if (!special || as) return;
+  if (def.frame === 'ritual' && (from?.zone === 'hand' || from?.zone === 'deck'))
+    fail(`${def.name}は儀式モンスターなので、効果で手札・デッキから特殊召喚できません`);
+  if ((from?.zone === 'gy' || from?.zone === 'banished') && !state.cards[uid].properlySummoned)
+    fail(`${def.name}は正規の方法で召喚されていないため、墓地・除外から特殊召喚できません`);
+}
+
+/** フィールドのモンスターの今のレベル（効果で変わった分を含む） */
+export function currentLevel(state: GameState, ctx: Ctx, uid: string): number | undefined {
+  const base = levelOf(getDef(state, ctx, uid));
+  return base === undefined ? undefined : base + (state.cards[uid]?.levelMod ?? 0);
+}
+
+/** 特殊召喚の制限（EXデッキからの制限・表側の「〜しか特殊召喚できない」） */
+function checkSummonLocks(state: GameState, ctx: Ctx, uid: string, from: Location | null) {
+  if (!ctx.options.strict) return;
+  const def = getDef(state, ctx, uid);
+  if (from?.zone === 'extra') {
+    for (const lock of state.extraLocks)
+      if (!matchesFilter(def, lock.filter, false))
+        fail(`${lock.source}の効果で、このターン${def.name}はEXデッキから特殊召喚できません`);
+  }
+  for (const u of fieldMonsters(state)) {
+    const d = getDef(state, ctx, u);
+    if (d.summonLock && state.cards[u].faceUp && !matchesFilter(def, d.summonLock, false))
+      fail(`${d.name}がいる間は${def.name}を特殊召喚できません`);
+  }
 }
 
 // ===== 参照ヘルパー =====
@@ -334,12 +404,19 @@ function resetInstance(inst: CardInstance) {
   inst.attackCount = 0;
   inst.doubleAttackTurn = null;
   inst.summonedEntry = null;
+  inst.summonType = null;
+  inst.levelMod = 0;
+  inst.destroyAtEnd = false;
 }
 
 interface PlaceOpts {
   faceUp?: boolean;
   position?: BattlePosition;
   toBottom?: boolean;
+  /** 移動の理由（リリース・コストなど。「リリースされた場合」などの判定用） */
+  reason?: string;
+  /** 装備カードとして、このモンスターに装備する */
+  equipTo?: string;
 }
 
 /**
@@ -380,6 +457,21 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   if (pendulumToExtra) inst.faceUpInExtra = true;
   placeRaw(state, uid, dest, opts);
   if (isOnField(dest) && !isOnField(from)) inst.entryId = state.nextUid++;
+  inst.movedAt = state.nextUid++;
+  inst.movedTurn = state.turn;
+  inst.movedFrom = from?.zone ?? null;
+  inst.movedReason = opts.reason ?? null;
+  inst.equippedTo = dest.zone === 'stz' ? (opts.equipTo ?? null) : null;
+  if (dest.zone === 'deck' || dest.zone === 'extra' || dest.zone === 'hand') inst.properlySummoned = false;
+  // 装備していたモンスターがフィールドを離れたら、装備カードは墓地へ
+  if (isMonsterZone(from) && !isMonsterZone(dest)) {
+    for (const eq of state.stz) {
+      if (eq && state.cards[eq].equippedTo === uid) {
+        moveCard(state, ctx, eq, { zone: 'gy' }, { reason: '装備対象がいなくなった' });
+        log(state, `${getDef(state, ctx, eq).name}は装備対象がいなくなったため墓地へ`, 'move');
+      }
+    }
+  }
   return dest;
 }
 
@@ -463,8 +555,8 @@ function requireFaceUpFieldMonsters(state: GameState, ctx: Ctx, uids: string[], 
   void ctx;
 }
 
-function sendMaterials(state: GameState, ctx: Ctx, uids: string[], dest: 'gy' | 'banished') {
-  for (const u of uids) moveCard(state, ctx, u, { zone: dest });
+function sendMaterials(state: GameState, ctx: Ctx, uids: string[], dest: 'gy' | 'banished' | 'deck', reason = '素材') {
+  for (const u of uids) moveCard(state, ctx, u, { zone: dest }, { reason });
 }
 
 function checkSummonable(state: GameState, ctx: Ctx, uid: string) {
@@ -557,6 +649,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       state.effectUses = {};
       state.spellActivatedThisTurn = false;
       state.summonGrants = state.summonGrants.filter((g) => !g.thisTurnOnly);
+      state.extraLocks = [];
       log(state, `ターン${state.turn}開始（ドローフェイズ）`, 'info');
       drawCards(state, 1);
       return;
@@ -602,7 +695,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       }
       checkMonsterZoneFree(state, ctx, { zone: 'mz', index }, tributes);
       const tributeNames = tributes.map((t) => name(state, ctx, t));
-      sendMaterials(state, ctx, tributes, 'gy');
+      sendMaterials(state, ctx, tributes, 'gy', 'リリース');
       moveCard(
         state,
         ctx,
@@ -613,7 +706,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
           position: action.set ? 'def' : 'atk',
         },
       );
-      markSummoned(state, uid);
+      markSummoned(state, uid, 'normal');
       if (!grant) state.normalSummonUsed = true;
       const how = grant
         ? `${tributes.length ? `${tributeNames.join('・')}をリリースし、` : ''}${grant.source}の効果で`
@@ -645,12 +738,15 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (isMonsterZone(from)) fail('既にフィールドにいます');
       checkMonsterZoneFree(state, ctx, to);
       checkExtraDeckPlacement(state, ctx, uid, to, from);
+      checkSummonLocks(state, ctx, uid, from);
+      checkEffectSummon(state, ctx, uid, from, action.as);
       const faceDown = !!action.faceDown;
       moveCard(state, ctx, uid, to, {
         faceUp: !faceDown,
         position: faceDown ? 'def' : (action.position ?? 'atk'),
       });
-      markSummoned(state, uid);
+      markSummoned(state, uid, action.as ?? 'special');
+      if (action.destroyAtEnd) state.cards[uid].destroyAtEnd = true;
       const pos = faceDown ? '裏側守備表示' : action.position === 'def' ? '守備表示' : '攻撃表示';
       log(
         state,
@@ -722,6 +818,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         faceUp: action.faceUp,
         position: action.position,
         toBottom: action.toBottom,
+        reason: action.reason,
+        equipTo: action.equipTo,
       });
       // フィールドに出たターンを記録（セットした罠を同じターンに発動できない等の判定用）
       if (dest && isOnField(dest) && !isOnField(from)) state.cards[uid].enteredTurn = state.turn;
@@ -866,6 +964,20 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       log(state, `${name(state, ctx, action.uid)}のカウンター：${state.cards[action.uid].counters}`, 'info');
       return;
     }
+    case 'FAIL':
+      return fail(action.message);
+    case 'LEVEL_MOD': {
+      const inst = state.cards[action.uid];
+      if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
+      inst.levelMod += action.delta;
+      log(state, `${name(state, ctx, action.uid)}のレベルが${currentLevel(state, ctx, action.uid)}になった`, 'info');
+      return;
+    }
+    case 'EXTRA_LOCK': {
+      state.extraLocks.push({ source: action.source, filter: action.filter });
+      log(state, `${action.source}の効果：ターン終了時までEXデッキから特殊召喚できるモンスターが制限された`, 'info');
+      return;
+    }
     case 'DOUBLE_ATTACK': {
       state.cards[action.uid].doubleAttackTurn = state.turn;
       log(state, `${name(state, ctx, action.uid)}はこのターン2回攻撃できる`, 'info');
@@ -964,6 +1076,10 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
   const matDefs = materials.map((m) => getDef(state, ctx, m));
   const matNames = matDefs.map((d) => d.name).join('・');
   const label = { fusion: '融合', synchro: 'シンクロ', xyz: 'エクシーズ', link: 'リンク', ritual: '儀式' }[method];
+  // フィールドのモンスターは効果で変わったレベルで数える
+  const levels = materials.map((m) =>
+    isMonsterZone(findLocation(state, m)) ? currentLevel(state, ctx, m) : levelOf(getDef(state, ctx, m)),
+  );
 
   if (strict) {
     if (method !== 'ritual' && def.frame !== method) fail(`${def.name}は${label}モンスターではありません`);
@@ -990,10 +1106,15 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     case 'synchro': {
       if (strict) {
         requireFaceUpFieldMonsters(state, ctx, materials, 'シンクロ素材');
-        const tuners = matDefs.filter((d) => d.tuner);
-        if (tuners.length !== 1) fail('シンクロ召喚にはチューナー1体とチューナー以外のモンスターが必要です');
-        if (materials.length < 2) fail('チューナー以外のモンスターが1体以上必要です');
-        const sum = matDefs.reduce((s, d) => s + (levelOf(d) ?? NaN), 0);
+        const tuners = matDefs.filter((d) => d.tuner).length;
+        if (def.multiTunerSynchro) {
+          if (tuners < 2 || materials.length - tuners !== 1)
+            fail('このカードのシンクロ召喚にはチューナー2体以上とチューナー以外のモンスター1体が必要です');
+        } else {
+          if (tuners !== 1) fail('シンクロ召喚にはチューナー1体とチューナー以外のモンスターが必要です');
+          if (materials.length < 2) fail('チューナー以外のモンスターが1体以上必要です');
+        }
+        const sum = levels.reduce<number>((s, l) => s + (l ?? NaN), 0);
         if (sum !== def.level)
           fail(`素材のレベル合計（${sum}）がシンクロモンスターのレベル（${def.level}）と一致しません`);
       }
@@ -1004,16 +1125,22 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
         requireFaceUpFieldMonsters(state, ctx, materials, 'エクシーズ素材');
         const need = def.xyzMaterialCount ?? 2;
         if (materials.length < need) fail(`エクシーズ素材が${need}体以上必要です`);
-        if (matDefs.some((d) => levelOf(d) !== def.rank)) fail(`レベル${def.rank}のモンスターを選んでください`);
+        if (levels.some((l) => l !== def.rank)) fail(`レベル${def.rank}のモンスターを選んでください`);
         if (matDefs.some((d) => d.frame === 'token')) fail('トークンはエクシーズ素材にできません');
       }
       break;
     }
     case 'fusion': {
       if (strict) {
+        const allowed = action.materialZones ?? ['hand', 'field'];
         for (const m of materials) {
           const l = findLocation(state, m);
-          if (l?.zone !== 'hand' && !isMonsterZone(l)) fail('融合素材は手札かフィールドから選んでください');
+          const zone = isMonsterZone(l) ? 'field' : l?.zone;
+          if (!allowed.includes(zone as 'hand')) {
+            fail(
+              `融合素材は${allowed.map((z) => ({ hand: '手札', field: 'フィールド', gy: '墓地' })[z]).join('・')}から選んでください`,
+            );
+          }
         }
         if (def.fusionMaterialCount && materials.length !== def.fusionMaterialCount) {
           fail(`融合素材は${def.fusionMaterialCount}体です`);
@@ -1027,7 +1154,7 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
           const l = findLocation(state, m);
           if (l?.zone !== 'hand' && !isMonsterZone(l)) fail('儀式のリリースは手札かフィールドから選んでください');
         }
-        const sum = matDefs.reduce((s, d) => s + (levelOf(d) ?? 0), 0);
+        const sum = levels.reduce<number>((s, l) => s + (l ?? 0), 0);
         if (sum < (def.level ?? 0))
           fail(`リリースするモンスターのレベル合計（${sum}）が足りません（${def.level}以上）`);
       }
@@ -1052,17 +1179,24 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     }
     checkMonsterZoneFree(state, ctx, to);
     checkExtraDeckPlacement(state, ctx, uid, to, from);
+    checkSummonLocks(state, ctx, uid, from);
     moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
     state.cards[uid].overlay = overlay;
   } else {
-    sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy');
+    sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy', method === 'ritual' ? 'リリース' : '素材');
     checkMonsterZoneFree(state, ctx, to);
     checkExtraDeckPlacement(state, ctx, uid, to, from);
+    checkSummonLocks(state, ctx, uid, from);
     const position = method === 'link' ? 'atk' : (action.position ?? 'atk');
     moveCard(state, ctx, uid, to, { faceUp: true, position });
   }
-  markSummoned(state, uid);
-  log(state, `${matNames}を素材に${def.name}を${label}召喚（${locLabel(to)}）`, 'summon');
+  markSummoned(state, uid, method);
+  const how = action.materialsTo === 'deck' ? 'デッキに戻して' : '素材に';
+  log(
+    state,
+    `${matNames}を${how}${def.name}を${label}召喚（${locLabel(to)}）${action.by ? `（${action.by}）` : ''}`,
+    'summon',
+  );
 }
 
 function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { type: 'PROC_SUMMON' }>) {
@@ -1083,11 +1217,14 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
   }
   if (proc.oncePerTurn) state.effectUses[`${def.name}:召喚条件`] = 1;
   const matNames = materials.map((m) => name(state, ctx, m));
-  for (const m of materials) moveCard(state, ctx, m, { zone: proc.materialsTo });
+  for (const m of materials)
+    moveCard(state, ctx, m, { zone: proc.materialsTo }, { reason: proc.materialsReason ?? 'コスト' });
   checkMonsterZoneFree(state, ctx, to);
   checkExtraDeckPlacement(state, ctx, uid, to, from);
+  checkSummonLocks(state, ctx, uid, from);
   moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
   markSummoned(state, uid);
+  state.cards[uid].properlySummoned = true;
   const cost = matNames.length
     ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、`
     : '';

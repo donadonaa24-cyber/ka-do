@@ -61,6 +61,14 @@ export interface CardDef {
   attackCost?: number;
   /** 「このカード名のカードは１ターンに１枚しか発動できない」 */
   oncePerTurnActivation?: boolean;
+  /** チューナー2体以上でS召喚する（青眼の究極霊竜など） */
+  multiTunerSynchro?: boolean;
+  /** 「このカードは〇〇召喚でしか特殊召喚できない」 */
+  onlyBy?: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
+  /** 手札・墓地では通常モンスターとして扱う（白き霊龍） */
+  normalInHandGy?: boolean;
+  /** 表側で存在する限り、自分はこの条件のモンスターしか特殊召喚できない */
+  summonLock?: import('./filters').CardFilter;
   // --- 魔法・罠 ---
   spellType?: SpellType;
   trapType?: TrapType;
@@ -114,7 +122,24 @@ export interface CardInstance {
   entryId: number;
   /** 召喚・特殊召喚でフィールドに出た時の entryId（効果で除外されて戻っただけなら一致しない） */
   summonedEntry: number | null;
+  /** 召喚の種類（「S召喚したこのカード」などの判定用） */
+  summonType: SummonType | null;
+  /** 効果で変わったレベル（フィールドを離れると戻る） */
+  levelMod: number;
+  /** 最後に移動した順番・ターン・元の場所・理由（「墓地へ送られた場合」などの判定用） */
+  movedAt: number;
+  movedTurn: number | null;
+  movedFrom: ZoneName | null;
+  movedReason: string | null;
+  /** 装備カードとして装備しているモンスター */
+  equippedTo: string | null;
+  /** 正規の方法で召喚された（EXデッキ・儀式モンスターを墓地などから特殊召喚できる条件） */
+  properlySummoned: boolean;
+  /** エンドフェイズに破壊される（青眼の精霊龍③で出したモンスターなど） */
+  destroyAtEnd: boolean;
 }
+
+export type SummonType = 'normal' | 'special' | 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
 
 /** チェーンに積まれた効果。解決はスクリプトの effect 番号の stepStart 以降を実行する */
 export interface ChainLink {
@@ -196,6 +221,8 @@ export interface GameState {
   chain: ChainLink[];
   /** このターンに魔法カードの効果が発動したか */
   spellActivatedThisTurn: boolean;
+  /** ターン終了時までのEXデッキからの特殊召喚の制限（青眼龍轟臨・シンクロ・ランブルなど） */
+  extraLocks: { source: string; filter: import('./filters').CardFilter }[];
 }
 
 export interface DeckList {

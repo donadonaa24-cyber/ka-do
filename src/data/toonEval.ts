@@ -2,10 +2,26 @@ import { type Ctx, fieldMonsters, getDef, makeEnv } from '../engine/game';
 import type { Evaluator } from '../engine/solver';
 import type { GameState } from '../engine/types';
 
-// トゥーンデッキの盤面評価。相手ターンに使える妨害を重く、展開に使い切った資源は軽く見る。
+// 盤面評価（トゥーン・ブルーアイズなど全デッキ共通）。相手ターンに使える妨害を重く、展開に使い切った資源は軽く見る。
 
 /** 場に表側で残ったモンスターの妨害・価値 */
 const MONSTER_VALUE: Record<string, { value: number; note?: string; needsWorld?: boolean }> = {
+  // --- ブルーアイズ ---
+  究極竜魔導師: { value: 7, note: '相手の魔法・罠・モンスター効果の発動をそれぞれ1度ずつ無効＆破壊' },
+  青眼の究極霊竜: { value: 5, note: 'フィールドで発動した効果を無効' },
+  '聖珖神竜 スターダスト・シフル': { value: 5, note: '相手のモンスター効果を無効＋1枚破壊・場のカードに破壊耐性' },
+  青眼の精霊龍: { value: 3, note: '墓地の効果を無効。相手ターンにリリースして究極霊竜などを出せる' },
+  'ブルーアイズ・カオス・ＭＡＸ・ドラゴン': { value: 3, note: '攻撃力4000・相手の効果で破壊されず対象にならない' },
+  '氷結界の龍胤 エクハジャール': { value: 2.5, note: '相手の特殊召喚に反応してカードを手札に戻す' },
+  天球の聖刻印: { value: 2.5, note: '相手ターンにリリースして表側カード1枚を手札に戻し、デッキからドラゴンを出す' },
+  赤き竜: { value: 2.5, note: '相手ターンにレベル7以上のSモンスターと同じレベルのSモンスターに変わる' },
+  '白き幻獣－青眼の白龍': { value: 2.5, note: '対象をとる効果を手札1枚で無効' },
+  白き霊龍: { value: 2, note: '相手ターンにリリースして手札の青眼の白龍を特殊召喚' },
+  藍眼の銀龍: { value: 2, note: 'X素材で墓地の通常モンスターを特殊召喚' },
+  'ブルーアイズ・タイラント・ドラゴン': { value: 2, note: '罠の効果を受けない・全体攻撃' },
+  青眼の究極竜: { value: 1.5 },
+  'ライトストーム・ドラゴン': { value: 1.5 },
+  青眼の白龍: { value: 1 },
   'トゥーン・カオス・ソルジャー': { value: 3, note: '次の自分ターンにフィールドのカード1枚を除外', needsWorld: true },
   '超魔導竜騎士－ドラグーン・オブ・レッドアイズ': {
     value: 5,
@@ -31,6 +47,9 @@ const MONSTER_VALUE: Record<string, { value: number; note?: string; needsWorld?:
 
 /** 伏せた罠・表の永続カード */
 const TRAP_VALUE: Record<string, { value: number; note: string; needsToon?: boolean }> = {
+  聖王の粉砕: { value: 3, note: '相手のサーチを含む効果を無効（墓地に罠があれば破壊）' },
+  列王詩篇: { value: 3, note: '相手のフィールドのモンスター効果を無効' },
+  白き龍の威光: { value: 2, note: '青眼の白龍を見せた数だけ相手のカードを破壊' },
   'トゥーン・テラー': { value: 5, note: '相手の効果・魔法・罠の発動にチェーンして無効＆破壊', needsToon: true },
   無限泡影: { value: 3, note: '相手の効果モンスターにチェーンして効果を無効' },
   霆王の閃光: { value: 3, note: '相手モンスター1体を除外' },
@@ -43,6 +62,8 @@ const TRAP_VALUE: Record<string, { value: number; note: string; needsToon?: bool
 };
 
 const HAND_VALUE: Record<string, number> = {
+  'エフェクト・ヴェーラー': 2,
+  聖王の粉砕: 1.5,
   灰流うらら: 2,
   増殖するＧ: 1.5,
   'ドロール＆ロックバード': 1.5,
@@ -56,6 +77,8 @@ const HAND_VALUE: Record<string, number> = {
 
 /** 手札誘発をいつ使うか */
 const HAND_USE: Record<string, string> = {
+  'エフェクト・ヴェーラー': '相手メインフェイズに捨てて、相手の効果モンスター1体の効果を無効',
+  聖王の粉砕: '相手の場にカードがあれば手札から発動し、サーチを含む効果を無効',
   灰流うらら: '相手のサーチ・デッキからの特殊召喚・墓地送りにチェーンして無効',
   増殖するＧ: '相手が展開を始めたら発動し、特殊召喚のたびにドロー',
   'ドロール＆ロックバード': '相手がドロー以外でデッキから手札に加えた後に発動',
@@ -80,6 +103,10 @@ function analyze(state: GameState, ctx: Ctx) {
   }
   for (const u of fieldMonsters(state)) {
     const d = def(u);
+    if (state.cards[u].destroyAtEnd) {
+      notes.push(`モンスター：${d.name}（エンドフェイズに破壊される）`);
+      continue;
+    }
     const v = MONSTER_VALUE[d.name];
     const active = !v?.needsWorld || env.toonWorld;
     score += 0.5 + (d.atk ?? 0) / 2000 + (v && active ? v.value : 0);
@@ -102,6 +129,9 @@ function analyze(state: GameState, ctx: Ctx) {
       const works = v && (!v.needsToon || (env.toonWorld && toonOnField));
       score += works ? v.value : 0.5;
       notes.push(`伏せ：${d.name}${works ? `（${v.note}）` : ''}`);
+    } else if (inst.faceUp && d.name === '真の光') {
+      score += 1;
+      notes.push('表側：真の光（青眼の白龍を対象にさせない・相手ターンにも青眼の白龍を出せる）');
     } else if (inst.faceUp && d.name === '心を見通す眼') {
       score += 3;
       notes.push('表側：心を見通す眼（相手の初動にチェーンしてカード名を宣言し、その効果を無効）');
