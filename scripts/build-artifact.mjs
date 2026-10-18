@@ -1,10 +1,13 @@
 // vite build の出力（dist/）を1つのHTMLにまとめる。claude.ai の非公開ページ（Artifact）として公開する用。
-// 使い方: npm run build && node scripts/build-artifact.mjs [出力先]
+// 使い方: npm run build && node scripts/build-artifact.mjs [出力先] [--no-images]
+// --no-images：カード画像・裏面画像を入れない（友達に共有する用。画像は各自が「画像を設定」で入れる）
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const dist = 'dist';
-const out = process.argv[2] ?? join(dist, 'artifact.html');
+const args = process.argv.slice(2);
+const noImages = args.includes('--no-images');
+const out = args.find((a) => !a.startsWith('--')) ?? join(dist, 'artifact.html');
 const html = readFileSync(join(dist, 'index.html'), 'utf8');
 
 const asset = (src) => readFileSync(join(dist, src.replace(/^\.\//, '')), 'utf8');
@@ -16,12 +19,12 @@ const title = html.match(/<title>.*<\/title>/)[0];
 
 // カードの裏面画像（private/ は公開リポジトリに入れないフォルダ。あれば非公開ページにだけ埋め込む）
 const backPath = 'private/card-back.jpg';
-const backCss = existsSync(backPath)
+const backCss = !noImages && existsSync(backPath)
   ? `.f-back{background:#2b1a0c url(data:image/jpeg;base64,${readFileSync(backPath).toString('base64')}) center/cover no-repeat}`
   : '';
 // カード画像（private/cards/<カードID>.jpg）。非公開ページにだけ埋め込み、アプリの初期画像として使う
 const cardsDir = 'private/cards';
-const cardImages = existsSync(cardsDir)
+const cardImages = !noImages && existsSync(cardsDir)
   ? Object.fromEntries(
       readdirSync(cardsDir)
         .filter((f) => f.endsWith('.jpg'))

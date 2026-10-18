@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build:artifact": "tsc --noEmit && vite build && node scripts/build-artifact.mjs"
+    "build:artifact": "tsc --noEmit && vite build && node scripts/build-artifact.mjs",
+    "build:share": "tsc --noEmit && vite build && node scripts/build-artifact.mjs dist/share.html --no-images"
   },
   "dependencies": {
     "react": "^18.3.1",
