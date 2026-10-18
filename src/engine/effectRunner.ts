@@ -139,6 +139,15 @@ export function startEffect(
   chainMode: Running['chainMode'] = 'never',
 ): RunResult {
   const env = makeEnv(state, ctx, uid);
+  // 相手ターンに使えるのは速攻効果（スペルスピード2以上）と誘発効果だけ
+  if (
+    ctx.options.strict &&
+    state.opponentTurn &&
+    effectSpeed(state, ctx, uid, effect) < 2 &&
+    !effect.trigger &&
+    !effect.onSummon
+  )
+    return { kind: 'error', error: 'この効果は相手ターンには発動できません' };
   const cond = effect.condition?.(env);
   if (cond) return { kind: 'error', error: cond };
   const key = effectKey(state, uid, effect);

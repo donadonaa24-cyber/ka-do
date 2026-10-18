@@ -2,15 +2,7 @@
 
 export type CardKind = 'monster' | 'spell' | 'trap';
 
-export type MonsterFrame =
-  | 'normal'
-  | 'effect'
-  | 'ritual'
-  | 'fusion'
-  | 'synchro'
-  | 'xyz'
-  | 'link'
-  | 'token';
+export type MonsterFrame = 'normal' | 'effect' | 'ritual' | 'fusion' | 'synchro' | 'xyz' | 'link' | 'token';
 
 export type SpellType = 'normal' | 'quick' | 'continuous' | 'equip' | 'field' | 'ritual';
 export type TrapType = 'normal' | 'continuous' | 'counter';
@@ -223,6 +215,8 @@ export interface GameState {
   spellActivatedThisTurn: boolean;
   /** ターン終了時までのEXデッキからの特殊召喚の制限（青眼龍轟臨・シンクロ・ランブルなど） */
   extraLocks: { source: string; filter: import('./filters').CardFilter }[];
+  /** 相手ターン（相手は存在しないので、相手ターンに使える効果を練習するためのターン） */
+  opponentTurn: boolean;
 }
 
 export interface DeckList {

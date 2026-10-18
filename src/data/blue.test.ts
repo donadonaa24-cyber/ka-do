@@ -264,7 +264,7 @@ describe('ブルーアイズのルートガイド（完成形）', () => {
       TOON_EVALUATOR,
     )!.final;
     expect(fieldNames(s).sort()).toEqual(
-      ['天球の聖刻印', '究極竜魔導師', '聖珖神竜 スターダスト・シフル', '青き眼の賢士'].sort(),
+      ['天球の聖刻印', '究極竜魔導師', '聖珖神竜 スターダスト・シフル', '青眼の究極霊竜（EP破壊）'].sort(),
     );
     expect(s.hand.map((u) => name(s, u))).toContain('シンクロ・ランブル');
   });
@@ -279,5 +279,47 @@ describe('ブルーアイズのルートガイド（完成形）', () => {
     expect(fieldNames(s)).toEqual(
       expect.arrayContaining(['究極竜魔導師', '聖珖神竜 スターダスト・シフル', '青眼の究極霊竜（EP破壊）']),
     );
+  });
+});
+
+describe('相手ターン（妨害の練習）', () => {
+  it('エンドフェイズに究極霊竜が破壊され③で蘇生、相手ターンに天球①→②で白き幻獣を守備表示で特殊召喚', () => {
+    const guide = BLUE_GUIDES.find((g) => g.id === 'blue-deep-sage-full')!;
+    let s = routeFromGuide(
+      createGame(BLUE_EYES_DECK, ctx, 2, ['67886895', '14558127', '10045474', '97268402', '23434538']),
+      ctx,
+      guide,
+      TOON_EVALUATOR,
+    )!.final;
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    expect(s.opponentTurn).toBe(true);
+    const ultimate = find(s, 'gy', '青眼の究極霊竜');
+    expect(s.cards[ultimate].movedReason).toBe('効果で破壊');
+    // 自分のターンの起動効果・通常召喚は使えない
+    expect(applyAction(s, { type: 'NORMAL_SUMMON', uid: s.hand[0], index: 0 }, ctx)).toMatchObject({ ok: false });
+    // 究極霊竜③（誘発効果）は使える
+    const free = s.mz.indexOf(null);
+    s = useEffect(s, ultimate, '③ 戦闘・効果で破壊された時', [{ pick: ['青眼の精霊龍'], zone: mz(free) }]);
+    // 天球①：天球自身をリリース → ②でデッキから白き幻獣を守備表示で
+    const sphere = s.emz.find((u) => u && name(s, u) === '天球の聖刻印')!;
+    s = useEffect(s, sphere, '① 相手ターン', [{ pick: ['天球の聖刻印'] }, { pick: [] }]);
+    const z = s.mz.indexOf(null);
+    s = useEffect(s, sphere, '② リリースされた時', [{ pick: ['白き幻獣－青眼の白龍'], mode: 0, zone: mz(z) }]);
+    const beast = s.mz[z]!;
+    expect(name(s, beast)).toBe('白き幻獣－青眼の白龍');
+    expect(s.cards[beast].position).toBe('def');
+    // 白き幻獣②（相手モンスター全破壊）は相手がいないので記録のみ
+    expect(typeof tryEffect(s, beast, '② 手札・デッキから特殊召喚した時')).not.toBe('string');
+    // 自分のターンに戻るとドローする
+    const hand = s.hand.length;
+    s = act(s, { type: 'END_TURN' });
+    expect(s.opponentTurn).toBe(false);
+    expect(s.hand.length).toBe(hand + 1);
+  });
+
+  it('天球①は自分のターンには使えない', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'SPECIAL_SUMMON', uid: find(s, 'extra', '天球の聖刻印'), to: { zone: 'emz', index: 0 } });
+    expect(tryEffect(s, s.emz[0]!, '① 相手ターン', [])).toMatch(/相手ターンにのみ/);
   });
 });

@@ -209,7 +209,7 @@ export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOpti
   const def = (u: string) => getDef(state, ctx, u);
   const toonWorld = makeEnv(state, ctx, '').toonWorld;
   const main = state.phase === 'M1' || state.phase === 'M2';
-  if (!main) return actions;
+  if (!main || state.opponentTurn) return actions;
 
   // カード固有の効果
   const seenEffect = new Set<string>();

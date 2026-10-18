@@ -381,6 +381,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '② 墓地にある状態で「青眼の白龍」を特殊召喚した時：このカードを特殊召喚',
+        trigger: true,
         from: ['gy'],
         key: '白き乙女②',
         limit: 1,
@@ -448,6 +449,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '③ フィールドから墓地へ送られた時：デッキから「ブルーアイズ」か「青眼の白龍」記載モンスターを墓地へ',
+        trigger: true,
         from: ['gy'],
         key: 'ネオ・カイザー・シーホース③',
         limit: 1,
@@ -497,6 +499,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '② 墓地にある状態で「青眼の白龍」を特殊召喚した時：除外してデッキから「ブルーアイズ」を手札に加える',
+        trigger: true,
         from: ['gy'],
         key: '正義の伝説 カイバーマン②',
         limit: 1,
@@ -540,6 +543,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
       {
         label:
           '② 「青眼の白龍」かブルーアイズ儀式が墓地へ送られた時：手札・墓地から特殊召喚（攻撃力はそのモンスターと同じ）',
+        trigger: true,
         from: ['hand', 'gy'],
         key: '蒼の深淵 ディープアイズ・ホワイト・ドラゴン②',
         limit: 1,
@@ -1077,12 +1081,46 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
     materialCheck: (env, m) =>
       m.length === 2 && m.every((u) => env.def(u).race === 'ドラゴン族') ? null : 'ドラゴン族モンスター2体が必要です',
     effects: [
-      logOnly('① 相手ターンにリリースして表側カード1枚を手札に戻す（相手用）', ['monster'], '天球の聖刻印①'),
+      {
+        label: '① 相手ターン：手札・フィールドのモンスター1体をリリースし、フィールドの表側カード1枚を手札に戻す',
+        from: ['monster'],
+        key: '天球の聖刻印①',
+        limit: 1,
+        speed: 2,
+        condition: (env) =>
+          !env.state.opponentTurn
+            ? '相手ターンにのみ発動できます（メニューの「相手ターンへ」で相手ターンに進めます）'
+            : env.loc(env.self)?.zone === 'emz'
+              ? null
+              : 'EXモンスターゾーンにある時のみ発動できます',
+        steps: [
+          {
+            op: 'pick',
+            cost: true,
+            prompt: 'コスト：リリースする手札・フィールドのモンスター（このカード自身なら②でドラゴン族を出せる）',
+            from: ['hand', 'monsters'],
+            filter: { kind: ['monster'] },
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toGy(u, 'リリース')),
+          },
+          {
+            op: 'pick',
+            prompt: '手札に戻すフィールドの表側表示カード（相手のカードを想定。相手がいないので選ばなくてもよい）',
+            from: ['field'],
+            where: (env, u) => env.state.cards[u].faceUp,
+            min: 0,
+            max: 1,
+            then: (_, p) => p.map((u) => toHand(u, 'バウンス')),
+          },
+        ],
+      },
       {
         label: '② リリースされた時：手札・デッキからドラゴン族を攻守0にして特殊召喚',
         from: ['gy'],
         key: '天球の聖刻印②',
         limit: 1,
+        trigger: true,
         condition: (env) => {
           const inst = env.state.cards[env.self];
           return inst.movedTurn === env.state.turn && inst.movedReason === 'リリース'
@@ -1098,8 +1136,10 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             where: (env, u) => !['ritual'].includes(env.def(u).frame ?? ''),
             min: 1,
             max: 1,
+            modes: ['守備表示で特殊召喚', '攻撃表示で特殊召喚'],
             zone: 'monster',
-            then: (env, p, z) => withShuffle(env, p, [ss(p[0], z, '天球の聖刻印の効果・攻守0')]),
+            then: (env, p, z, mode) =>
+              withShuffle(env, p, [ss(p[0], z, '天球の聖刻印の効果・攻守0', mode === 0 ? 'def' : 'atk')]),
           },
         ],
       },
@@ -1164,7 +1204,37 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
       m.filter((u) => !env.def(u).tuner).every((u) => env.matches(u, BLUE_EYES))
         ? null
         : 'チューナー以外は「ブルーアイズ」モンスター1体です',
-    effects: [logOnly('② フィールドで発動した効果を無効（相手用）', ['monster'], '青眼の究極霊竜②')],
+    effects: [
+      logOnly('② フィールドで発動した効果を無効（相手用）', ['monster'], '青眼の究極霊竜②'),
+      {
+        label: '③ 戦闘・効果で破壊された時：墓地から「青眼の究極霊竜」以外のドラゴン族・光属性モンスターを特殊召喚',
+        from: ['gy'],
+        key: '青眼の究極霊竜③',
+        limit: 1,
+        trigger: true,
+        condition: (env) => {
+          const inst = env.state.cards[env.self];
+          return inst.movedTurn !== null &&
+            inst.movedTurn >= env.state.turn - 1 &&
+            (inst.movedReason ?? '').includes('破壊') &&
+            ['mz', 'emz'].includes(inst.movedFrom ?? '')
+            ? null
+            : '戦闘・効果で破壊されていません';
+        },
+        steps: [
+          {
+            op: 'pick',
+            prompt: '墓地から特殊召喚するドラゴン族・光属性モンスター',
+            from: ['gy'],
+            filter: { kind: ['monster'], race: ['ドラゴン族'], attribute: ['光'], excludeName: ['青眼の究極霊竜'] },
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, '青眼の究極霊竜の効果')],
+          },
+        ],
+      },
+    ],
   },
 
   // 青き眼の精霊

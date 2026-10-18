@@ -682,6 +682,7 @@ export function App() {
     !run &&
     !pending &&
     state.status === 'playing' &&
+    !state.opponentTurn &&
     (state.phase === 'M1' || state.phase === 'M2') &&
     (!coach || (!!coachStep && !coachAction));
   useEffect(() => {
@@ -993,7 +994,9 @@ export function App() {
         <header className="hud">
           <div className="hud-status">
             <span className="chip">T{state.turn}</span>
-            <span className="chip phase">{PHASE_LABEL[state.phase]}</span>
+            <span className={`chip phase ${state.opponentTurn ? 'opp' : ''}`}>
+              {state.opponentTurn ? '相手ターン' : PHASE_LABEL[state.phase]}
+            </span>
             <span className="chip">LP {state.lp}</span>
             {state.opponentLp < 8000 && <span className="chip">相手 {state.opponentLp}</span>}
             <span className={`chip ${state.normalSummonUsed ? 'used' : 'avail'}`}>
@@ -1009,9 +1012,19 @@ export function App() {
             <button onClick={undo} disabled={session.actions.length === 0} aria-label="1手戻す">
               戻す
             </button>
-            <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
-              次のフェイズ
-            </button>
+            {state.opponentTurn ? (
+              <button className="primary" onClick={() => dispatch({ type: 'END_TURN' })}>
+                自分のターンへ
+              </button>
+            ) : state.phase === 'EP' ? (
+              <button className="primary" onClick={() => dispatch({ type: 'END_TURN', toOpponent: true })}>
+                相手ターンへ
+              </button>
+            ) : (
+              <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
+                次のフェイズ
+              </button>
+            )}
             <button
               className={navi ? 'primary' : 'accent'}
               aria-pressed={navi}
@@ -1240,6 +1253,16 @@ export function App() {
                   同じ初手で最初から
                 </button>
                 <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+                {!state.opponentTurn && (
+                  <button
+                    onClick={() => {
+                      dispatch({ type: 'END_TURN', toOpponent: true });
+                      setModal(null);
+                    }}
+                  >
+                    相手ターンへ（妨害の練習）
+                  </button>
+                )}
                 <button onClick={() => dispatch({ type: 'DRAW' })}>1枚ドロー</button>
                 <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
                 <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>

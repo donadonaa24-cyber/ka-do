@@ -25,7 +25,8 @@ export type SummonMethod = 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
 
 export type Action =
   | { type: 'NEXT_PHASE'; to?: Phase }
-  | { type: 'END_TURN' }
+  /** toOpponent：相手ターン（妨害の練習）に進む。相手ターン中なら自分のターンに戻る */
+  | { type: 'END_TURN'; toOpponent?: boolean }
   | { type: 'DRAW'; count?: number }
   | {
       type: 'NORMAL_SUMMON';
@@ -199,6 +200,7 @@ export function createGame(
     spellActivatedThisTurn: false,
     chain: [],
     extraLocks: [],
+    opponentTurn: false,
   };
   if (second) {
     log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
@@ -513,6 +515,7 @@ function placeRaw(state: GameState, uid: string, to: Location, opts: PlaceOpts) 
 // ===== ルールチェック =====
 
 function requireMainPhase(state: GameState, ctx: Ctx, what: string) {
+  if (ctx.options.strict && state.opponentTurn) fail(`相手ターンには${what}は行えません`);
   if (ctx.options.strict && state.phase !== 'M1' && state.phase !== 'M2') {
     fail(`${what}はメインフェイズにのみ行えます`);
   }
@@ -624,6 +627,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
   }
   switch (action.type) {
     case 'NEXT_PHASE': {
+      if (state.opponentTurn) return reduce(state, { type: 'END_TURN' }, ctx);
       const cur = PHASE_ORDER.indexOf(state.phase);
       let next: Phase | undefined = action.to ?? PHASE_ORDER[cur + 1];
       if (!next) return reduce(state, { type: 'END_TURN' }, ctx);
@@ -634,6 +638,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (next === 'M2' && state.phase !== 'BP') next = 'EP';
       state.phase = next;
       log(state, `${PHASE_LABEL[next]}へ移行`, 'info');
+      if (next === 'EP') destroyAtEndPhase(state, ctx);
       return;
     }
     case 'END_TURN': {
@@ -643,13 +648,24 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       for (const u of [...state.stz, state.fz]) {
         if (u && state.cards[u].pendingResolve) fail(`${name(state, ctx, u)}の解決が終わっていません`);
       }
+      if (!state.opponentTurn) destroyAtEndPhase(state, ctx);
+      const toOpponent = !state.opponentTurn && !!action.toOpponent;
       state.turn += 1;
-      state.phase = 'DP';
+      state.opponentTurn = toOpponent;
+      state.phase = toOpponent ? 'M1' : 'DP';
       state.normalSummonUsed = false;
       state.effectUses = {};
       state.spellActivatedThisTurn = false;
       state.summonGrants = state.summonGrants.filter((g) => !g.thisTurnOnly);
       state.extraLocks = [];
+      if (toOpponent) {
+        log(
+          state,
+          '相手ターン（妨害の練習）：相手の動きを想定して、相手ターンに使える効果（速攻効果・誘発効果・罠）を発動できます',
+          'info',
+        );
+        return;
+      }
       log(state, `ターン${state.turn}開始（ドローフェイズ）`, 'info');
       drawCards(state, 1);
       return;
@@ -758,6 +774,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'PROCEDURE_SUMMON':
       return procedureSummon(state, ctx, action);
     case 'SET_SPELL_TRAP': {
+      if (strict && state.opponentTurn) fail('相手ターンにはセットできません');
       const { uid } = action;
       const def = getDef(state, ctx, uid);
       requireMainPhase(state, ctx, '魔法・罠のセット');
@@ -849,6 +866,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return;
     }
     case 'ATTACK': {
+      if (strict && state.opponentTurn) fail('相手ターンには攻撃できません');
       const inst = state.cards[action.uid];
       const def = getDef(state, ctx, action.uid);
       if (strict) {
@@ -1012,6 +1030,15 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
   }
 }
 
+/** エンドフェイズ：「エンドフェイズに破壊される」モンスターを破壊する */
+function destroyAtEndPhase(state: GameState, ctx: Ctx) {
+  for (const u of fieldMonsters(state)) {
+    if (!state.cards[u].destroyAtEnd) continue;
+    moveCard(state, ctx, u, { zone: 'gy' }, { reason: '効果で破壊' });
+    log(state, `${getDef(state, ctx, u).name}はエンドフェイズに破壊された`, 'move');
+  }
+}
+
 function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
   const strict = ctx.options.strict;
   const def = getDef(state, ctx, uid);
@@ -1022,6 +1049,8 @@ function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
   const fromHand = from.zone === 'hand';
   const isSet = (from.zone === 'stz' || from.zone === 'fz') && !inst.faceUp;
   if (!fromHand && !isSet) fail('手札かセットされたカードのみ発動できます');
+  if (strict && state.opponentTurn && def.kind === 'spell' && def.spellType !== 'quick')
+    fail('相手ターンに発動できる魔法は速攻魔法だけです');
   const activationKey = `${def.name}:発動`;
   if (strict && def.oncePerTurnActivation && state.effectUses[activationKey]) {
     fail(`${def.name}は1ターンに1枚しか発動できません`);
@@ -1072,7 +1101,7 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
   const def = getDef(state, ctx, uid);
   const from = findLocation(state, uid);
   checkSummonable(state, ctx, uid);
-  requireMainPhase(state, ctx, '召喚');
+  if (!action.by) requireMainPhase(state, ctx, '召喚');
   const matDefs = materials.map((m) => getDef(state, ctx, m));
   const matNames = matDefs.map((d) => d.name).join('・');
   const label = { fusion: '融合', synchro: 'シンクロ', xyz: 'エクシーズ', link: 'リンク', ritual: '儀式' }[method];

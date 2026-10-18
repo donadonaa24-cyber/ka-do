@@ -131,6 +131,11 @@ select {
 .chip.phase {
   color: var(--accent);
 }
+.chip.phase.opp {
+  background: #5a1f2a;
+  border-color: #c0485d;
+  color: #ffd7de;
+}
 .chip.used {
   color: var(--muted);
 }
