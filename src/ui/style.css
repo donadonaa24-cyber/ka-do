@@ -1482,3 +1482,198 @@ button.danger {
   font-size: 13px;
   min-width: 0;
 }
+
+/* ===== 俺ルール（本来できない操作） ===== */
+.ore-toggle {
+  width: 100%;
+  border-style: dashed;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ore-rule {
+  border: 1px dashed var(--warn);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ore-head {
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ===== カードの移動・召喚の演出 ===== */
+.motion-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  overflow: hidden;
+}
+.flight {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55));
+}
+.flight .card {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.flight-label,
+.burst-label {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(17, 19, 26, 0.92);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.burst {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --fx: 79, 140, 255;
+}
+.burst-ring,
+.burst-glow {
+  position: absolute;
+  inset: 25%;
+  border-radius: 50%;
+  opacity: 0;
+  animation: burst-ring 760ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--delay) both;
+  border: 3px solid rgba(var(--fx), 0.95);
+  box-shadow:
+    0 0 18px rgba(var(--fx), 0.8),
+    inset 0 0 12px rgba(var(--fx), 0.6);
+}
+.burst-ring.r2 {
+  animation-delay: calc(var(--delay) + 140ms);
+  border-width: 2px;
+}
+.burst-glow {
+  border: none;
+  background: radial-gradient(circle, rgba(var(--fx), 0.75), rgba(var(--fx), 0) 65%);
+  box-shadow: none;
+  animation-name: burst-glow;
+}
+.burst-label {
+  top: 22%;
+  opacity: 0;
+  animation: burst-label 1000ms ease-out var(--delay) both;
+  border-color: rgba(var(--fx), 0.9);
+  color: rgb(var(--fx));
+}
+@keyframes burst-ring {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+@keyframes burst-glow {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@keyframes burst-label {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -60%);
+  }
+  15%,
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -130%);
+  }
+}
+/* 種類ごとの色 */
+.burst-normal {
+  --fx: 242, 193, 78;
+}
+.burst-advance {
+  --fx: 255, 150, 60;
+}
+.burst-set {
+  --fx: 160, 170, 190;
+}
+.burst-special {
+  --fx: 79, 140, 255;
+}
+.burst-extra {
+  --fx: 170, 130, 255;
+}
+.burst-fusion {
+  --fx: 190, 110, 255;
+}
+.burst-synchro {
+  --fx: 235, 240, 255;
+}
+.burst-xyz {
+  --fx: 120, 120, 140;
+}
+.burst-link {
+  --fx: 70, 170, 255;
+}
+.burst-ritual {
+  --fx: 110, 170, 255;
+}
+.burst-activate {
+  --fx: 91, 209, 139;
+}
+.burst-destroy {
+  --fx: 255, 90, 90;
+}
+.burst-release {
+  --fx: 255, 170, 90;
+}
+.burst-banish {
+  --fx: 120, 220, 255;
+}
+/* シンクロ・リンクは光の輪を増やす、破壊は砕ける感じ */
+.burst-synchro .burst-ring.r2,
+.burst-link .burst-ring.r2 {
+  border-style: dashed;
+}
+.burst-destroy .burst-ring {
+  border-style: dotted;
+  border-width: 4px;
+}
+.burst-advance .burst-glow,
+.burst-fusion .burst-glow,
+.burst-synchro .burst-glow,
+.burst-link .burst-glow,
+.burst-xyz .burst-glow,
+.burst-ritual .burst-glow,
+.burst-extra .burst-glow {
+  inset: 10%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-layer {
+    display: none;
+  }
+}

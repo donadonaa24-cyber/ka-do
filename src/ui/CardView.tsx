@@ -37,6 +37,8 @@ interface Props {
   onClick?: () => void;
   onPointerDown?: (e: React.PointerEvent) => void;
   small?: boolean;
+  /** 盤面・手札のカード（移動の演出で位置を探すため data-uid を付ける） */
+  uid?: string;
 }
 
 export function CardView({
@@ -48,6 +50,7 @@ export function CardView({
   onClick,
   onPointerDown,
   small,
+  uid,
 }: Props) {
   const image = useContext(CardImageContext)[def.id];
   const faceDown = inst ? !inst.faceUp : false;
@@ -67,13 +70,14 @@ export function CardView({
     .join(' ');
 
   if (faceDown && !showFaceDown) {
-    return <div className={cls} onClick={onClick} onPointerDown={onPointerDown} />;
+    return <div className={cls} data-uid={uid} onClick={onClick} onPointerDown={onPointerDown} />;
   }
   if (image) {
     // 自分で設定した画像があれば、名前の代わりに画像を表示する
     return (
       <div
         className={cls}
+        data-uid={uid}
         onClick={onClick}
         onPointerDown={onPointerDown}
         title={`${def.name}\n${def.text}`}
@@ -87,7 +91,13 @@ export function CardView({
     );
   }
   return (
-    <div className={cls} onClick={onClick} onPointerDown={onPointerDown} title={`${def.name}\n${def.text}`}>
+    <div
+      className={cls}
+      data-uid={uid}
+      onClick={onClick}
+      onPointerDown={onPointerDown}
+      title={`${def.name}\n${def.text}`}
+    >
       <div className="card-name">{def.name}</div>
       <div className="card-stat">{statLine(def)}</div>
       {def.tuner && <div className="card-tag">チューナー</div>}

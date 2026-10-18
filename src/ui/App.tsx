@@ -26,6 +26,7 @@ import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type
 import { SetupDialog } from './SetupDialog';
 import { HomeMenu } from './HomeMenu';
 import { OppPlaceSheet } from './OppPlaceSheet';
+import { MotionLayer } from './Motion';
 import { ImageSettings } from './ImageSettings';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
@@ -93,6 +94,8 @@ interface Btn {
   onClick: () => void;
   primary?: boolean;
   dest?: DropDest;
+  /** 俺ルール：ルール上は本来できない自由な操作（通常は隠す） */
+  free?: boolean;
 }
 
 const defaultSession = (): SessionData => ({
@@ -130,6 +133,24 @@ export function App() {
   };
   /** カードを置こうとしている相手のゾーン */
   const [oppPlace, setOppPlace] = useState<Location | null>(null);
+  /** 俺ルール：本来できない操作（自由に墓地へ送る・除外するなど）を常に出す */
+  const [oreRule, setOreRuleState] = useState(() => {
+    try {
+      return localStorage.getItem('ygo-ore-rule') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setOreRule = (on: boolean) => {
+    setOreRuleState(on);
+    try {
+      localStorage.setItem('ygo-ore-rule', on ? '1' : '0');
+    } catch {
+      // 保存できなくても今の画面では使える
+    }
+  };
+  /** カード詳細で俺ルールの操作を開いている */
+  const [freeOpen, setFreeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   /** 起動時のメニュー画面（デッキ選択・始め方） */
@@ -352,6 +373,7 @@ export function App() {
     const ss = (position: BattlePosition, faceDown = false): Btn => ({
       label: faceDown ? '特殊召喚（裏守備）' : `特殊召喚（${position === 'atk' ? '攻撃' : '守備'}）`,
       dest: 'monster',
+      free: true,
       onClick: () =>
         start({
           title: `${def(uid).name}を特殊召喚`,
@@ -381,6 +403,7 @@ export function App() {
 
   const effectBtn = (uid: string): Btn => ({
     label: '効果発動（記録）',
+    free: true,
     onClick: () => dispatch({ type: 'ACTIVATE_EFFECT', uid }),
   });
 
@@ -405,7 +428,7 @@ export function App() {
       dest: 'deck',
       onClick: () => dispatch(move(uid, { zone: 'deck' }, undefined, true)),
     });
-    return btns;
+    return btns.map((b) => ({ ...b, free: true }));
   };
 
   /** 練習用に置いた相手のカードの操作 */
@@ -589,14 +612,16 @@ export function App() {
         btns.push({ label: '反転召喚', onClick: () => dispatch({ type: 'FLIP_SUMMON', uid }) });
         btns.push({
           label: '表にする（効果で）',
+          free: true,
           onClick: () =>
             dispatch({ type: 'MOVE', uid, to: loc, faceUp: true, position: inst.position, reason: '表側にする' }),
         });
       }
-      btns.push({ label: 'リリース', onClick: () => dispatch(move(uid, { zone: 'gy' }, 'リリース')) });
+      btns.push({ label: 'リリース', free: true, onClick: () => dispatch(move(uid, { zone: 'gy' }, 'リリース')) });
       btns.push({
         label: 'ゾーン移動',
         dest: 'monster',
+        free: true,
         onClick: () =>
           start({
             title: `${d.name}を移動`,
@@ -609,6 +634,7 @@ export function App() {
       if (d.frame !== 'token') {
         btns.push({
           label: 'X素材にする',
+          free: true,
           onClick: () =>
             start({
               title: `${d.name}をエクシーズ素材にする`,
@@ -641,7 +667,7 @@ export function App() {
       if (loc.zone === 'deck')
         btns.push({
           label: '手札に加える',
-          primary: true,
+          free: true,
           onClick: () => dispatch(move(uid, { zone: 'hand' }, 'サーチ')),
         });
       if (d.kind === 'monster') btns.push(...summonButtons(uid));
@@ -649,6 +675,7 @@ export function App() {
         btns.push({
           label: '魔法＆罠ゾーンに置く',
           dest: d.spellType === 'field' ? 'fz' : 'stz',
+          free: true,
           onClick: () =>
             start({
               title: `${d.name}を置く`,
@@ -661,6 +688,13 @@ export function App() {
       if (loc.zone !== 'deck') btns.push(effectBtn(uid));
     }
 
+    // エンドフェイズの手札枚数調整（6枚を超えている時）
+    if (loc.zone === 'hand' && state.hand.length > 6)
+      btns.push({
+        label: `捨てる（手札調整・${state.hand.length}枚）`,
+        dest: 'gy',
+        onClick: () => dispatch(move(uid, { zone: 'gy' }, '手札調整で捨てる')),
+      });
     btns.push(...commonMoves(uid, loc));
     return btns;
   };
@@ -690,8 +724,15 @@ export function App() {
     const from = findLocation(state, uid);
     if (!dest || (from && loc && JSON.stringify(from) === JSON.stringify(loc))) return;
     if (from?.zone === zone && !loc) return;
-    const options = buttonsFor(uid)
-      .filter((b) => b.dest === dest)
+    const all = buttonsFor(uid).filter((b) => b.dest === dest);
+    // 俺ルールがオフなら、本来できない移動はドラッグでもしない（ルールチェックがオフなら自由）
+    const allowFree = oreRule || !session.strict;
+    if (!allowFree && all.length && all.every((b) => b.free)) {
+      setError(`${def(uid).name}はそこに置けません（カードの「俺ルール」から操作できます）`);
+      return;
+    }
+    const options = all
+      .filter((b) => allowFree || !b.free)
       .map((b) => ({
         ...b,
         onClick: () => {
@@ -861,7 +902,20 @@ export function App() {
 
   // ===== 表示 =====
 
+  // 演出：1手戻す・新しいゲーム・効果の取り消しでは動かさない
+  const motionKey = `${session.deckName}:${session.seed}:${session.fixedHand.join(',')}:${session.handSize}`;
+  const motionPrev = useRef({ key: motionKey, count: session.actions.length, run: !!run });
+  const animateMotion =
+    motionPrev.current.key === motionKey &&
+    session.actions.length >= motionPrev.current.count &&
+    !(motionPrev.current.run && !run && session.actions.length === motionPrev.current.count);
+  useEffect(() => {
+    motionPrev.current = { key: motionKey, count: session.actions.length, run: !!run };
+  });
+
   const selDef = sel ? def(sel) : null;
+  // 別のカードを開いたら、俺ルールの操作は閉じておく
+  useEffect(() => setFreeOpen(false), [sel]);
   const selLoc = sel ? findLocation(state, sel) : null;
   // 効果処理中は途中経過の盤面を表示する
   const view = run?.temp ?? state;
@@ -1201,7 +1255,12 @@ export function App() {
           </div>
         </main>
 
-        <section ref={handRef} className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`} data-drop="hand">
+        <section
+          ref={handRef}
+          className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`}
+          data-drop="hand"
+          data-pile="hand"
+        >
           <div className="hand-cards">
             {view.hand.map((u, i) => (
               <div
@@ -1215,12 +1274,15 @@ export function App() {
                   highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                   onClick={() => onCardClick(u)}
                   onPointerDown={busy ? undefined : dragStart(u)}
+                  uid={u}
                 />
               </div>
             ))}
             {view.hand.length === 0 && <span className="note">手札なし</span>}
           </div>
         </section>
+
+        {!home && <MotionLayer view={view} ctx={ctx} animate={animateMotion} />}
 
         {showStepPopup && (
           <StepPopup
@@ -1301,21 +1363,46 @@ export function App() {
                   ))}
                 </div>
               )}
-              <div className="btn-grid">
-                {buttonsFor(sel).map((b) => (
-                  <button
-                    key={b.label}
-                    className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
-                    onClick={() => {
-                      b.onClick();
-                      setSelected(null);
-                      setPile(null);
-                    }}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
+              {(() => {
+                const all = buttonsFor(sel);
+                const showFree = oreRule || !session.strict;
+                const legal = showFree ? all : all.filter((b) => !b.free);
+                const free = showFree ? [] : all.filter((b) => b.free);
+                const grid = (list: Btn[]) => (
+                  <div className="btn-grid">
+                    {list.map((b) => (
+                      <button
+                        key={b.label}
+                        className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
+                        onClick={() => {
+                          b.onClick();
+                          setSelected(null);
+                          setPile(null);
+                          setFreeOpen(false);
+                        }}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+                return (
+                  <>
+                    {legal.length > 0 ? grid(legal) : <p className="note">今できる操作はありません。</p>}
+                    {free.length > 0 &&
+                      (freeOpen ? (
+                        <div className="ore-rule">
+                          <div className="ore-head">俺ルール（本来はできない操作）</div>
+                          {grid(free)}
+                        </div>
+                      ) : (
+                        <button className="ore-toggle" onClick={() => setFreeOpen(true)}>
+                          俺ルールで操作する（墓地へ・除外・デッキへ戻すなど）
+                        </button>
+                      ))}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1405,6 +1492,9 @@ export function App() {
                   同じ初手で最初から
                 </button>
                 <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+                <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
+                  俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
+                </button>
                 <button className={oppMode ? 'on' : ''} aria-pressed={oppMode} onClick={() => setOppMode(!oppMode)}>
                   相手の盤面を置く（練習）：{oppMode ? 'ON' : 'OFF'}
                 </button>

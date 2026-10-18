@@ -70,6 +70,7 @@ export function Board({
             selected={selected === uid}
             highlighted={picked.includes(uid)}
             onPointerDown={dragStart?.(uid)}
+            uid={uid}
           />
         ) : (
           <span className="zone-label">{label}</span>
@@ -86,10 +87,11 @@ export function Board({
       <div
         className={`zone pile ${dropTarget === zone ? 'drop-over' : ''} ${list.some((u) => hintCards.includes(u)) ? 'hint' : ''}`}
         data-drop={zone}
+        data-pile={zone}
         onClick={() => onPileClick(zone)}
       >
         {top ? (
-          <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} />
+          <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} uid={top} />
         ) : (
           <div className={`card ${zone === 'deck' || zone === 'extra' ? 'f-back' : 'empty-pile'}`} />
         )}
@@ -113,6 +115,7 @@ export function Board({
           inst={state.cards[uid]}
           selected={selected === uid}
           highlighted={picked.includes(uid)}
+          uid={uid}
         />
       ) : (
         <span className="zone-label">{label}</span>
@@ -124,9 +127,9 @@ export function Board({
     const list = opp?.[zone === 'ogy' ? 'gy' : zone === 'obanished' ? 'banished' : 'hand'] ?? [];
     const top = zone === 'ohand' ? undefined : list[list.length - 1];
     return (
-      <div className="zone pile opp-zone" onClick={() => onOppPileClick?.(zone)}>
+      <div className="zone pile opp-zone" data-pile={zone} onClick={() => onOppPileClick?.(zone)}>
         {top ? (
-          <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} />
+          <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} uid={top} />
         ) : (
           <div className={`card ${zone === 'ohand' && list.length ? 'f-back' : 'empty-pile'}`} />
         )}
