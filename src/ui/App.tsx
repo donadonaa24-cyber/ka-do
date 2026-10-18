@@ -26,6 +26,8 @@ import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type
 import { SetupDialog } from './SetupDialog';
 import { HomeMenu } from './HomeMenu';
 import { OppPlaceSheet } from './OppPlaceSheet';
+import { OPP_PRESETS, oppPresetAction } from '../data/oppPresets';
+import { oppWouldRespond } from '../engine/oppAI';
 import { MotionLayer } from './Motion';
 import { ImageSettings } from './ImageSettings';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
@@ -58,6 +60,7 @@ import {
   completeStep,
   currentStep,
   effectAvailable,
+  effectSpeed,
   pickRange,
   type RunResult,
   type Running,
@@ -176,6 +179,8 @@ export function App() {
   const { w: winWidth, h: winHeight } = useWindowSize();
   /** 手札の帯の高さ（ナビの解説を手札の上に出すため） */
   const [handRef, handHeight] = useElementHeight<HTMLElement>();
+  /** ナビの帯の高さ（盤面のカードの大きさを決めるのに使う） */
+  const [coachRef, coachHeight] = useElementHeight<HTMLDivElement>();
   const routeSearch = useRouteSearch(useCallback((m: string) => setError(m), []));
   const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
   /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
@@ -1069,9 +1074,11 @@ export function App() {
       <div className="ap-title">チェーン {chain.length}</div>
       <ol className="chain-list">
         {[...chain].reverse().map((l, i) => (
-          <li key={chain.length - i}>
+          <li key={chain.length - i} className={`${l.opp ? 'opp-link' : ''} ${l.negated ? 'negated' : ''}`}>
             <span className="chain-no">C{chain.length - i}</span>
+            {l.opp && <strong className="opp-tag">相手</strong>}
             {CARD_DB[l.defId]?.name}：{l.label}
+            {l.negated && <strong className="neg-tag">{l.negated === 'destroy' ? '無効・破壊' : '無効'}</strong>}
           </li>
         ))}
       </ol>
@@ -1099,6 +1106,29 @@ export function App() {
       </div>
     </div>
   ) : null;
+
+  /**
+   * お手本を実行する。相手の盤面に妨害があり、この効果の発動に相手がチェーンしてくる場合は、
+   * 一気に処理せずに効果の発動から始めて（選択は自分で行う）、相手の妨害を受ける
+   */
+  const runDemo = () => {
+    if (!coachAction) return;
+    const first = coachAction.type === 'BATCH' ? coachAction.actions[0] : coachAction;
+    if (session.strict && first && (first.type === 'ACTIVATE_EFFECT' || first.type === 'ACTIVATE_CARD')) {
+      const uid = first.uid;
+      const effects = state.cards[uid] ? (CARD_SCRIPTS[state.cards[uid].defId]?.effects ?? []) : [];
+      const effect =
+        first.type === 'ACTIVATE_CARD'
+          ? effects.find((e) => e.isCardActivation)
+          : effects.find((e) => e.label === first.label);
+      if (effect && oppWouldRespond(state, ctx, uid, effectSpeed(state, ctx, uid, effect))) {
+        runEffect(uid, effect);
+        setError('相手が妨害してきそうです。効果の選択は自分で行ってください（解説の通りに選ぶ）');
+        return;
+      }
+    }
+    dispatch(coachAction);
+  };
 
   const quitCoach = () => {
     setCoach(null);
@@ -1135,7 +1165,7 @@ export function App() {
           解説
         </button>
         {coachStep && (
-          <button disabled={!coachAction} onClick={() => coachAction && dispatch(coachAction)}>
+          <button disabled={!coachAction} onClick={runDemo}>
             お手本
           </button>
         )}
@@ -1173,6 +1203,7 @@ export function App() {
           {
             '--hand-w': `${handCardWidth(winWidth, winHeight)}px`,
             '--hand-h': `${handHeight}px`,
+            '--coach-h': `${coachHeight}px`,
           } as React.CSSProperties
         }
         onClickCapture={onClickCapture}
@@ -1236,7 +1267,11 @@ export function App() {
         </header>
 
         <main className="table">
-          {naviSearching || coachBar}
+          {(naviSearching || coachBar) && (
+            <div ref={coachRef} className="coach-wrap">
+              {naviSearching || coachBar}
+            </div>
+          )}
           {actionPanel}
           <div className="board-wrap">
             <Board
@@ -1292,13 +1327,12 @@ export function App() {
         {showStepPopup && (
           <StepPopup
             dockRight={dockRight}
-            layoutKey={`${winWidth}x${winHeight}:${handHeight}:${showOpp}:${coachDone}`}
             coach={coach}
             done={coachDone}
             canDemo={!!coachAction}
             why={coachWhy}
             onTry={() => setPopupOpen(false)}
-            onDemo={() => coachAction && dispatch(coachAction)}
+            onDemo={runDemo}
             onUndo={undo}
             onShowAll={() => setModal('routes')}
             onRecalc={() => {
@@ -1502,6 +1536,36 @@ export function App() {
                 <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
                   俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
                 </button>
+                <div className="wide opp-presets">
+                  <div className="ore-head">相手の妨害（相手がトゥーンの最終盤面・チェーンして止めてくる）</div>
+                  <div className="btn-row">
+                    {OPP_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        title={p.description}
+                        onClick={() => {
+                          if (dispatch(oppPresetAction(state, p))) {
+                            setOppMode(true);
+                            setModal(null);
+                          }
+                        }}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => {
+                        dispatch(oppPresetAction(state, null));
+                        setModal(null);
+                      }}
+                    >
+                      なし
+                    </button>
+                  </div>
+                  <p className="note">
+                    1妨害：バロネス／2：＋トゥーン・テラー／3：＋ア＝バオ・ア・クゥー／4：＋ゲオルギアス③（記事の最終盤面）。こちらが効果を発動すると、相手が妨害をチェーンしてきます。
+                  </p>
+                </div>
                 <button className={oppMode ? 'on' : ''} aria-pressed={oppMode} onClick={() => setOppMode(!oppMode)}>
                   相手の盤面を置く（練習）：{oppMode ? 'ON' : 'OFF'}
                 </button>
@@ -1764,7 +1828,10 @@ function useElementHeight<T extends HTMLElement>(): [(el: T | null) => void, num
   const observer = useRef<ResizeObserver | null>(null);
   const ref = useCallback((el: T | null) => {
     observer.current?.disconnect();
-    if (!el) return;
+    if (!el) {
+      setHeight(0);
+      return;
+    }
     setHeight(el.getBoundingClientRect().height);
     if (typeof ResizeObserver === 'undefined') return;
     observer.current = new ResizeObserver(() => setHeight(el.getBoundingClientRect().height));

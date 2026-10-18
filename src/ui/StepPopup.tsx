@@ -4,8 +4,6 @@ import type { Coach } from '../engine/coach';
 interface Props {
   /** 盤面の右の空きに出す（横長の画面） */
   dockRight?: boolean;
-  /** 画面・盤面の大きさが変わったら置き場所を計算し直す */
-  layoutKey?: string;
   coach: Coach;
   done: number;
   /** 次の手を今の盤面で実行できるか */
@@ -23,7 +21,6 @@ interface Props {
 /** 1手ごとの解説。書いてある通りに盤面を操作すると次の手に進む */
 export function StepPopup({
   dockRight,
-  layoutKey,
   coach,
   done,
   canDemo,
@@ -43,6 +40,17 @@ export function StepPopup({
   // 盤面に重ならない場所（右の空き、または盤面と手札の間の空き）に置く
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ style: React.CSSProperties; tight: boolean } | null>(null);
+  const [, setTick] = useState(0);
+  // 盤面の大きさが変わったら（ナビの帯の高さ・相手の盤面の表示など）置き場所を計算し直す
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setTick((t) => t + 1));
+    for (const sel of ['.table', '.board']) {
+      const el = document.querySelector(sel);
+      if (el) ro.observe(el);
+    }
+    return () => ro.disconnect();
+  }, []);
   useLayoutEffect(() => {
     const table = document.querySelector('.table')?.getBoundingClientRect();
     const board = document.querySelector('.board')?.getBoundingClientRect();
@@ -68,8 +76,7 @@ export function StepPopup({
       next = { style: { maxHeight: Math.max(space, 150) }, tight: space < 190 };
     }
     setPlace((p) => (JSON.stringify(p) === JSON.stringify(next) ? p : next));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dockRight, layoutKey]);
+  });
   // 空きが狭い時は最初から縮小表示にする
   const tight = !!place?.tight;
   useLayoutEffect(() => {

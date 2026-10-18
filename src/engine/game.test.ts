@@ -154,15 +154,31 @@ describe('EXデッキからの召喚', () => {
   it('リンクモンスターはEXゾーンかリンク先にしか出せない', () => {
     const { s, a, b } = withTwoMonsters();
     const link = extraOf(s, 't-link2');
-    expect(err(s, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link, materials: [a, b], to: { zone: 'mz', index: 2 } })).toMatch('リンク先');
-    const s2 = run(s, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link, materials: [a, b], to: { zone: 'emz', index: 0 } });
+    expect(
+      err(s, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link, materials: [a, b], to: { zone: 'mz', index: 2 } }),
+    ).toMatch('リンク先');
+    const s2 = run(s, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'link',
+      uid: link,
+      materials: [a, b],
+      to: { zone: 'emz', index: 0 },
+    });
     expect(s2.emz[0]).toBe(link);
     // EMZ(左)=列1 の ↙↘ は メインゾーン 0 と 2
     const link1 = extraOf(s2, 't-link1');
     let s3 = run(s2, { type: 'SPECIAL_SUMMON', uid: handOf(s2, 't-tuner3'), to: { zone: 'mz', index: 4 } });
     const t = s3.mz[4]!;
-    expect(err(s3, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link1, materials: [t], to: { zone: 'emz', index: 1 } })).toMatch('1つ');
-    s3 = run(s3, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link1, materials: [t], to: { zone: 'mz', index: 2 } });
+    expect(
+      err(s3, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link1, materials: [t], to: { zone: 'emz', index: 1 } }),
+    ).toMatch('1つ');
+    s3 = run(s3, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'link',
+      uid: link1,
+      materials: [t],
+      to: { zone: 'mz', index: 2 },
+    });
     expect(s3.mz[2]).toBe(link1);
   });
 
@@ -180,7 +196,13 @@ describe('EXデッキからの召喚', () => {
       { type: 'SPECIAL_SUMMON', uid: t, to: { zone: 'mz', index: 0 } },
     );
     const link3 = extraOf(s2, 't-link3');
-    s2 = run(s2, { type: 'PROCEDURE_SUMMON', method: 'link', uid: link3, materials: [link2, t], to: { zone: 'emz', index: 0 } });
+    s2 = run(s2, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'link',
+      uid: link3,
+      materials: [link2, t],
+      to: { zone: 'emz', index: 0 },
+    });
     expect(s2.emz[0]).toBe(link3);
     // リンクモンスターは墓地へ
     expect(findLocation(s2, link2)).toEqual({ zone: 'gy' });
@@ -190,16 +212,36 @@ describe('EXデッキからの召喚', () => {
     const { s, a, t } = withTwoMonsters();
     const s2 = run(s, { type: 'SPECIAL_SUMMON', uid: t, to: { zone: 'mz', index: 2 } });
     const syn = extraOf(s2, 't-synchro7');
-    const s3 = run(s2, { type: 'PROCEDURE_SUMMON', method: 'synchro', uid: syn, materials: [t, a], to: { zone: 'mz', index: 3 } });
+    const s3 = run(s2, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'synchro',
+      uid: syn,
+      materials: [t, a],
+      to: { zone: 'mz', index: 3 },
+    });
     expect(s3.mz[3]).toBe(syn);
     const b = s.mz[1]!;
-    expect(err(s3, { type: 'PROCEDURE_SUMMON', method: 'synchro', uid: extraOf(s3, 't-synchro7'), materials: [b], to: { zone: 'mz', index: 4 } })).toMatch('チューナー');
+    expect(
+      err(s3, {
+        type: 'PROCEDURE_SUMMON',
+        method: 'synchro',
+        uid: extraOf(s3, 't-synchro7'),
+        materials: [b],
+        to: { zone: 'mz', index: 4 },
+      }),
+    ).toMatch('チューナー');
   });
 
   it('エクシーズ召喚の素材は重なり、離れると墓地へ', () => {
     const { s, a, b } = withTwoMonsters();
     const x = extraOf(s, 't-xyz4');
-    let s2 = run(s, { type: 'PROCEDURE_SUMMON', method: 'xyz', uid: x, materials: [a, b], to: { zone: 'mz', index: 0 } });
+    let s2 = run(s, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'xyz',
+      uid: x,
+      materials: [a, b],
+      to: { zone: 'mz', index: 0 },
+    });
     expect(s2.cards[x].overlay).toEqual([a, b]);
     expect(s2.gy).toEqual([]);
     s2 = run(s2, { type: 'DETACH', target: x, uid: a });
@@ -215,7 +257,9 @@ describe('EXデッキからの召喚', () => {
     const r = handOf(s, 't-ritual');
     const a = handOf(s, 't-lv4-a');
     const t = handOf(s, 't-tuner3');
-    expect(err(s, { type: 'PROCEDURE_SUMMON', method: 'ritual', uid: r, materials: [a], to: { zone: 'mz', index: 0 } })).toMatch('足りません');
+    expect(
+      err(s, { type: 'PROCEDURE_SUMMON', method: 'ritual', uid: r, materials: [a], to: { zone: 'mz', index: 0 } }),
+    ).toMatch('足りません');
     s = run(s, { type: 'PROCEDURE_SUMMON', method: 'ritual', uid: r, materials: [a, t], to: { zone: 'mz', index: 0 } });
     expect(s.mz[0]).toBe(r);
   });
@@ -255,7 +299,14 @@ describe('魔法・罠', () => {
 describe('その他', () => {
   it('トークンはフィールドを離れると消滅する', () => {
     let s = createGame(TEST_DECK, ctx, 1);
-    s = run(s, { type: 'CREATE_TOKEN', name: 'テストトークン', level: 1, atk: 0, def: 0, to: { zone: 'mz', index: 0 } });
+    s = run(s, {
+      type: 'CREATE_TOKEN',
+      name: 'テストトークン',
+      level: 1,
+      atk: 0,
+      def: 0,
+      to: { zone: 'mz', index: 0 },
+    });
     const tok = s.mz[0]!;
     s = run(s, { type: 'MOVE', uid: tok, to: { zone: 'gy' } });
     expect(s.cards[tok]).toBeUndefined();

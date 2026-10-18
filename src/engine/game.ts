@@ -116,7 +116,7 @@ export type Action =
   | {
       type: 'OPP_PLACE';
       defId: string;
-      to: { zone: 'omz'; index: number } | { zone: 'ostz'; index: number } | { zone: 'ofz' };
+      to: { zone: 'omz'; index: number } | { zone: 'ostz'; index: number } | { zone: 'ofz' } | { zone: 'ohand' };
       faceUp: boolean;
       position?: BattlePosition;
     }
@@ -131,7 +131,22 @@ export type Action =
   | { type: 'EXTRA_LOCK'; source: string; filter: CardFilter }
   | { type: 'DOUBLE_ATTACK'; uid: string }
   /** 効果をチェーンに積む（コストは支払い済み） */
-  | { type: 'CHAIN_PUSH'; uid: string; effect: number; stepStart: number; speed: number; label: string }
+  | {
+      type: 'CHAIN_PUSH';
+      uid: string;
+      effect: number;
+      stepStart: number;
+      speed: number;
+      label: string;
+      /** 相手AIの妨害 */
+      opp?: string;
+      targetLink?: number;
+      target?: string;
+    }
+  /** チェーン上の効果の発動・効果を無効にする（相手の妨害の処理） */
+  | { type: 'CHAIN_NEGATE'; index: number; mode: 'destroy' | 'effect'; by: string }
+  /** 相手のカードの効果を使ったことを記録する（once：表側で存在する限り1度だけ） */
+  | { type: 'OPP_USE'; uid: string; key: string; once?: boolean }
   /** 一番上のチェーンの解決が終わった */
   /** チェーンの解決を終える（fizzled：効果を処理しなかった＝不発） */
   | { type: 'CHAIN_POP'; fizzled?: boolean }
@@ -507,6 +522,7 @@ function resetInstance(inst: CardInstance) {
   inst.summonType = null;
   inst.levelMod = 0;
   inst.destroyAtEnd = false;
+  delete inst.oppSpent;
 }
 
 interface PlaceOpts {
@@ -1110,7 +1126,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return fail(action.message);
     case 'OPP_PLACE': {
       const o = oppOf(state);
-      const occupied = action.to.zone === 'ofz' ? o.fz : o[action.to.zone === 'omz' ? 'mz' : 'stz'][action.to.index];
+      const occupied =
+        action.to.zone === 'ohand'
+          ? null
+          : action.to.zone === 'ofz'
+            ? o.fz
+            : o[action.to.zone === 'omz' ? 'mz' : 'stz'][action.to.index];
       if (occupied) fail('そのゾーンには既にカードがあります');
       const uid = `o${state.nextUid++}`;
       state.cards[uid] = { ...newInstance(uid, action.defId), opp: true };
@@ -1195,8 +1216,33 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         stepStart: action.stepStart,
         speed: action.speed,
         label: action.label,
+        ...(action.opp ? { opp: action.opp, targetLink: action.targetLink, target: action.target } : {}),
       });
-      log(state, `チェーン${state.chain.length}：${name(state, ctx, action.uid)}の効果「${action.label}」`, 'activate');
+      log(
+        state,
+        `チェーン${state.chain.length}：${action.opp ? '相手の' : ''}${name(state, ctx, action.uid)}の効果「${action.label}」`,
+        'activate',
+      );
+      return;
+    }
+    case 'CHAIN_NEGATE': {
+      const link = state.chain[action.index];
+      if (!link) fail('無効にするチェーンがありません');
+      link.negated = action.mode;
+      const what = `チェーン${action.index + 1}（${ctx.db[link.defId]?.name ?? ''}）`;
+      log(
+        state,
+        `${action.by}の効果で${what}の${action.mode === 'destroy' ? '発動が無効になり破壊される' : '効果が無効になった'}`,
+        'info',
+      );
+      return;
+    }
+    case 'OPP_USE': {
+      state.effectUses[action.key] = (state.effectUses[action.key] ?? 0) + 1;
+      if (action.once) {
+        const inst = state.cards[action.uid];
+        inst.oppSpent = [...(inst.oppSpent ?? []), action.key];
+      }
       return;
     }
     case 'CHAIN_POP': {

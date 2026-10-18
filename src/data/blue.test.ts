@@ -25,6 +25,7 @@ import { routeFromGuide } from '../engine/guide';
 import { enumerateActions, preferredStz } from '../engine/solver';
 import { BLUE_EYES_DECK, CARD_DB, CARD_SCRIPTS } from '.';
 import { BLUE_GUIDES } from './blueGuides';
+import { OPP_PRESETS, oppPresetAction } from './oppPresets';
 import { TOON_EVALUATOR } from './toonEval';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
@@ -477,5 +478,75 @@ describe('究極融合（バグ報告）', () => {
     expect(s.chain.length).toBe(0);
     expect(s.gy).toContain(card);
     expect(s.log.some((l) => l.text.includes('不発'))).toBe(true);
+  });
+});
+
+describe('相手の妨害（トゥーンの最終盤面）', () => {
+  const resolveAll = (s: GameState) => {
+    while (s.chain.length) {
+      const r = startResolve(s, ctx);
+      if (r.kind !== 'done') throw new Error(`解決できません: ${r.kind === 'error' ? r.error : r.kind}`);
+      s = act(s, r.action);
+    }
+    return s;
+  };
+
+  it('4妨害：テラー→バロネス→ゲオルギアス③→ア＝バオの順にチェーンして止めてくる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697', '8240199']);
+    s = act(s, oppPresetAction(s, OPP_PRESETS[3]));
+    expect(s.opp!.mz.filter(Boolean)).toHaveLength(4);
+    // 1回目：白き乙女①（モンスター効果）→ トゥーン・テラーで無効
+    const maiden = find(s, 'hand', '白き乙女');
+    const e1 = CARD_SCRIPTS[s.cards[maiden].defId].effects!.find((e) => e.label.startsWith('①'))!;
+    let r = startEffect(s, ctx, maiden, e1, undefined, 'auto');
+    if (r.kind === 'running') r = completeStep(r.run, ctx, null);
+    expect(r.kind).toBe('done');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain.map((l) => l.opp ?? '自分')).toEqual(['自分', 'terror']);
+    s = resolveAll(s);
+    expect(s.stz.every((u) => !u)).toBe(true);
+    expect(s.log.some((l) => l.text.includes('無効になり破壊'))).toBe(true);
+    // 2回目：賢士を召喚して①→ バロネスで無効
+    const sage = find(s, 'hand', '青き眼の賢士');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: sage, index: 0 });
+    const e2 = CARD_SCRIPTS[s.cards[sage].defId].effects!.find((e) => e.label.includes('① 召喚時'))!;
+    r = startEffect(s, ctx, sage, e2, undefined, 'auto');
+    expect(r.kind).toBe('done');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain[1].opp).toBe('baroness');
+    s = resolveAll(s);
+    // 無効にして破壊：賢士は墓地へ
+    expect(s.gy).toContain(sage);
+  });
+
+  it('魔法の発動にはゲオルギアス③、モンスターがいればア＝バオで破壊してくる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['8240199', '80326401', '89631139']);
+    s = act(s, oppPresetAction(s, OPP_PRESETS[3]));
+    // テラー・バロネスを先に使わせる
+    s = act(s, { type: 'OPP_USE', uid: s.opp!.stz[2]!, key: 'opp:トゥーン・テラー' });
+    s = act(s, { type: 'OPP_USE', uid: s.opp!.mz[1]!, key: 'baroness2', once: true });
+    const spell = s.hand.find((u) => CARD_DB[s.cards[u].defId].kind === 'spell')!;
+    const eff = CARD_SCRIPTS[s.cards[spell].defId].effects!.find((e) => e.isCardActivation)!;
+    let r = startEffect(s, ctx, spell, eff, { zone: 'stz', index: 0 }, 'auto');
+    while (r.kind === 'running') {
+      const run: Running = r.run;
+      const pick = stepCandidates(run, ctx).filter((u) => name(run.temp, u) !== '青き眼の賢士');
+      r = afterPick({ ...run, picked: pick.slice(0, 1) }, ctx);
+    }
+    expect(r.kind).toBe('done');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain[1]?.opp).toBe('georgias');
+    s = resolveAll(s);
+    expect(s.gy).toContain(spell);
+    // 賢士を召喚して①→ ア＝バオ・ア・クゥーで賢士を破壊（効果は処理される）
+    const sage = find(s, 'hand', '青き眼の賢士');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: sage, index: 0 });
+    const e2 = CARD_SCRIPTS[s.cards[sage].defId].effects!.find((e) => e.label.includes('① 召喚時'))!;
+    r = startEffect(s, ctx, sage, e2, undefined, 'auto');
+    s = act(s, (r as { action: Action }).action);
+    expect(s.chain[1].opp).toBe('abao');
+    const top = startResolve(s, ctx);
+    s = act(s, (top as { action: Action }).action);
+    expect(s.gy).toContain(sage);
   });
 });

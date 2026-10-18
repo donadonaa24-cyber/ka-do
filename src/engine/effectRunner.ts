@@ -8,6 +8,7 @@ import {
   isMonsterZone,
   makeEnv,
 } from './game';
+import { oppResponse, resolveOppLink } from './oppAI';
 import type { EffectDef, Env, Step } from './scripts';
 import type { GameState, Location } from './types';
 
@@ -264,9 +265,35 @@ function costLookaheadBlocked(run: Running, ctx: Ctx, depth = 0): string | null 
 export function startResolve(state: GameState, ctx: Ctx): RunResult {
   const link = state.chain[state.chain.length - 1];
   if (!link) return { kind: 'error', error: '解決するチェーンがありません' };
+  const name = makeEnv(state, ctx, link.uid).def(link.uid).name;
+  const no = state.chain.length;
+  // 相手の妨害：自動で処理する
+  if (link.opp) {
+    const actions = [...resolveOppLink(state, ctx, link), { type: 'CHAIN_POP' } as Action];
+    return { kind: 'done', action: { type: 'BATCH', label: `チェーン${no}を解決：相手の${name}`, actions } };
+  }
+  // 無効にされた効果：処理せず、破壊されたカード・発動した魔法・罠は墓地へ
+  if (link.negated) {
+    const inst = state.cards[link.uid];
+    const loc = findLocation(state, link.uid);
+    const onField = !!loc && ['mz', 'emz', 'stz', 'fz'].includes(loc.zone);
+    const actions: Action[] =
+      link.negated === 'destroy' && onField
+        ? [{ type: 'MOVE', uid: link.uid, to: { zone: 'gy' }, reason: '効果で破壊' }]
+        : inst?.pendingResolve
+          ? [{ type: 'RESOLVE', uid: link.uid }]
+          : [];
+    return {
+      kind: 'done',
+      action: {
+        type: 'BATCH',
+        label: `チェーン${no}：${name}は無効になった`,
+        actions: [...actions, { type: 'CHAIN_POP', fizzled: true }],
+      },
+    };
+  }
   const effect = ctx.scripts?.[link.defId]?.effects?.[link.effect];
   if (!effect) return { kind: 'error', error: '効果が見つかりません' };
-  const name = makeEnv(state, ctx, link.uid).def(link.uid).name;
   return advance(
     {
       title: `チェーン${state.chain.length}を解決：${name}`,
@@ -303,7 +330,6 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   if (run.chainMode === 'never' || run.resolving || run.effect.applied) return null;
   const speed = effectSpeed(run.temp, ctx, run.self, run.effect);
   const responses = chainableEffects(run.temp, ctx, Math.max(2, speed)).filter((c) => c.uid !== run.self);
-  if (run.chainMode === 'auto' && responses.length === 0) return null;
   const def = makeEnv(run.temp, ctx, run.self).def(run.self);
   const index = ctx.scripts?.[def.id]?.effects?.indexOf(run.effect) ?? -1;
   if (index < 0) return null;
@@ -317,7 +343,10 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   };
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
-  return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
+  // 相手（練習用の相手AI）が妨害をチェーンしてくるか
+  const opp = ctx.options.strict ? oppResponse(r.state, ctx) : null;
+  if (run.chainMode === 'auto' && responses.length === 0 && !opp) return null;
+  return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push, ...(opp ?? [])] } };
 }
 
 function applyAll(run: Running, ctx: Ctx, actions: Action[]): Running | string {

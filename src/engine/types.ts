@@ -151,6 +151,8 @@ export interface CardInstance {
   destroyAtEnd: boolean;
   /** 相手のカード（練習用に手で置いたもの） */
   opp?: boolean;
+  /** 相手のカードが使った「表側で存在する限り1度だけ」の効果 */
+  oppSpent?: string[];
 }
 
 export type SummonType = 'normal' | 'special' | 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
@@ -166,6 +168,13 @@ export interface ChainLink {
   /** スペルスピード */
   speed: number;
   label: string;
+  /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */
+  opp?: string;
+  /** 相手の妨害が対象にしたチェーン番号（0始まり）・カード */
+  targetLink?: number;
+  target?: string;
+  /** 発動・効果が無効にされた（destroy：無効にして破壊） */
+  negated?: 'destroy' | 'effect';
 }
 
 /** 効果で得た追加の召喚権・リリースなし召喚 */
