@@ -24,6 +24,7 @@ import { Board } from './Board';
 import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
+import { HomeMenu } from './HomeMenu';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
 import {
@@ -110,6 +111,10 @@ export function App() {
   const [pile, setPile] = useState<PileZone | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
+  /** 起動時のメニュー画面（デッキ選択・始め方） */
+  const [home, setHome] = useState(true);
+  /** 「初手を選んで始める」で選んだデッキ */
+  const [setupDeck, setSetupDeck] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
@@ -655,9 +660,24 @@ export function App() {
   }, [coach, coachStep, coachDone, state, ctx]);
   const hl = actionHighlights(coach && !run && !pending ? coachAction : undefined);
 
+  /** 新しいゲームを始める（盤面の選択状態・練習をリセット） */
+  const newGame = (s: SessionData, naviOn: boolean) => {
+    setSession(s);
+    setCoach(null);
+    setSelected(null);
+    setPending(null);
+    setRun(null);
+    setPile(null);
+    setNavi(naviOn);
+    naviKey.current = '';
+    setHome(false);
+    setModal(null);
+  };
+
   const startGuide = (g: Guide) => {
     setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
     setCoach(coachFromGuide(g));
+    setHome(false);
     setModal(null);
     setSelected(null);
     setPending(null);
@@ -982,7 +1002,7 @@ export function App() {
   );
 
   const showStepPopup =
-    coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup;
+    coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup && !home;
 
   return (
     <CardImageContext.Provider value={shownImages}>
@@ -993,6 +1013,9 @@ export function App() {
       >
         <header className="hud">
           <div className="hud-status">
+            <button className="chip deck-chip" onClick={() => setHome(true)} aria-label="メニュー画面（デッキ選択）">
+              {deck.name}
+            </button>
             <span className="chip">T{state.turn}</span>
             <span className={`chip phase ${state.opponentTurn ? 'opp' : ''}`}>
               {state.opponentTurn ? '相手ターン' : PHASE_LABEL[state.phase]}
@@ -1235,7 +1258,15 @@ export function App() {
               </div>
               <div className="btn-grid">
                 <button
-                  className="primary"
+                  className="primary wide"
+                  onClick={() => {
+                    setModal(null);
+                    setHome(true);
+                  }}
+                >
+                  メニュー画面（デッキ選択・新しいゲーム）
+                </button>
+                <button
                   onClick={() => {
                     setModal(null);
                     setShowSetup(true);
@@ -1390,11 +1421,42 @@ export function App() {
           </div>
         )}
 
+        {home && (
+          <HomeMenu
+            decks={allDecks}
+            builtinNames={BUILTIN_DECKS.map((d) => d.name)}
+            current={deck.name}
+            resume={session.actions.length ? { deckName: deck.name, actions: session.actions.length } : null}
+            guides={GUIDES}
+            onResume={() => setHome(false)}
+            onRandom={(deckName, handSize, naviOn) =>
+              newGame(
+                { deckName, seed: randomSeed(), fixedHand: [], handSize, strict: session.strict, actions: [] },
+                naviOn,
+              )
+            }
+            onPickHand={(deckName) => {
+              setSetupDeck(deckName);
+              setShowSetup(true);
+            }}
+            onGuide={startGuide}
+            onEditDecks={() => setModal('decks')}
+            onImages={() => setModal('images')}
+          />
+        )}
+
         {showSetup && (
           <SetupDialog
-            initial={{ ...session, seed: randomSeed() }}
+            initial={{
+              ...session,
+              seed: randomSeed(),
+              ...(setupDeck && setupDeck !== session.deckName ? { deckName: setupDeck, fixedHand: [] } : {}),
+            }}
             decks={allDecks}
-            onClose={() => setShowSetup(false)}
+            onClose={() => {
+              setShowSetup(false);
+              setSetupDeck(null);
+            }}
             onStart={(s, search) => {
               try {
                 createGame(
@@ -1415,6 +1477,8 @@ export function App() {
               setRun(null);
               setPile(null);
               setShowSetup(false);
+              setSetupDeck(null);
+              setHome(false);
               // 「開始して最適ルートを探す」はナビモードで始める
               setNavi(search);
               naviKey.current = '';
@@ -1437,22 +1501,12 @@ export function App() {
                   setCoach(null);
                 }
               }}
-              onPlay={(deckName) => {
-                setSession({
-                  deckName,
-                  seed: randomSeed(),
-                  fixedHand: [],
-                  handSize: 5,
-                  strict: session.strict,
-                  actions: [],
-                });
-                setCoach(null);
-                setNavi(false);
-                setSelected(null);
-                setPending(null);
-                setRun(null);
-                setModal(null);
-              }}
+              onPlay={(deckName) =>
+                newGame(
+                  { deckName, seed: randomSeed(), fixedHand: [], handSize: 5, strict: session.strict, actions: [] },
+                  false,
+                )
+              }
               onClose={() => setModal(null)}
             />
           </div>
