@@ -28,22 +28,27 @@ export const MARKER_ARROW: Record<LinkMarker, string> = {
   BR: '↘',
 };
 
+/** そのリンクモンスターのリンク先となっているメインモンスターゾーンの番号 */
+export function linkedZonesOf(state: GameState, uid: string, def: CardDef): number[] {
+  const inst = state.cards[uid];
+  if (!inst?.faceUp || def.frame !== 'link' || !def.linkMarkers) return [];
+  const mz = state.mz.indexOf(uid);
+  const ez = state.emz.indexOf(uid);
+  if (mz < 0 && ez < 0) return [];
+  const [row, col] = mz >= 0 ? [1, mz] : [0, EMZ_COLUMN[ez]];
+  const out: number[] = [];
+  for (const m of def.linkMarkers) {
+    const [dr, dc] = MARKER_DELTA[m];
+    if (row + dr === 1 && col + dc >= 0 && col + dc <= 4) out.push(col + dc);
+  }
+  return out;
+}
+
 /** 自分のリンクモンスターのリンク先となっているメインモンスターゾーンの番号 */
 export function linkedMainZones(state: GameState, getDef: (uid: string) => CardDef): Set<number> {
   const result = new Set<number>();
-  const origins: { uid: string; row: number; col: number }[] = [];
-  state.mz.forEach((uid, i) => uid && origins.push({ uid, row: 1, col: i }));
-  state.emz.forEach((uid, i) => uid && origins.push({ uid, row: 0, col: EMZ_COLUMN[i] }));
-  for (const o of origins) {
-    const inst = state.cards[o.uid];
-    const def = getDef(o.uid);
-    if (!inst.faceUp || def.frame !== 'link' || !def.linkMarkers) continue;
-    for (const m of def.linkMarkers) {
-      const [dr, dc] = MARKER_DELTA[m];
-      const r = o.row + dr;
-      const c = o.col + dc;
-      if (r === 1 && c >= 0 && c <= 4) result.add(c);
-    }
+  for (const uid of [...state.mz, ...state.emz]) {
+    if (uid) for (const c of linkedZonesOf(state, uid, getDef(uid))) result.add(c);
   }
   return result;
 }

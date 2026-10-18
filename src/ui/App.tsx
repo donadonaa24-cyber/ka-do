@@ -687,8 +687,8 @@ export function App() {
   useEffect(() => {
     if (!naviNeedsSearch || routeSearch.searching || naviKey.current === boardKey) return;
     naviKey.current = boardKey;
-    routeSearch.search(state, session.actions.length);
-  }, [naviNeedsSearch, boardKey, routeSearch, state, session.actions.length]);
+    routeSearch.search(state, session.actions.length, deck.name);
+  }, [naviNeedsSearch, boardKey, routeSearch, state, session.actions.length, deck.name]);
 
   // ナビ：探し終わったら一番良いルートで解説を始める
   useEffect(() => {
@@ -699,7 +699,7 @@ export function App() {
       return;
     }
     const best = found[0];
-    setCoach(coachFromRoute('最適ルート', best.steps, best.summary, routeSearch.baseLog, best.finalUids));
+    setCoach(coachFromRoute(best.title ?? '最適ルート', best.steps, best.summary, routeSearch.baseLog, best.finalUids));
     setPopupOpen(true);
     // 探し終わった結果だけに反応する
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1198,6 +1198,7 @@ export function App() {
             search={routeSearch}
             state={state}
             actionCount={session.actions.length}
+            deckName={deck.name}
             guides={TOON_GUIDES}
             coach={coach}
             coachDone={coachDone}

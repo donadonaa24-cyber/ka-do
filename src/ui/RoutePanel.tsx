@@ -7,6 +7,8 @@ import type { GameState } from '../engine/types';
 import SolverWorker from './solver.worker?worker&inline';
 
 export interface FoundRoute {
+  /** 記事などのルートの名前（探索で見つけたものは無し） */
+  title?: string;
   score: number;
   summary: string[];
   steps: RouteStep[];
@@ -20,7 +22,7 @@ export interface RouteSearch {
   /** 探索した時点の操作数とログの長さ（盤面が変わったかの判定に使う） */
   baseActions: number;
   baseLog: number;
-  search: (state: GameState, actionCount: number) => void;
+  search: (state: GameState, actionCount: number, deckName: string) => void;
 }
 
 /** ルート探索を別スレッドで動かす */
@@ -34,7 +36,7 @@ export function useRouteSearch(onError: (msg: string) => void): RouteSearch {
   useEffect(() => () => workerRef.current?.terminate(), []);
 
   const search = useCallback(
-    (state: GameState, actionCount: number) => {
+    (state: GameState, actionCount: number, deckName: string) => {
       workerRef.current?.terminate();
       setSearching(true);
       setProgress(0);
@@ -61,7 +63,7 @@ export function useRouteSearch(onError: (msg: string) => void): RouteSearch {
         setSearching(false);
         onError('ルート探索中にエラーが起きました');
       };
-      worker.postMessage({ state });
+      worker.postMessage({ state, deckName });
     },
     [onError],
   );
@@ -73,6 +75,7 @@ interface Props {
   search: RouteSearch;
   state: GameState;
   actionCount: number;
+  deckName: string;
   guides: Guide[];
   coach: Coach | null;
   coachDone: number;
@@ -82,7 +85,19 @@ interface Props {
   onClose: () => void;
 }
 
-export function RoutePanel({ search, state, actionCount, guides, coach, coachDone, onPractice, onAutoPlay, onStartGuide, onClose }: Props) {
+export function RoutePanel({
+  search,
+  state,
+  actionCount,
+  deckName,
+  guides,
+  coach,
+  coachDone,
+  onPractice,
+  onAutoPlay,
+  onStartGuide,
+  onClose,
+}: Props) {
   const [tab, setTab] = useState<'search' | 'guide'>('search');
   const [open, setOpen] = useState(0);
   const { searching, progress, routes } = search;
@@ -98,18 +113,32 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
         <button onClick={onClose}>閉じる</button>
       </div>
       <div className="seg" role="tablist">
-        <button role="tab" aria-selected={tab === 'search'} className={tab === 'search' ? 'on' : ''} onClick={() => setTab('search')}>
+        <button
+          role="tab"
+          aria-selected={tab === 'search'}
+          className={tab === 'search' ? 'on' : ''}
+          onClick={() => setTab('search')}
+        >
           この盤面から探す
         </button>
-        <button role="tab" aria-selected={tab === 'guide'} className={tab === 'guide' ? 'on' : ''} onClick={() => setTab('guide')}>
+        <button
+          role="tab"
+          aria-selected={tab === 'guide'}
+          className={tab === 'guide' ? 'on' : ''}
+          onClick={() => setTab('guide')}
+        >
           ルートガイド
         </button>
       </div>
 
       {tab === 'search' && (
         <div className="modal-body">
-          <button className="primary" onClick={() => search.search(state, actionCount)} disabled={searching}>
-            {searching ? `探索中… ${Math.round(progress * 100)}%` : routes ? 'この盤面からもう一度探す' : 'この盤面から最適ルートを探す'}
+          <button className="primary" onClick={() => search.search(state, actionCount, deckName)} disabled={searching}>
+            {searching
+              ? `探索中… ${Math.round(progress * 100)}%`
+              : routes
+                ? 'この盤面からもう一度探す'
+                : 'この盤面から最適ルートを探す'}
           </button>
           {searching && (
             <div className="progress" aria-hidden="true">
@@ -126,7 +155,7 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
               <div className="seg wrap">
                 {routes.map((r, i) => (
                   <button key={i} className={open === i ? 'on' : ''} onClick={() => setOpen(i)}>
-                    ルート{i + 1}（{r.steps.length}手・評価{r.score.toFixed(1)}）
+                    {r.title ? `記事：${r.title}` : `ルート${i + 1}`}（{r.steps.length}手・評価{r.score.toFixed(1)}）
                   </button>
                 ))}
               </div>
@@ -141,8 +170,9 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
               <ol className="route-steps">
                 {route.steps.map((st, i) => (
                   <li key={i}>
+                    {st.note && <div className="head">{st.note}</div>}
                     {st.lines.map((l, j) => (
-                      <div key={j} className={j === 0 ? 'head' : 'sub'}>
+                      <div key={j} className={j === 0 && !st.note ? 'head' : 'sub'}>
                         {l}
                       </div>
                     ))}
@@ -156,7 +186,17 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
                 <button
                   className="primary"
                   disabled={stale}
-                  onClick={() => onPractice(coachFromRoute(`ルート${open + 1}`, route.steps, route.summary, search.baseLog, route.finalUids))}
+                  onClick={() =>
+                    onPractice(
+                      coachFromRoute(
+                        route.title ?? `ルート${open + 1}`,
+                        route.steps,
+                        route.summary,
+                        search.baseLog,
+                        route.finalUids,
+                      ),
+                    )
+                  }
                 >
                   このルートを盤面で練習
                 </button>
@@ -173,7 +213,11 @@ export function RoutePanel({ search, state, actionCount, guides, coach, coachDon
             return (
               <div key={g.id} className={`guide ${active ? 'active' : ''}`}>
                 <strong>{g.name}</strong>
-                <p className="note">{g.description}</p>
+                <p className="note">
+                  デッキ：{g.deckName}
+                  <br />
+                  {g.description}
+                </p>
                 <ol className="route-steps">
                   {g.steps.map((st, i) => (
                     <li key={i} className={active && i < coachDone ? 'done' : ''}>

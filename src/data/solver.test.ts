@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { coachFromRoute, explainStep } from '../engine/coach';
 import { applyAction, createGame, type Ctx } from '../engine/game';
-import { findGuideAction } from '../engine/guide';
+import { findGuideAction, routeFromGuide } from '../engine/guide';
 import { solveBest as solve } from '../engine/solver';
-import { CARD_DB, CARD_SCRIPTS, TOON_DECK } from '.';
+import { BUILTIN_DECKS, CARD_DB, CARD_SCRIPTS, PRE_LIMIT_TOON_DECK, TOON_DECK } from '.';
 import { TOON_EVALUATOR } from './toonEval';
 import { TOON_GUIDES } from './toonGuides';
 
@@ -44,14 +44,44 @@ describe('ルート探索', () => {
 describe('ルートガイド', () => {
   for (const guide of TOON_GUIDES) {
     it(`「${guide.name}」を最後まで実行できる`, () => {
-      let s = createGame(TOON_DECK, ctx, guide.seed, guide.fixedHand);
-      for (const step of guide.steps) {
+      let s = createGame(BUILTIN_DECKS.find((d) => d.name === guide.deckName)!, ctx, guide.seed, guide.fixedHand);
+      for (const [i, step] of guide.steps.entries()) {
         const action = findGuideAction(s, ctx, step);
-        if (!action) throw new Error(`手順が見つかりません: ${step.text}`);
+        if (!action) {
+          const board = [...s.emz, ...s.mz].map((u) => (u ? CARD_DB[s.cards[u].defId].name : '-')).join(' / ');
+          const hand = s.hand.map((u) => CARD_DB[s.cards[u].defId].name).join('、');
+          throw new Error(`手順${i + 1}が見つかりません: ${step.text}\n場: ${board}\n手札: ${hand}`);
+        }
         const r = applyAction(s, action, ctx);
         if (!r.ok) throw new Error(r.error);
         s = r.state;
       }
     }, 30000);
   }
+});
+
+describe('記事のルートを最適ルートの候補にする', () => {
+  it('完全なる世界1枚：記事の最終盤面（4妨害＋心を見通す眼）になり、探索より評価が高い', () => {
+    const guide = TOON_GUIDES.find((g) => g.id === 'world-1card-prelimit')!;
+    // ガイドと違う初手・デッキ順でも動ける
+    const s = createGame(PRE_LIMIT_TOON_DECK, ctx, 2, ['7293697', '59438930', '14558127', '40366667', '23434538']);
+    const route = routeFromGuide(s, ctx, guide, TOON_EVALUATOR)!;
+    expect(route).not.toBeNull();
+    const names = (us: (string | null)[]) =>
+      us.filter((u): u is string => !!u).map((u) => CARD_DB[route.final.cards[u].defId].name);
+    const field = names([...route.final.emz, ...route.final.mz]);
+    expect(field).toEqual(
+      expect.arrayContaining([
+        'ドラグニティロード－ゲオルギアス',
+        'フルール・ド・バロネス',
+        'ブルーアイズ・トゥーン・アルティメットドラゴン',
+      ]),
+    );
+    expect(names(route.final.banished)).toContain('光なき影 ア＝バオ・ア・クゥー');
+    expect(names(route.final.stz)).toEqual(
+      expect.arrayContaining(['心を見通す眼', 'トゥーン・テラー', 'ドラグニティナイト－ハールーン']),
+    );
+    const searched = solve(s, ctx, TOON_EVALUATOR, {});
+    expect(route.score).toBeGreaterThan(searched[0].score);
+  }, 60000);
 });

@@ -1,5 +1,6 @@
 import type { Action, MonsterLocation } from '../engine/game';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
+import type { CardFilter } from '../engine/filters';
 import type { CardDef, Location } from '../engine/types';
 
 // トゥーンデッキ以外のカードの召喚条件・効果。相手がいる時だけ意味がある効果は、コストを払って記録するだけにする。
@@ -19,6 +20,22 @@ const move = (
   ...extra,
 });
 
+const ss = (uid: string, zone: Location | null, note: string, position: 'atk' | 'def' = 'atk'): Action => ({
+  type: 'SPECIAL_SUMMON',
+  uid,
+  to: zone as MonsterLocation,
+  position,
+  note,
+});
+const equipTo = (env: Env, uid: string, reason: string): Action => {
+  const index = env.state.stz.indexOf(null);
+  return move(uid, { zone: 'stz', index: Math.max(0, index) }, reason, { faceUp: true });
+};
+const hasFreeStz = (env: Env) => (env.state.stz.includes(null) ? null : '魔法＆罠ゾーンに空きがありません');
+const ownMonstersEmpty = (env: Env) =>
+  [...env.state.mz, ...env.state.emz].some(Boolean) ? '自分フィールドにモンスターがいると発動できません' : null;
+const DRAGUNITY: CardFilter = { kind: ['monster'], archetype: 'ドラグニティ' };
+
 const selfToGy: Step = { op: 'do', cost: true, then: (env) => [move(env.self, { zone: 'gy' }, 'コスト')] };
 
 const opponentOnly = (label: string, from: EffectDef['from'], key?: string, steps: Step[] = []): EffectDef => ({
@@ -29,6 +46,26 @@ const opponentOnly = (label: string, from: EffectDef['from'], key?: string, step
   opponentOnly: true,
   speed: 2,
   steps,
+});
+
+/** Ｎｏ．６０ 刻不知のデュガレスの①（X素材を2つ取り除いて3つから選ぶ） */
+const dugares = (label: string, steps: Step[]): EffectDef => ({
+  label,
+  from: ['monster'],
+  key: 'Ｎｏ．６０ 刻不知のデュガレス',
+  limit: 1,
+  condition: (env) => (env.state.cards[env.self].overlay.length >= 2 ? null : 'X素材が2つ必要です'),
+  steps: [
+    {
+      op: 'do',
+      cost: true,
+      then: (env) =>
+        env.state.cards[env.self].overlay
+          .slice(0, 2)
+          .map((uid) => ({ type: 'DETACH', target: env.self, uid }) as Action),
+    },
+    ...steps,
+  ],
 });
 
 const isEffectMonster = (d: CardDef) => d.kind === 'monster' && d.frame !== 'normal' && d.frame !== 'token';
@@ -81,6 +118,7 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
         from: ['monsters'],
         materialsTo: 'gy',
         summonFrom: ['extra'],
+        materialFilter: (env, u) => isExtraFrame(env.def(u)) || env.def(u).race === '魔法使い族',
         validate: (env, m) => corozoMaterials(env, m),
       },
     ],
@@ -225,6 +263,165 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
         isCardActivation: true,
         speed: 1,
         condition: (env) => (env.toonWorld ? null : `自分フィールドに「${TW}」が必要です`),
+      },
+    ],
+  },
+
+  // ＰＳＹフレームギア・γ
+  '38814750': {
+    effects: [
+      {
+        ...opponentOnly('① 相手のモンスター効果の発動時：ドライバーと特殊召喚して無効＆破壊（相手用）', ['hand']),
+        condition: ownMonstersEmpty,
+      },
+    ],
+  },
+
+  // ＰＳＹフレームギア・δ
+  '74203495': {
+    effects: [
+      {
+        ...opponentOnly('① 相手の魔法の発動時：ドライバーと特殊召喚して無効＆破壊（相手用）', ['hand']),
+        condition: ownMonstersEmpty,
+      },
+    ],
+  },
+
+  // トゥーン・マーメイド
+  '65458948': {
+    procedures: [
+      {
+        label: '「トゥーン・ワールド」がある場合に手札から特殊召喚',
+        hint: '',
+        from: [],
+        materialsTo: 'gy',
+        summonFrom: ['hand'],
+        validate: (env) => (env.toonWorld ? null : `自分フィールドに「${TW}」が必要です`),
+      },
+    ],
+  },
+
+  // 霊王の波動
+  '40366667': {
+    effects: [
+      {
+        ...opponentOnly('発動：特殊召喚する効果を含む効果を無効（相手用）', ['hand', 'spelltrap']),
+        isCardActivation: true,
+      },
+    ],
+  },
+
+  // ドラグニティナイト－ハールーン
+  '12496261': {
+    effects: [
+      {
+        label: '① 特殊召喚時：墓地の「ドラグニティ」モンスターを装備',
+        from: ['monster'],
+        onSummon: true,
+        key: 'ドラグニティナイト－ハールーン①',
+        limit: 1,
+        condition: hasFreeStz,
+        steps: [
+          {
+            op: 'pick',
+            prompt: '装備する自分の墓地の「ドラグニティ」モンスター',
+            from: ['gy'],
+            filter: DRAGUNITY,
+            min: 1,
+            max: 1,
+            then: (env, p) => p.map((u) => equipTo(env, u, '装備魔法カード扱い')),
+          },
+        ],
+      },
+      {
+        label: '② 墓地へ送られた時：自分の「ドラグニティ」モンスターに攻守1000アップの装備カードとして装備',
+        from: ['gy'],
+        key: 'ドラグニティナイト－ハールーン②',
+        limit: 1,
+        condition: (env) =>
+          hasFreeStz(env) ??
+          ([...env.state.mz, ...env.state.emz].some((u) => u && env.state.cards[u].faceUp && env.matches(u, DRAGUNITY))
+            ? null
+            : '自分フィールドに「ドラグニティ」モンスターがいません'),
+        steps: [
+          {
+            op: 'pick',
+            prompt: '装備先の自分フィールドの「ドラグニティ」モンスター',
+            from: ['monsters'],
+            filter: DRAGUNITY,
+            where: (env, u) => env.state.cards[u].faceUp,
+            min: 1,
+            max: 1,
+            then: (env, p) => [equipTo(env, env.self, `${env.def(p[0]).name}に装備（攻守1000アップ）`)],
+          },
+        ],
+      },
+    ],
+  },
+
+  // Ｎｏ．６０ 刻不知のデュガレス
+  '66011101': {
+    effects: [
+      dugares('① X素材2つ：2枚ドローして手札1枚を捨てる（次のドローフェイズをスキップ）', [
+        { op: 'do', then: () => [{ type: 'DRAW', count: 2 }] },
+        {
+          op: 'pick',
+          prompt: '捨てる手札1枚',
+          from: ['hand'],
+          min: 1,
+          max: 1,
+          then: (_, p) => p.map((u) => move(u, { zone: 'gy' }, '捨てる')),
+        },
+      ]),
+      dugares('① X素材2つ：墓地のモンスターを守備表示で特殊召喚（次のメインフェイズ1をスキップ）', [
+        {
+          op: 'pick',
+          prompt: '守備表示で特殊召喚する自分の墓地のモンスター',
+          from: ['gy'],
+          filter: { kind: ['monster'] },
+          min: 1,
+          max: 1,
+          zone: 'monster',
+          then: (_, p, z) => [ss(p[0], z, 'デュガレスの効果', 'def')],
+        },
+      ]),
+    ],
+  },
+
+  // ドラグニティロード－ゲオルギアス
+  '70522875': {
+    materialCheck: (env, m) =>
+      m.length < 2 ? '素材は2体以上です' : m.some((u) => env.def(u).tuner) ? null : 'チューナーを含める必要があります',
+    effects: [
+      {
+        label: '① L召喚時：EXデッキ・墓地からレベル5以上の「ドラグニティ」を特殊召喚',
+        from: ['monster'],
+        onSummon: true,
+        key: 'ドラグニティロード－ゲオルギアス①',
+        limit: 1,
+        steps: [
+          {
+            op: 'pick',
+            prompt: '特殊召喚するレベル5以上の「ドラグニティ」モンスター（EXデッキ・墓地）',
+            from: ['extra', 'gy'],
+            filter: { ...DRAGUNITY, minLevel: 5 },
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, 'ゲオルギアスの効果')],
+          },
+        ],
+      },
+      {
+        ...opponentOnly(
+          '③ 装備カードを墓地へ送り、相手の魔法・罠の効果を無効（相手用）',
+          ['monster'],
+          'ドラグニティロード－ゲオルギアス③',
+        ),
+        condition: (env) =>
+          env.state.stz.some((u) => u && env.state.cards[u].faceUp && env.def(u).kind === 'monster')
+            ? null
+            : '装備カードがありません',
       },
     ],
   },

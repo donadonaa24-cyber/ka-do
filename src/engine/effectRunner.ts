@@ -87,6 +87,10 @@ function effectKey(state: GameState, uid: string, effect: EffectDef): string | u
   return effect.perCard ? `${effect.key}:${uid}:${state.cards[uid]?.entryId ?? 0}` : effect.key;
 }
 
+function nameLimitReached(state: GameState, effect: EffectDef): boolean {
+  return !!effect.key && effect.nameLimit !== undefined && (state.effectUses[effect.key] ?? 0) >= effect.nameLimit;
+}
+
 /** 今のチェーンに続けて発動できる効果（スペルスピード2以上・使用回数が残っている） */
 export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): { uid: string; effect: EffectDef }[] {
   const out: { uid: string; effect: EffectDef }[] = [];
@@ -101,6 +105,7 @@ export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): 
       if (speed < 2 || speed < minSpeed) continue;
       const key = effectKey(state, uid, effect);
       if (key && effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit) continue;
+      if (nameLimitReached(state, effect)) continue;
       if (
         effect.isCardActivation &&
         env.def(uid).oncePerTurnActivation &&
@@ -134,6 +139,11 @@ export function startEffect(
     ? { type: 'ACTIVATE_CARD', uid, index: activationZone?.zone === 'stz' ? activationZone.index : undefined }
     : { type: 'ACTIVATE_EFFECT', uid, label: effect.label, key, limit: effect.limit };
   const batch: Action[] = [first];
+  if (effect.key && effect.nameLimit !== undefined) {
+    if (nameLimitReached(state, effect))
+      return { kind: 'error', error: `このカード名の効果は1ターンに${effect.nameLimit}度までです` };
+    batch.push({ type: 'ACTIVATE_EFFECT', uid, silent: true, key: effect.key, limit: effect.nameLimit });
+  }
   if (effect.onSummon) {
     const inst = state.cards[uid];
     if (inst.enteredTurn !== state.turn || inst.summonedEntry !== inst.entryId)
@@ -148,7 +158,7 @@ export function startEffect(
     });
   }
   let r = applyAction(state, first, ctx);
-  if (r.ok && batch.length > 1) r = applyAction(r.state, batch[1], ctx);
+  for (const a of batch.slice(1)) if (r.ok) r = applyAction(r.state, a, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
   return advance(
     {
@@ -312,9 +322,9 @@ export function advance(run: Running, ctx: Ctx): RunResult {
       continue;
     }
     if (step.op === 'place') return { kind: 'running', run: { ...cur, stage: 'zone', picked: [] } };
-    const [min] = pickRange(cur, ctx);
+    const [min, max] = pickRange(cur, ctx);
     const cands = stepCandidates(cur, ctx);
-    if (cands.length === 0) {
+    if (cands.length === 0 || max === 0) {
       if (min > 0) return { kind: 'error', error: `選べるカードがありません（${step.prompt}）` };
       cur = cur.extraStep ? { ...cur, extraStep: undefined } : { ...cur, stepIndex: cur.stepIndex + 1 };
       continue;

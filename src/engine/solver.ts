@@ -20,8 +20,8 @@ import {
   type MonsterLocation,
   type SummonMethod,
 } from './game';
-import { tributesRequired } from './rules';
-import type { GameState, Location } from './types';
+import { levelOf, tributesRequired } from './rules';
+import type { CardDef, GameState, Location } from './types';
 import { isExtraDeckCard } from './types';
 
 // ルート探索：今の盤面から取れる操作を列挙し、盤面の強さを評価しながらビームサーチで良い展開を探す。
@@ -37,6 +37,8 @@ export interface RouteStep {
   action: Action;
   /** この操作で起きたこと（ログから作る） */
   lines: string[];
+  /** 手順の説明（記事のルートなど。無ければログの1行目を見出しにする） */
+  note?: string;
 }
 
 export interface Route {
@@ -44,6 +46,8 @@ export interface Route {
   score: number;
   final: GameState;
   summary: string[];
+  /** ルートの名前（記事のルートなど） */
+  title?: string;
 }
 
 export interface SolveOptions {
@@ -59,6 +63,11 @@ export interface SolveOptions {
 }
 
 const MAX_PER_EFFECT = 24;
+
+export interface EnumerateOptions {
+  /** 出すゾーンを全て試す（手順ガイドで決まった配置を再現するため。探索では使わない） */
+  allZones?: boolean;
+}
 
 // ===== 操作の列挙 =====
 
@@ -96,10 +105,17 @@ function monsterZonesFor(state: GameState, fromExtra: boolean): MonsterLocation[
 }
 
 /** 効果の選択肢を全部たどって、完成した効果処理（BATCH）を列挙する */
-function expandEffect(state: GameState, ctx: Ctx, uid: string, effect: Parameters<typeof startEffect>[3]): Action[] {
+function expandEffect(
+  state: GameState,
+  ctx: Ctx,
+  uid: string,
+  effect: Parameters<typeof startEffect>[3],
+  opts: EnumerateOptions = {},
+): Action[] {
   const out: Action[] = [];
+  const cap = opts.allZones ? 2000 : MAX_PER_EFFECT;
   const walk = (r: RunResult) => {
-    if (out.length >= MAX_PER_EFFECT) return;
+    if (out.length >= cap) return;
     if (r.kind === 'error') return;
     if (r.kind === 'done') {
       out.push(r.action);
@@ -113,7 +129,7 @@ function expandEffect(state: GameState, ctx: Ctx, uid: string, effect: Parameter
       if (run.extraStep) cands = cands.filter((u) => softOncePerTurnUsed(run.temp, ctx, u));
       const sizes = min === 0 ? [0, Math.min(1, max)] : [min];
       for (const k of [...new Set(sizes)]) {
-        for (const picked of k === 0 ? [[]] : combinations(cands, k, 12)) walk(afterPick({ ...run, picked }, ctx));
+        for (const picked of k === 0 ? [[]] : combinations(cands, k, opts.allZones ? 400 : 12)) walk(afterPick({ ...run, picked }, ctx));
       }
     } else if (run.stage === 'mode') {
       const step = run.effect.steps[run.stepIndex];
@@ -132,7 +148,7 @@ function expandEffect(state: GameState, ctx: Ctx, uid: string, effect: Parameter
         const next = completeStep(run, ctx, z);
         if (next.kind !== 'error') {
           walk(next);
-          break;
+          if (!opts.allZones) break;
         }
       }
     }
@@ -149,6 +165,17 @@ function softOncePerTurnUsed(state: GameState, ctx: Ctx, uid: string): boolean {
   );
 }
 
+/** 素材にしたフィールドのモンスターがいたゾーン（素材が離れた後に空く） */
+function materialZones(state: GameState, materials: string[]): MonsterLocation[] {
+  return materials.map((m) => findLocation(state, m)).filter((l): l is MonsterLocation => isMonsterZone(l));
+}
+
+/** チューナー1体＋チューナー以外でレベルの合計が合う */
+function synchroMaterialsFit(defs: CardDef[], level: number): boolean {
+  if (defs.filter((d) => d.tuner).length !== 1) return false;
+  return defs.reduce((s, d) => s + (levelOf(d) ?? NaN), 0) === level;
+}
+
 function cardsInPlay(state: GameState): string[] {
   return [
     ...state.hand,
@@ -161,7 +188,7 @@ function cardsInPlay(state: GameState): string[] {
   ];
 }
 
-export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
+export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOptions = {}): Action[] {
   const actions: Action[] = [];
   const def = (u: string) => getDef(state, ctx, u);
   const toonWorld = makeEnv(state, ctx, '').toonWorld;
@@ -179,7 +206,7 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
       const key = `${def(uid).id}:${i}:${loc?.zone === 'hand' || loc?.zone === 'gy' ? loc.zone : uid}`;
       if (seenEffect.has(key)) return;
       seenEffect.add(key);
-      actions.push(...expandEffect(state, ctx, uid, effect));
+      actions.push(...expandEffect(state, ctx, uid, effect, opts));
     });
   }
 
@@ -191,6 +218,11 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
   if (!state.normalSummonUsed) grantChoices.push({});
   state.summonGrants.forEach((g, i) => {
     if (g.extraSummon) grantChoices.push({ grant: i });
+    // 追加の召喚権とリリースなし召喚を組み合わせる（例：ラハムゥ②＋①）
+    if (g.extraSummon)
+      state.summonGrants.forEach(
+        (h, j) => j !== i && h.noTribute && grantChoices.push({ grant: i, noTributeGrant: j }),
+      );
     if (g.noTribute) {
       if (!state.normalSummonUsed) grantChoices.push({ noTributeGrant: i });
     }
@@ -208,7 +240,10 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
         const index = need ? state.mz.indexOf(tributes.find((t) => state.mz.includes(t)) ?? '__') : freeMz;
         const zone = index >= 0 ? index : freeMz;
         if (zone < 0) continue;
-        actions.push({ type: 'NORMAL_SUMMON', uid, index: zone, tributes, ...g });
+        const zones = opts.allZones
+          ? [0, 1, 2, 3, 4].filter((i) => !state.mz[i] || tributes.includes(state.mz[i]!))
+          : [zone];
+        for (const z of zones) actions.push({ type: 'NORMAL_SUMMON', uid, index: z, tributes, ...g });
       }
     }
   }
@@ -224,35 +259,46 @@ export function enumerateActions(state: GameState, ctx: Ctx): Action[] {
         proc.from.flatMap((z) =>
           z === 'monsters' ? monsters : z === 'hand' ? state.hand : z === 'gy' ? state.gy : [],
         ),
-      ).filter((u) => u !== uid);
-      const sets = proc.from.length === 0 ? [[]] : [1, 2, 3].flatMap((k) => combinations(pool, k, 30));
+      ).filter((u) => u !== uid && (!proc.materialFilter || proc.materialFilter(makeEnv(state, ctx, uid), u)));
+      const sets =
+        proc.from.length === 0 ? [[]] : [1, 2, 3].flatMap((k) => combinations(pool, k, opts.allZones ? 1000 : 30));
       for (const materials of sets) {
         const zones = monsterZonesFor(state, loc.zone === 'extra');
         const fieldMat = materials.find((m) => isMonsterZone(findLocation(state, m)));
         const to = (fieldMat ? (findLocation(state, fieldMat) as MonsterLocation) : undefined) ?? zones[0];
-        if (to) actions.push({ type: 'PROC_SUMMON', uid, proc: i, materials, to });
+        const tos = opts.allZones ? [...zones, ...materialZones(state, materials)] : to ? [to] : [];
+        for (const t of tos) actions.push({ type: 'PROC_SUMMON', uid, proc: i, materials, to: t });
       }
     });
   }
 
-  // EXデッキからのリンク・エクシーズ召喚
+  // EXデッキからのリンク・エクシーズ・シンクロ召喚
   const faceUp = monsters.filter((u) => state.cards[u].faceUp);
   for (const uid of dedupe(state, state.extra)) {
     const d = def(uid);
-    const method = ({ link: 'link', xyz: 'xyz' } as Partial<Record<string, SummonMethod>>)[d.frame ?? ''];
+    const method = ({ link: 'link', xyz: 'xyz', synchro: 'synchro' } as Partial<Record<string, SummonMethod>>)[
+      d.frame ?? ''
+    ];
     if (!method) continue;
-    const sizes = method === 'link' ? [1, 2, 3, 4].filter((k) => k <= (d.link ?? 0)) : [d.xyzMaterialCount ?? 2];
+    const sizes =
+      method === 'link'
+        ? [1, 2, 3, 4].filter((k) => k <= (d.link ?? 0))
+        : method === 'xyz'
+          ? [d.xyzMaterialCount ?? 2]
+          : [2, 3];
     for (const k of sizes) {
       for (const materials of combinations(faceUp, k, 20)) {
+        if (method === 'synchro' && !synchroMaterialsFit(materials.map(def), d.level ?? 0)) continue;
         const fieldMat = materials.find((m) => state.mz.includes(m));
         const zones = monsterZonesFor(state, true);
-        const candidatesTo: MonsterLocation[] = [
-          ...zones.filter((z) => z.zone === 'emz'),
-          ...(fieldMat ? [findLocation(state, fieldMat) as MonsterLocation] : []),
-          ...zones.filter((z) => z.zone === 'mz'),
-        ];
-        for (const to of candidatesTo.slice(0, 2))
-          actions.push({ type: 'PROCEDURE_SUMMON', method, uid, materials, to });
+        const candidatesTo: MonsterLocation[] = opts.allZones
+          ? [...zones, ...materialZones(state, materials)]
+          : [
+              ...zones.filter((z) => z.zone === 'emz'),
+              ...(fieldMat ? [findLocation(state, fieldMat) as MonsterLocation] : []),
+              ...zones.filter((z) => z.zone === 'mz'),
+            ].slice(0, 2);
+        for (const to of candidatesTo) actions.push({ type: 'PROCEDURE_SUMMON', method, uid, materials, to });
       }
     }
   }
@@ -288,7 +334,7 @@ function signature(state: GameState): string {
   ].join('/');
 }
 
-function stepLines(before: GameState, after: GameState): string[] {
+export function stepLines(before: GameState, after: GameState): string[] {
   return after.log
     .slice(before.log.length)
     .filter((l) => l.kind !== 'info' && !l.text.startsWith('デッキをシャッフル'))

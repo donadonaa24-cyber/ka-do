@@ -21,6 +21,8 @@ export interface ProcedureDef {
   hint: string;
   /** コストにするカードを選ぶ場所。空なら選ばない */
   from: PickZone[];
+  /** コストにできるカード（候補を絞るため。最終的な判定は validate） */
+  materialFilter?: (env: Env, uid: string) => boolean;
   /** コストにしたカードの行き先 */
   materialsTo: 'gy' | 'deck' | 'banished';
   /** 「１ターンに１度」の召喚条件 */
@@ -54,7 +56,13 @@ export type Step =
       zone?: 'monster' | 'stz';
       then: (env: Env, picked: string[], zone: Location | null, mode: number) => Action[];
     }
-  | { op: 'place'; prompt: string; zone: 'monster' | 'stz'; cost?: boolean; then: (env: Env, zone: Location) => Action[] }
+  | {
+      op: 'place';
+      prompt: string;
+      zone: 'monster' | 'stz';
+      cost?: boolean;
+      then: (env: Env, zone: Location) => Action[];
+    }
   | { op: 'do'; cost?: boolean; then: (env: Env) => Action[] };
 
 export interface EffectDef {
@@ -66,6 +74,8 @@ export interface EffectDef {
   limit?: number;
   /** 「１ターンに１度」がカード1枚ごと（同名カードでも別々に使える） */
   perCard?: boolean;
+  /** perCard でも、このカード名の効果として1ターンに使える回数（例：完全なる世界②は3度まで） */
+  nameLimit?: number;
   /** 発動条件。満たさない場合はメッセージを返す */
   condition?: (env: Env) => string | null;
   /** 魔法・罠カードの発動そのもの */
@@ -90,5 +100,9 @@ export interface CardScript {
    */
   tempBanish?: { label: string; key: string; filter: CardFilter };
   /** 融合・S・X・L召喚の素材のカード固有の条件。満たさない場合はメッセージを返す */
-  materialCheck?: (env: Env, materials: string[], method: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual') => string | null;
+  materialCheck?: (
+    env: Env,
+    materials: string[],
+    method: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual',
+  ) => string | null;
 }

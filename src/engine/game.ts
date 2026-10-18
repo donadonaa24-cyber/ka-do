@@ -654,7 +654,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const pos = faceDown ? '裏側守備表示' : action.position === 'def' ? '守備表示' : '攻撃表示';
       log(
         state,
-        `${name(state, ctx, uid)}を${from ? ZONE_LABEL[from.zone] : ''}から${pos}で特殊召喚${action.note ? `（${action.note}）` : ''}`,
+        `${name(state, ctx, uid)}を${from ? ZONE_LABEL[from.zone] : ''}から${locLabel(to)}に${pos}で特殊召喚${action.note ? `（${action.note}）` : ''}`,
         'summon',
       );
       return;
@@ -1091,7 +1091,7 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
   const cost = matNames.length
     ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、`
     : '';
-  log(state, `${cost}${def.name}を特殊召喚（${proc.label}）`, 'summon');
+  log(state, `${cost}${def.name}を特殊召喚（${proc.label}・${locLabel(to)}）`, 'summon');
 }
 
 /** 効果処理で選べるカード */

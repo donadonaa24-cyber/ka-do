@@ -1,4 +1,5 @@
 import type { Action, MonsterLocation } from '../engine/game';
+import { linkedZonesOf } from '../engine/rules';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { CardDef, Location } from '../engine/types';
@@ -114,6 +115,22 @@ const logOnly = (label: string, from: EffectDef['from'], key?: string, cost: Ste
 
 const isEffectMonster = (d: CardDef) => d.kind === 'monster' && d.frame !== 'normal' && d.frame !== 'token';
 const exactly = (n: number, m: string[]) => (m.length === n ? null : `素材はちょうど${n}体です`);
+
+/** クロシープのリンク先にいるモンスター */
+const sheepTargets = (env: Env) =>
+  linkedZonesOf(env.state, env.self, env.def(env.self))
+    .map((i) => env.state.mz[i])
+    .filter((u): u is string => !!u && env.state.cards[u].faceUp);
+
+/** このカードより後にこのターン特殊召喚された（効果で戻っただけのカードは含まない） */
+const justSummonedAfter = (env: Env, uid: string) => {
+  const inst = env.state.cards[uid];
+  return (
+    inst.enteredTurn === env.state.turn &&
+    inst.summonedEntry === inst.entryId &&
+    inst.entryId > env.state.cards[env.self].entryId
+  );
+};
 
 const levelSum = (env: Env, uids: string[]) => uids.reduce((s, u) => s + (env.def(u).level ?? 0), 0);
 
@@ -652,6 +669,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         key: '完全なる世界 トゥーン・ワールド②',
         limit: 1,
         perCard: true,
+        nameLimit: 3,
         condition: mainPhase,
         steps: [
           search('デッキから手札に加える「トゥーン」カードか「トゥーン・ワールド」記載カード', {
@@ -696,6 +714,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         from: ['hand', 'monsters', 'gy'],
         materialsTo: 'deck',
         summonFrom: ['extra'],
+        materialFilter: (env, u) => env.isToon(u),
         validate: (env, m) => {
           if (m.length !== 3) return '素材を3体選んでください';
           if (!m.some((u) => env.def(u).name === 'ブルーアイズ・トゥーン・ドラゴン'))
@@ -1117,6 +1136,46 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
   '50277355': {
     materialCheck: (env, m) =>
       exactly(2, m) ?? (env.def(m[0]).name === env.def(m[1]).name ? 'カード名が異なるモンスター2体が必要です' : null),
+
+    effects: [
+      {
+        label: '① リンク先に特殊召喚された時：リンク先のモンスターの種類に応じて適用',
+        from: ['monster'],
+        key: 'クロシープ',
+        limit: 1,
+        condition: (env) =>
+          sheepTargets(env).some((u) => justSummonedAfter(env, u))
+            ? null
+            : 'リンク先にこのカードより後に特殊召喚されたモンスターがいません',
+        steps: [
+          {
+            op: 'do',
+            then: (env) => {
+              const frames = new Set(sheepTargets(env).map((u) => env.def(u).frame));
+              const out: Action[] = [];
+              if (frames.has('ritual')) out.push({ type: 'DRAW', count: 2 });
+              return out;
+            },
+          },
+          {
+            op: 'pick',
+            prompt: '儀式：捨てる手札2枚',
+            from: ['hand'],
+            count: (env) => (sheepTargets(env).some((u) => env.def(u).frame === 'ritual') ? 2 : 0),
+            then: (_, p) => p.map((u) => toGy(u, '効果')),
+          },
+          {
+            op: 'pick',
+            prompt: '融合：墓地から特殊召喚するレベル4以下のモンスター',
+            from: ['gy'],
+            filter: { kind: ['monster'], maxLevel: 4 },
+            count: (env) => (sheepTargets(env).some((u) => env.def(u).frame === 'fusion') ? 1 : 0),
+            zone: 'monster',
+            then: (_, p, z) => p.map((u) => ss(u, z, 'クロシープの効果')),
+          },
+        ],
+      },
+    ],
   },
 
   // サクリファイス・アニマ

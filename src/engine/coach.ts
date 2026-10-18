@@ -59,8 +59,8 @@ export function coachFromRoute(
     baseLog,
     finalUids,
     steps: steps.map((s) => ({
-      text: shortLine(s.lines[0] ?? ''),
-      sub: s.lines.slice(1).filter((l) => !l.includes('効果処理完了')),
+      text: s.note ?? shortLine(s.lines[0] ?? ''),
+      sub: (s.note ? s.lines : s.lines.slice(1)).filter((l) => !l.includes('効果処理完了')),
       match: s.lines.map(normalize),
       action: s.action,
       actor: actorOf(s.action),
@@ -97,7 +97,8 @@ export function explainStep(coach: Coach, index: number, nameOf: (uid: string) =
   const step = coach.steps[index];
   if (!step) return [];
   const out: string[] = [];
-  const laterUse = (uid: string) => coach.steps.findIndex((s, j) => j > index && (s.actor === uid || s.uids.includes(uid)));
+  const laterUse = (uid: string) =>
+    coach.steps.findIndex((s, j) => j > index && (s.actor === uid || s.uids.includes(uid)));
   const seen = new Set<string>();
   for (const uid of [step.actor, ...step.uids].filter((u): u is string => !!u)) {
     if (seen.has(uid)) continue;
