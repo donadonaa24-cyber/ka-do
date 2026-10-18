@@ -375,7 +375,9 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             filter: { name: ['真の光'] },
             min: 1,
             max: 1,
-            then: (env, p) => withShuffle(env, p, [move(p[0], firstEmptyStz(env), '表側で置く', { faceUp: true })]),
+            zone: 'stz',
+            then: (env, p, z) =>
+              withShuffle(env, p, [move(p[0], z ?? firstEmptyStz(env), '表側で置く', { faceUp: true })]),
           },
         ],
       },
@@ -587,7 +589,9 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             where: (env, u) => env.def(u).name.includes('列王') || env.def(u).name.includes('ドミナス・パージ'),
             min: 1,
             max: 1,
-            then: (env, p) => withShuffle(env, p, [move(p[0], firstEmptyStz(env), 'セット', { faceUp: false })]),
+            zone: 'stz',
+            then: (env, p, z) =>
+              withShuffle(env, p, [move(p[0], z ?? firstEmptyStz(env), 'セット', { faceUp: false })]),
           },
         ],
       },
@@ -820,8 +824,9 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             filter: BLUE_EYES,
             min: 1,
             max: 1,
-            then: (env, p) => [
-              move(p[0], firstEmptyStz(env), `${env.def(env.picks![0][0]).name}に装備（攻撃力400アップ）`, {
+            zone: 'stz',
+            then: (env, p, z) => [
+              move(p[0], z ?? firstEmptyStz(env), `${env.def(env.picks![0][0]).name}に装備（攻撃力400アップ）`, {
                 faceUp: true,
                 equipTo: env.picks![0][0],
               }),
@@ -925,7 +930,9 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             },
             min: 1,
             max: 1,
-            then: (env, p) => withShuffle(env, p, [move(p[0], firstEmptyStz(env), 'セット', { faceUp: false })]),
+            zone: 'stz',
+            then: (env, p, z) =>
+              withShuffle(env, p, [move(p[0], z ?? firstEmptyStz(env), 'セット', { faceUp: false })]),
           },
         ],
       },

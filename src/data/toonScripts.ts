@@ -264,12 +264,14 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             min: 0,
             max: 1,
             modes: ['手札に加える', 'セットする'],
-            then: (env, p, _, mode) =>
+            zone: 'stz',
+            zoneIf: (_, __, mode) => mode === 1,
+            then: (env, p, z, mode) =>
               withShuffle(
                 env,
                 p,
                 p.map((u) =>
-                  mode === 0 ? toHand(u, 'サーチ') : move(u, firstEmptyStz(env), 'セット', { faceUp: false }),
+                  mode === 0 ? toHand(u, 'サーチ') : move(u, z ?? firstEmptyStz(env), 'セット', { faceUp: false }),
                 ),
               ),
           },
@@ -327,11 +329,12 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             filter: { name: ['心を見通す眼'] },
             min: 1,
             max: 1,
-            then: (env, p) =>
+            zone: 'stz',
+            then: (env, p, z) =>
               withShuffle(
                 env,
                 p,
-                p.map((u) => move(u, firstEmptyStz(env), '表側で置く', { faceUp: true })),
+                p.map((u) => move(u, z ?? firstEmptyStz(env), '表側で置く', { faceUp: true })),
               ),
           },
         ],
@@ -428,14 +431,17 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             min: 1,
             max: 1,
             modes: ['手札に加える', '表側で置く'],
-            then: (env, p, _, mode) => {
+            zone: 'stz',
+            // フィールド魔法はフィールドゾーンに置くので、永続魔法を置く時だけゾーンを選ぶ
+            zoneIf: (env, p, mode) => mode === 1 && env.def(p[0]).spellType !== 'field',
+            then: (env, p, z, mode) => {
               const u = p[0];
               if (mode === 0) return withShuffle(env, p, [toHand(u, 'サーチ')]);
               if (env.def(u).spellType === 'field') {
                 const old = env.state.fz ? [toGy(env.state.fz, '張り替え')] : [];
                 return withShuffle(env, p, [...old, move(u, { zone: 'fz' }, '表側で置く', { faceUp: true })]);
               }
-              return withShuffle(env, p, [move(u, firstEmptyStz(env), '表側で置く', { faceUp: true })]);
+              return withShuffle(env, p, [move(u, z ?? firstEmptyStz(env), '表側で置く', { faceUp: true })]);
             },
           },
         ],
@@ -1200,7 +1206,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             where: (env, u) => u !== env.self && env.state.cards[u].faceUp,
             min: 1,
             max: 1,
-            then: (env, p) => p.map((u) => move(u, firstEmptyStz(env), '装備カード扱い', { faceUp: true })),
+            zone: 'stz',
+            then: (env, p, z) =>
+              p.map((u) => move(u, z ?? firstEmptyStz(env), '装備カード扱い', { faceUp: true, equipTo: env.self })),
           },
         ],
       },

@@ -68,9 +68,12 @@ describe('デッキ外のカード', () => {
     s = act(s, { type: 'SPECIAL_SUMMON', uid: valel, to: { zone: 'mz', index: 0 } });
     let r: RunResult = startEffect(s, ctx, valel, CARD_SCRIPTS['27548199'].effects![0]);
     r = afterPick({ ...(r as { run: Running }).run, picked: [link] }, ctx);
+    // 装備する魔法＆罠ゾーンを選べる
+    r = completeStep((r as { run: Running }).run, ctx, { zone: 'stz', index: 2 });
     s = act(s, (r as { action: Action }).action);
     expect(s.cards[valel].counters).toBe(3);
-    expect(findLocation(s, link)?.zone).toBe('stz');
+    expect(findLocation(s, link)).toEqual({ zone: 'stz', index: 2 });
+    expect(s.cards[link].equippedTo).toBe(valel);
   });
 });
 

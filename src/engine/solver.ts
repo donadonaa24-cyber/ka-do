@@ -103,6 +103,16 @@ function dedupe(state: GameState, uids: string[], keep = 1): string[] {
   });
 }
 
+/**
+ * 魔法・罠を置く場所の優先順：自分のモンスターと同じ縦列を避ける
+ * （相手の無限泡影など、縦列の魔法・罠をまとめて無効にするカードに巻き込まれないように）
+ */
+export function preferredStz(state: GameState): number[] {
+  const free = [0, 1, 2, 3, 4].filter((i) => !state.stz[i]);
+  const shared = (i: number) => !!state.mz[i] || (i === 1 && !!state.emz[0]) || (i === 3 && !!state.emz[1]);
+  return [...free.filter((i) => !shared(i)), ...free.filter(shared)];
+}
+
 function monsterZonesFor(state: GameState, fromExtra: boolean): MonsterLocation[] {
   const zones: MonsterLocation[] = [];
   if (fromExtra) [0, 1].forEach((i) => !state.emz[i] && zones.push({ zone: 'emz', index: i }));
@@ -156,7 +166,7 @@ function expandEffect(
       const kind = step.op === 'place' ? step.zone : step.op === 'pick' ? step.zone : undefined;
       const zones: Location[] =
         kind === 'stz'
-          ? run.temp.stz.flatMap((u, i) => (u ? [] : [{ zone: 'stz', index: i } as Location]))
+          ? preferredStz(run.temp).map((index): Location => ({ zone: 'stz', index }))
           : monsterZonesFor(run.temp, fromExtra);
       for (const z of zones) {
         const next = completeStep(run, ctx, z);
@@ -167,7 +177,14 @@ function expandEffect(
       }
     }
   };
-  walk(startEffect(state, ctx, uid, effect));
+  // 手札から魔法・罠を発動する場合も、置く場所は縦列を避ける
+  const fromHand = findLocation(state, uid)?.zone === 'hand';
+  const index = preferredStz(state)[0];
+  const activationZone: Location | undefined =
+    effect.isCardActivation && fromHand && getDef(state, ctx, uid).spellType !== 'field' && index !== undefined
+      ? { zone: 'stz', index }
+      : undefined;
+  walk(startEffect(state, ctx, uid, effect, activationZone));
   return out;
 }
 
@@ -323,7 +340,7 @@ export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOpti
   // 罠のセット（ターンの最後に伏せる想定）
   if (state.stz.includes(null)) {
     for (const uid of dedupe(state, state.hand)) {
-      if (def(uid).kind === 'trap') actions.push({ type: 'SET_SPELL_TRAP', uid });
+      if (def(uid).kind === 'trap') actions.push({ type: 'SET_SPELL_TRAP', uid, index: preferredStz(state)[0] });
     }
   }
   return actions;

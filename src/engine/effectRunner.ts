@@ -416,7 +416,8 @@ export function afterPick(run: Running, ctx: Ctx): RunResult {
   if (step?.op !== 'pick') return { kind: 'running', run };
   if (run.picked.length === 0) return completeStep(run, ctx, null);
   if (step.modes && run.stage === 'pick') return { kind: 'running', run: { ...run, stage: 'mode' } };
-  if (step.zone) return { kind: 'running', run: { ...run, stage: 'zone' } };
+  if (step.zone && (!step.zoneIf || step.zoneIf(stepEnv(run, ctx), run.picked, run.mode)))
+    return { kind: 'running', run: { ...run, stage: 'zone' } };
   return completeStep(run, ctx, null);
 }
 

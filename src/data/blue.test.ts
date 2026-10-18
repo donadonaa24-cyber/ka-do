@@ -19,6 +19,7 @@ import {
 import type { GameState, Location } from '../engine/types';
 import { deckProblems } from '../ui/deckStore';
 import { routeFromGuide } from '../engine/guide';
+import { enumerateActions, preferredStz } from '../engine/solver';
 import { BLUE_EYES_DECK, CARD_DB, CARD_SCRIPTS } from '.';
 import { BLUE_GUIDES } from './blueGuides';
 import { TOON_EVALUATOR } from './toonEval';
@@ -203,9 +204,10 @@ describe('ブルーアイズ', () => {
     s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の祈り'), to: { zone: 'gy' } });
     s = useEffect(s, find(s, 'gy', '青き眼の祈り'), '② 墓地から除外', [
       { pick: ['青眼の白龍'] },
-      { pick: ['青眼の究極竜'] },
+      { pick: ['青眼の究極竜'], zone: { zone: 'stz', index: 2 } },
     ]);
-    const equip = s.stz.find((u) => u && name(s, u) === '青眼の究極竜')!;
+    const equip = s.stz[2]!;
+    expect(name(s, equip)).toBe('青眼の究極竜');
     expect(s.cards[equip].equippedTo).toBe(s.mz[0]);
     const tyrant = find(s, 'extra', 'ブルーアイズ・タイラント・ドラゴン');
     s = act(s, { type: 'PROC_SUMMON', uid: tyrant, proc: 0, materials: [s.mz[0]!], to: mz(0) });
@@ -321,5 +323,27 @@ describe('相手ターン（妨害の練習）', () => {
     let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
     s = act(s, { type: 'SPECIAL_SUMMON', uid: find(s, 'extra', '天球の聖刻印'), to: { zone: 'emz', index: 0 } });
     expect(tryEffect(s, s.emz[0]!, '① 相手ターン', [])).toMatch(/相手ターンにのみ/);
+  });
+});
+
+describe('魔法・罠を置く場所', () => {
+  it('白き乙女①の真の光は置く場所を選べる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697']);
+    s = useEffect(s, find(s, 'hand', '白き乙女'), '① 手札・フィールドから墓地へ', [
+      { pick: ['真の光'], zone: { zone: 'stz', index: 3 } },
+    ]);
+    expect(name(s, s.stz[3]!)).toBe('真の光');
+  });
+
+  it('ルート探索は自分のモンスターと同じ縦列を避けて置く', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697']);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 0);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 1);
+    expect(preferredStz(s).slice(0, 3)).toEqual([2, 3, 4]);
+    const placed = enumerateActions(s, ctx)
+      .map((a) => applyAction(s, a, ctx))
+      .filter((r) => r.ok && r.state.stz.some((u) => u && name(r.state, u) === '真の光'));
+    expect(placed.length).toBeGreaterThan(0);
+    for (const r of placed) if (r.ok) expect(r.state.stz.findIndex((u) => u && name(r.state, u) === '真の光')).toBe(2);
   });
 });

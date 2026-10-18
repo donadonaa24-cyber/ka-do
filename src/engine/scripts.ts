@@ -60,6 +60,8 @@ export type Step =
       modes?: string[];
       /** 選んだ後に出す（置く）ゾーンを選ばせる */
       zone?: 'monster' | 'stz';
+      /** ゾーンを選ばせる条件（「手札に加えるかセットする」のセットの時だけなど）。省略時は常に選ばせる */
+      zoneIf?: (env: Env, picked: string[], mode: number) => boolean;
       then: (env: Env, picked: string[], zone: Location | null, mode: number) => Action[];
     }
   | {

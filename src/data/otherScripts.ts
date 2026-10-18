@@ -27,9 +27,10 @@ const ss = (uid: string, zone: Location | null, note: string, position: 'atk' | 
   position,
   note,
 });
-const equipTo = (env: Env, uid: string, reason: string): Action => {
-  const index = env.state.stz.indexOf(null);
-  return move(uid, { zone: 'stz', index: Math.max(0, index) }, reason, { faceUp: true });
+/** 装備カードとして魔法＆罠ゾーンに置く（ゾーンを選んでいなければ空いている一番左） */
+const equipTo = (env: Env, uid: string, reason: string, zone: Location | null, target?: string): Action => {
+  const to = zone ?? { zone: 'stz', index: Math.max(0, env.state.stz.indexOf(null)) };
+  return move(uid, to, reason, { faceUp: true, equipTo: target });
 };
 const hasFreeStz = (env: Env) => (env.state.stz.includes(null) ? null : '魔法＆罠ゾーンに空きがありません');
 const ownMonstersEmpty = (env: Env) =>
@@ -140,12 +141,11 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
             filter: { kind: ['monster'], frame: ['link'] },
             min: 1,
             max: 1,
-            then: (env, p) => {
-              const index = env.state.stz.indexOf(null);
-              if (index < 0) return [];
+            zone: 'stz',
+            then: (env, p, z) => {
               const counters = env.state.cards[env.self].counters + (env.def(p[0]).link ?? 0);
               return [
-                move(p[0], { zone: 'stz', index }, '装備魔法扱い', { faceUp: true }),
+                equipTo(env, p[0], '装備魔法扱い', z, env.self),
                 { type: 'SET_COUNTERS', uid: env.self, value: counters },
               ];
             },
@@ -329,7 +329,8 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
             filter: DRAGUNITY,
             min: 1,
             max: 1,
-            then: (env, p) => p.map((u) => equipTo(env, u, '装備魔法カード扱い')),
+            zone: 'stz',
+            then: (env, p, z) => p.map((u) => equipTo(env, u, '装備魔法カード扱い', z, env.self)),
           },
         ],
       },
@@ -352,7 +353,8 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
             where: (env, u) => env.state.cards[u].faceUp,
             min: 1,
             max: 1,
-            then: (env, p) => [equipTo(env, env.self, `${env.def(p[0]).name}に装備（攻守1000アップ）`)],
+            zone: 'stz',
+            then: (env, p, z) => [equipTo(env, env.self, `${env.def(p[0]).name}に装備（攻守1000アップ）`, z, p[0])],
           },
         ],
       },
