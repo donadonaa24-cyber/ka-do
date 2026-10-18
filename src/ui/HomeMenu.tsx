@@ -53,6 +53,7 @@ export function HomeMenu(p: Props) {
       <strong>{d.name}</strong>
       <span className="deck-count">
         メイン{d.main.length}・EX{d.extra.length}
+        {d.side?.length ? `・サイド${d.side.length}` : ''}
       </span>
       <span className="deck-keys">{keyCards(d).join('・')}</span>
     </button>

@@ -111,6 +111,8 @@ export type Action =
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
   | { type: 'LEVEL_MOD'; uid: string; delta: number }
+  /** 候補から相手がランダムに1枚選び、手札に加える（ビンゴマシーンGO!GO!など） */
+  | { type: 'RANDOM_TO_HAND'; uids: string[]; reason?: string }
   /** 効果処理の条件を満たさない（選び方が合わない）ことを伝える */
   | { type: 'FAIL'; message: string }
   | { type: 'EXTRA_LOCK'; source: string; filter: CardFilter }
@@ -984,6 +986,18 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'FAIL':
       return fail(action.message);
+    case 'RANDOM_TO_HAND': {
+      if (!action.uids.length) return;
+      state.shuffleCount += 1;
+      const r = mulberry32(state.seed + 7919 * state.shuffleCount)();
+      const uid = action.uids[Math.floor(r * action.uids.length)];
+      const names = action.uids.map((u) => name(state, ctx, u)).join('・');
+      log(state, `${names}から相手がランダムに選んだ：${name(state, ctx, uid)}`, 'info');
+      const from = findLocation(state, uid);
+      moveCard(state, ctx, uid, { zone: 'hand' }, { reason: action.reason });
+      log(state, `${name(state, ctx, uid)}を${from ? locLabel(from) : '?'}から手札へ（${action.reason ?? '効果'}）`, 'move');
+      return;
+    }
     case 'LEVEL_MOD': {
       const inst = state.cards[action.uid];
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');

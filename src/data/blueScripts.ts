@@ -121,6 +121,9 @@ const beSpecialSummonedSince = (env: Env) => {
     : 'このカードが墓地に送られた後に「青眼の白龍」を特殊召喚していません';
 };
 
+/** 自分のフィールドか墓地に「青眼の白龍」がある */
+const beOnFieldOrGy = (env: Env) => [...ownFaceUpMonsters(env), ...env.state.gy].some((u) => isBE(env, u));
+
 /** このターンにフィールドから墓地へ送られた */
 const sentFromFieldThisTurn = (env: Env) => {
   const inst = env.state.cards[env.self];
@@ -160,6 +163,12 @@ const FUSION: Record<string, FusionRecipe> = {
     range: [3, 3],
     candidate: isBE,
     check: (env, m) => (m.length === 3 && m.every((u) => isBE(env, u)) ? null : '「青眼の白龍」3体が必要です'),
+  },
+  // 青眼の双爆裂龍
+  '2129638': {
+    range: [2, 2],
+    candidate: isBE,
+    check: (env, m) => (m.length === 2 && m.every((u) => isBE(env, u)) ? null : '「青眼の白龍」2体が必要です'),
   },
   // ブルーアイズ・タイラント・ドラゴン
   '11443677': {
@@ -1365,6 +1374,223 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
     effects: [
       logOnly('① S召喚時：手札1枚を捨てて相手のカード2枚を除外（相手用）', ['monster'], '氷結界の龍胤 エクハジャール①'),
       logOnly('② 相手の特殊召喚時：カード1枚を手札に戻す（相手用）', ['monster'], '氷結界の龍胤 エクハジャール②'),
+    ],
+  },
+
+  // ===== サイドデッキのカード =====
+
+  // サンダー・ボルト
+  '12580477': {
+    effects: [
+      {
+        ...logOnly('発動：相手のモンスターを全て破壊（相手用）', ['hand', 'spelltrap']),
+        speed: 1,
+        isCardActivation: true,
+      },
+    ],
+  },
+
+  // ライトニング・ストーム
+  '14532163': {
+    effects: [
+      {
+        ...logOnly('発動：相手の攻撃表示モンスターか魔法・罠を全て破壊（相手用）', ['hand', 'spelltrap']),
+        speed: 1,
+        isCardActivation: true,
+      },
+    ],
+  },
+
+  // 海亀壊獣ガメシエル
+  '55063751': { effects: [logOnly('① 相手モンスター1体をリリースし、相手フィールドに特殊召喚（相手用）', ['hand'])] },
+
+  // Ｎｏ．３８ 希望魁竜タイタニック・ギャラクシー
+  '63767246': {
+    effects: [
+      logOnly(
+        '① 魔法の効果がフィールドで発動した時、無効にしてX素材にする（相手用）',
+        ['monster'],
+        'タイタニック・ギャラクシー①',
+      ),
+      logOnly('② 相手の攻撃宣言時、攻撃対象をこのカードに移す（相手用）', ['monster']),
+    ],
+  },
+
+  // ドラゴン・目覚めの旋律
+  '48800175': {
+    effects: [
+      {
+        label: '発動：手札1枚を捨て、攻撃力3000以上・守備力2500以下のドラゴン族を2体までデッキから手札に加える',
+        from: ['hand', 'spelltrap'],
+        isCardActivation: true,
+        steps: [
+          discardCost(),
+          {
+            op: 'pick',
+            prompt: 'デッキから手札に加える、攻撃力3000以上・守備力2500以下のドラゴン族（2体まで）',
+            from: ['deck'],
+            filter: { kind: ['monster'], race: ['ドラゴン族'] },
+            where: (env, u) => (env.def(u).atk ?? 0) >= 3000 && (env.def(u).def ?? 0) <= 2500,
+            min: 1,
+            max: 2,
+            then: (env, p) =>
+              withShuffle(
+                env,
+                p,
+                p.map((u) => toHand(u, 'サーチ')),
+              ),
+          },
+        ],
+      },
+    ],
+  },
+
+  // ビンゴマシーンＧＯ！ＧＯ！
+  '93437091': {
+    effects: [
+      {
+        label:
+          '発動：「ブルーアイズ」モンスターか青眼の白龍・青眼の究極竜記載の魔法・罠を3枚見せ、相手がランダムに選んだ1枚を手札に加える',
+        from: ['hand', 'spelltrap'],
+        isCardActivation: true,
+        steps: [
+          {
+            op: 'pick',
+            prompt: 'デッキから相手に見せるカード3枚（相手がランダムに1枚選び、それを手札に加える）',
+            from: ['deck'],
+            where: (env, u) => {
+              const d = env.def(u);
+              if (d.kind === 'monster') return env.matches(u, BLUE_EYES);
+              return (
+                d.name !== 'ビンゴマシーンＧＯ！ＧＯ！' &&
+                (d.text.includes(`「${BE}」`) || d.text.includes('「青眼の究極竜」'))
+              );
+            },
+            min: 3,
+            max: 3,
+            then: (_, p) => [{ type: 'RANDOM_TO_HAND', uids: p, reason: 'ビンゴマシーンGO!GO!' }, shuffle],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 青眼の双爆裂龍
+  '2129638': {
+    materialCheck: fusionCheck('2129638'),
+    procedures: [
+      {
+        label: '自分のモンスターゾーンの「青眼の白龍」2体を墓地へ送る',
+        hint: '自分フィールドの「青眼の白龍」2体を選択',
+        from: ['monsters'],
+        materialsTo: 'gy',
+        summonFrom: ['extra'],
+        materialFilter: (env, u) => isBE(env, u),
+        validate: (env, m) =>
+          m.length === 2 && m.every((u) => isBE(env, u)) ? null : '自分のモンスターゾーンの「青眼の白龍」2体が必要です',
+      },
+    ],
+  },
+
+  // ブルーアイズ・ジェット・ドラゴン
+  '30576089': {
+    effects: [
+      {
+        label: '① フィールドのカードが戦闘・効果で破壊された時：手札・墓地から特殊召喚',
+        from: ['hand', 'gy'],
+        key: 'ブルーアイズ・ジェット・ドラゴン①',
+        limit: 1,
+        trigger: true,
+        condition: (env) => {
+          if (!beOnFieldOrGy(env)) return '自分のフィールドか墓地に「青眼の白龍」が必要です';
+          const destroyed = Object.values(env.state.cards).some(
+            (c) =>
+              c.uid !== env.self &&
+              c.movedTurn === env.state.turn &&
+              (c.movedReason ?? '').includes('破壊') &&
+              ['mz', 'emz', 'stz', 'fz'].includes(c.movedFrom ?? ''),
+          );
+          return destroyed ? null : 'このターンにフィールドのカードが破壊されていません';
+        },
+        steps: [ssSelf('自身の効果')],
+      },
+      logOnly('③ 戦闘を行うダメージステップ開始時、相手のカード1枚を手札に戻す（相手用）', ['monster']),
+    ],
+  },
+
+  // エンシェント・フェアリー・ドラゴン
+  '25862681': {
+    effects: [
+      {
+        label: '① 手札からレベル4以下のモンスターを特殊召喚（このターンバトルフェイズを行えない）',
+        from: ['monster'],
+        key: 'エンシェント・フェアリー・ドラゴン①',
+        limit: 1,
+        condition: mainPhase,
+        steps: [
+          {
+            op: 'pick',
+            prompt: '手札から特殊召喚するレベル4以下のモンスター',
+            from: ['hand'],
+            filter: { kind: ['monster'], maxLevel: 4 },
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, 'エンシェント・フェアリー・ドラゴンの効果')],
+          },
+        ],
+      },
+      {
+        label: '② フィールドゾーンのカードを全て破壊して1000LP回復し、別名のフィールド魔法をデッキから手札に加える',
+        from: ['monster'],
+        key: 'エンシェント・フェアリー・ドラゴン②',
+        limit: 1,
+        condition: mainPhase,
+        steps: [
+          {
+            op: 'do',
+            then: (env) => [
+              ...(env.state.fz ? [toGy(env.state.fz, '効果で破壊')] : []),
+              { type: 'CHANGE_LP', delta: 1000 },
+            ],
+          },
+          {
+            op: 'pick',
+            prompt: 'デッキから手札に加えるフィールド魔法（破壊したカードと別名・任意）',
+            from: ['deck'],
+            filter: { kind: ['spell'], spellType: ['field'] },
+            where: (env, u) => {
+              const destroyed = env.state.gy[env.state.gy.length - 1];
+              return (
+                !destroyed || env.def(destroyed).name !== env.def(u).name || env.def(destroyed).spellType !== 'field'
+              );
+            },
+            min: 0,
+            max: 1,
+            then: (env, p) =>
+              withShuffle(
+                env,
+                p,
+                p.map((u) => toHand(u, 'サーチ')),
+              ),
+          },
+        ],
+      },
+    ],
+  },
+
+  // エンシェント・フェアリー・ライフ・ドラゴン
+  '43321985': {
+    effects: [
+      {
+        label: '① S召喚時：1枚ドロー（「精霊の世界」があればサーチ）',
+        from: ['monster'],
+        onSummon: true,
+        key: 'エンシェント・フェアリー・ライフ・ドラゴン①',
+        limit: 1,
+        condition: (env) => (env.state.cards[env.self].summonType === 'synchro' ? null : 'S召喚した時のみ発動できます'),
+        steps: [{ op: 'do', then: () => [{ type: 'DRAW', count: 1 }] }],
+      },
     ],
   },
 };

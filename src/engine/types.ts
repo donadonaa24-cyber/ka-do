@@ -225,6 +225,8 @@ export interface DeckList {
   name: string;
   main: string[]; // カードIDの配列（枚数分）
   extra: string[];
+  /** サイドデッキ（ゲームでは使わない。デッキ編集でメイン・EXと入れ替える） */
+  side?: string[];
 }
 
 export interface GameOptions {

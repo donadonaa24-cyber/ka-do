@@ -48,8 +48,9 @@ export function deckProblems(deck: DeckList, db: Record<string, CardDef>): strin
   if (deck.main.length < 40) out.push(`メインデッキが${deck.main.length}枚です（40枚以上必要）`);
   if (deck.main.length > 60) out.push(`メインデッキが${deck.main.length}枚です（60枚まで）`);
   if (deck.extra.length > 15) out.push(`EXデッキが${deck.extra.length}枚です（15枚まで）`);
+  if ((deck.side?.length ?? 0) > 15) out.push(`サイドデッキが${deck.side!.length}枚です（15枚まで）`);
   const counts = new Map<string, number>();
-  for (const id of [...deck.main, ...deck.extra]) {
+  for (const id of [...deck.main, ...deck.extra, ...(deck.side ?? [])]) {
     const name = db[id]?.name ?? id;
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }

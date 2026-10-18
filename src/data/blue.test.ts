@@ -367,3 +367,46 @@ describe('神を超えたしもべ－青眼の究極竜', () => {
     expect(applyAction(s, { type: 'ATTACK', uid: servant }, ctx)).toMatchObject({ ok: false });
   });
 });
+
+describe('ブルーアイズのサイドデッキ', () => {
+  it('サイド15枚を含めて構築ルールを満たす', () => {
+    expect(BLUE_EYES_DECK.side).toHaveLength(15);
+    expect(deckProblems(BLUE_EYES_DECK, CARD_DB)).toEqual([]);
+    // サイドも含めて同名カードは3枚まで
+    const bad = { ...BLUE_EYES_DECK, side: [...BLUE_EYES_DECK.side!, '89631139'] };
+    expect(deckProblems(bad, CARD_DB).join()).toContain('3枚まで');
+  });
+
+  // サイドのカードを入れたデッキ（メインの一部と入れ替え）
+  const sided = (ids: string[]) => ({ ...BLUE_EYES_DECK, main: [...ids, ...BLUE_EYES_DECK.main.slice(ids.length)] });
+
+  it('ドラゴン・目覚めの旋律：攻撃力3000以上・守備力2500以下のドラゴン族を2体まで', () => {
+    let s = createGame(sided(['48800175']), ctx, 1, ['48800175', '14558127']);
+    s = useEffect(s, find(s, 'hand', 'ドラゴン・目覚めの旋律'), '発動', [
+      { pick: ['灰流うらら'] },
+      { pick: ['青眼の白龍', '白き幻獣－青眼の白龍'] },
+    ]);
+    expect(s.hand.map((u) => name(s, u))).toEqual(expect.arrayContaining(['青眼の白龍', '白き幻獣－青眼の白龍']));
+  });
+
+  it('ビンゴマシーンGO!GO!：3枚から相手がランダムに選んだ1枚を手札に加える', () => {
+    let s = createGame(sided(['93437091']), ctx, 1, ['93437091']);
+    const before = s.hand.length;
+    s = useEffect(s, find(s, 'hand', 'ビンゴマシーンＧＯ！ＧＯ！'), '発動', [
+      { pick: ['青眼の白龍', '青き眼の祈り', '真の光'] },
+    ]);
+    expect(s.hand.length).toBe(before); // ビンゴを使って1枚加えた
+    expect(['青眼の白龍', '青き眼の祈り', '真の光']).toContain(name(s, s.hand[s.hand.length - 1]));
+  });
+
+  it('青眼の双爆裂龍：場の青眼の白龍2体を墓地へ送って特殊召喚', () => {
+    // サイドのカードはゲームに入らないので、EXに入れたデッキで確かめる
+    const g = createGame({ ...BLUE_EYES_DECK, extra: ['2129638'] }, ctx, 1, []);
+    let t = put(g, find(g, 'deck', '青眼の白龍'), 0);
+    t = put(t, find(t, 'deck', '青眼の白龍'), 1);
+    const twin = find(t, 'extra', '青眼の双爆裂龍');
+    t = act(t, { type: 'PROC_SUMMON', uid: twin, proc: 0, materials: [t.mz[0]!, t.mz[1]!], to: mz(0) });
+    expect(name(t, t.mz[0]!)).toBe('青眼の双爆裂龍');
+    expect(t.gy.filter((u) => name(t, u) === '青眼の白龍')).toHaveLength(2);
+  });
+});

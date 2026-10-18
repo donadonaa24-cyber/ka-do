@@ -1299,3 +1299,26 @@ button.danger {
   gap: 6px;
   align-items: flex-start;
 }
+.steppers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.stepper-label {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 3em;
+  text-align: right;
+}
+.pool-row .move-btn {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 12px;
+  margin-top: 2px;
+}

@@ -57,6 +57,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
       name: uniqueName(from ? `${from.name}のコピー` : '新しいデッキ', takenNames()),
       main: from ? [...from.main] : [],
       extra: from ? [...from.extra] : [],
+      side: from ? [...(from.side ?? [])] : [],
       updatedAt: new Date().toISOString(),
     });
     setTab(from ? 'deck' : 'add');
@@ -74,18 +75,39 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
     setEditing(null);
   };
 
-  const change = (id: string, delta: 1 | -1) => {
+  /** 入れる場所：デッキ（メインかEX）かサイド */
+  const keyOf = (id: string, where: 'deck' | 'side') =>
+    where === 'side' ? 'side' : isExtraDeckCard(CARD_DB[id]) ? 'extra' : 'main';
+
+  const without = (list: string[], id: string) => {
+    const i = list.lastIndexOf(id);
+    return i >= 0 ? [...list.slice(0, i), ...list.slice(i + 1)] : list;
+  };
+
+  const change = (id: string, delta: 1 | -1, where: 'deck' | 'side' = 'deck') => {
     if (!editing) return;
-    const key = isExtraDeckCard(CARD_DB[id]) ? 'extra' : 'main';
-    const list = editing[key];
+    const key = keyOf(id, where);
+    const list = editing[key] ?? [];
     if (delta > 0) {
-      const sameName = [...editing.main, ...editing.extra].filter((x) => CARD_DB[x].name === CARD_DB[id].name).length;
+      // 同じカードはメイン・EX・サイドの合計で3枚まで
+      const sameName = [...editing.main, ...editing.extra, ...(editing.side ?? [])].filter(
+        (x) => CARD_DB[x].name === CARD_DB[id].name,
+      ).length;
       if (sameName >= 3) return;
       setEditing({ ...editing, [key]: [...list, id] });
     } else {
-      const i = list.lastIndexOf(id);
-      if (i >= 0) setEditing({ ...editing, [key]: [...list.slice(0, i), ...list.slice(i + 1)] });
+      setEditing({ ...editing, [key]: without(list, id) });
     }
+  };
+
+  /** デッキとサイドの間で1枚入れ替える */
+  const move = (id: string, to: 'deck' | 'side') => {
+    if (!editing) return;
+    const fromKey = keyOf(id, to === 'side' ? 'deck' : 'side');
+    const toKey = keyOf(id, to);
+    const fromList = editing[fromKey] ?? [];
+    if (!fromList.includes(id)) return;
+    setEditing({ ...editing, [fromKey]: without(fromList, id), [toKey]: [...(editing[toKey] ?? []), id] });
   };
 
   const pool = useMemo(() => {
@@ -109,6 +131,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
             <strong>{d.name}</strong>
             <span className="meta">
               {custom ? '' : '既製・'}メイン{d.main.length}／EX{d.extra.length}
+              {d.side?.length ? `／サイド${d.side.length}` : ''}
               {d.name === current && '・使用中'}
             </span>
             {problems.length > 0 && <span className="note warn">{problems[0]}</span>}
@@ -173,25 +196,56 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
 
   // ===== デッキ編集 =====
   const problems = deckProblems(editing, CARD_DB);
+  const side = editing.side ?? [];
   const deckIds = [...new Set(sortIds(editing.main))];
   const extraIds = [...new Set(sortIds(editing.extra))];
-  const row = (id: string) => {
+  const sideIds = [...new Set(sortIds(side))];
+  /** where：この行で増減する場所。add はカードを追加する画面（デッキとサイドの両方を増減できる） */
+  const row = (id: string, where: 'deck' | 'side' | 'add') => {
     const def = CARD_DB[id];
-    const n = countOf(isExtraDeckCard(def) ? editing.extra : editing.main, id);
+    const inDeck = countOf(isExtraDeckCard(def) ? editing.extra : editing.main, id);
+    const inSide = countOf(side, id);
+    const stepper = (w: 'deck' | 'side', n: number, label?: string) => (
+      <div className="stepper">
+        {label && <span className="stepper-label">{label}</span>}
+        <button
+          onClick={() => change(id, -1, w)}
+          disabled={n === 0}
+          aria-label={`${def.name}を${label ?? ''}から減らす`}
+        >
+          −
+        </button>
+        <span className="count">{n}</span>
+        <button onClick={() => change(id, 1, w)} aria-label={`${def.name}を${label ?? ''}に増やす`}>
+          ＋
+        </button>
+      </div>
+    );
     return (
-      <div key={id} className="pool-row">
+      <div key={`${where}:${id}`} className="pool-row">
         <CardView def={def} small />
         <div className="grow">
           <span className="pool-name">{def.name}</span>
           <span className="meta">{statLine(def)}</span>
+          {where === 'deck' && inDeck > 0 && (
+            <button className="move-btn" onClick={() => move(id, 'side')}>
+              1枚サイドへ
+            </button>
+          )}
+          {where === 'side' && inSide > 0 && (
+            <button className="move-btn" onClick={() => move(id, 'deck')}>
+              1枚デッキへ
+            </button>
+          )}
         </div>
-        <button onClick={() => change(id, -1)} disabled={n === 0} aria-label={`${def.name}を減らす`}>
-          −
-        </button>
-        <span className="count">{n}</span>
-        <button onClick={() => change(id, 1)} aria-label={`${def.name}を増やす`}>
-          ＋
-        </button>
+        {where === 'add' ? (
+          <div className="steppers">
+            {stepper('deck', inDeck, 'デッキ')}
+            {stepper('side', inSide, 'サイド')}
+          </div>
+        ) : (
+          stepper(where, where === 'side' ? inSide : inDeck)
+        )}
       </div>
     );
   };
@@ -216,6 +270,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
           メイン {editing.main.length}（40〜60）
         </span>
         <span className={editing.extra.length > 15 ? 'bad' : 'good'}>EX {editing.extra.length}（〜15）</span>
+        <span className={side.length > 15 ? 'bad' : 'good'}>サイド {side.length}（〜15）</span>
       </div>
       {problems.length > 0 && (
         <ul className="problems">
@@ -235,9 +290,19 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
       {tab === 'deck' ? (
         <div className="pool">
           <strong>メインデッキ</strong>
-          {deckIds.length ? deckIds.map(row) : <p className="note">「カードを追加」から入れてください。</p>}
+          {deckIds.length ? (
+            deckIds.map((id) => row(id, 'deck'))
+          ) : (
+            <p className="note">「カードを追加」から入れてください。</p>
+          )}
           <strong>EXデッキ</strong>
-          {extraIds.length ? extraIds.map(row) : <p className="note">なし</p>}
+          {extraIds.length ? extraIds.map((id) => row(id, 'deck')) : <p className="note">なし</p>}
+          <strong>サイドデッキ</strong>
+          {sideIds.length ? (
+            sideIds.map((id) => row(id, 'side'))
+          ) : (
+            <p className="note">なし（「1枚サイドへ」か「カードを追加」のサイドの＋で入れられます）</p>
+          )}
         </div>
       ) : (
         <>
@@ -254,7 +319,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
               </button>
             ))}
           </div>
-          <div className="pool">{pool.map((c) => row(c.id))}</div>
+          <div className="pool">{pool.map((c) => row(c.id, 'add'))}</div>
         </>
       )}
     </div>
