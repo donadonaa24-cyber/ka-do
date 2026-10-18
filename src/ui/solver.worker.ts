@@ -1,7 +1,7 @@
 // ルート探索を別スレッドで行う（画面を固めないため）
 import { CARD_DB, CARD_SCRIPTS } from '../data';
 import { TOON_EVALUATOR } from '../data/toonEval';
-import { TOON_GUIDES } from '../data/toonGuides';
+import { GUIDES } from '../data/guides';
 import type { Ctx } from '../engine/game';
 import { routeFromGuide } from '../engine/guide';
 import { type Route, solveBest } from '../engine/solver';
@@ -14,7 +14,7 @@ self.onmessage = (e: MessageEvent<{ state: GameState; deckName: string }>) => {
     onProgress: (ratio) => self.postMessage({ type: 'progress', ratio: ratio * 0.9 }),
   });
   // 記事などのルート（探索の深さでは届かない長い展開）も今の盤面から最後まで動ければ候補に入れる
-  const fromGuides = TOON_GUIDES.filter((g) => g.deckName === e.data.deckName)
+  const fromGuides = GUIDES.filter((g) => g.deckName === e.data.deckName)
     .map((g) => routeFromGuide(e.data.state, ctx, g, TOON_EVALUATOR))
     .filter((r): r is Route => !!r);
   const routes = [...fromGuides, ...found].sort((a, b) => b.score - a.score).slice(0, 3);

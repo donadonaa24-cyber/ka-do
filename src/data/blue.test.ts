@@ -18,7 +18,10 @@ import {
 } from '../engine/game';
 import type { GameState, Location } from '../engine/types';
 import { deckProblems } from '../ui/deckStore';
+import { routeFromGuide } from '../engine/guide';
 import { BLUE_EYES_DECK, CARD_DB, CARD_SCRIPTS } from '.';
+import { BLUE_GUIDES } from './blueGuides';
+import { TOON_EVALUATOR } from './toonEval';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
 const name = (s: GameState, u: string) => CARD_DB[s.cards[u].defId].name;
@@ -220,5 +223,28 @@ describe('ブルーアイズ', () => {
     s = useEffect(s, kaiba, '① 召喚・特殊召喚時', [{ pick: ['青眼の白龍'], zone: mz(1) }]);
     s = useEffect(s, find(s, 'gy', '白き乙女'), '② 墓地にある状態で', [{ zone: mz(2) }]);
     expect(name(s, s.mz[2]!)).toBe('白き乙女');
+  });
+});
+
+describe('ブルーアイズのルートガイド', () => {
+  const guide = BLUE_GUIDES.find((g) => g.id === 'blue-deep-sage-dragon-master')!;
+  const run = (hand: string[], seed = 2) =>
+    routeFromGuide(createGame(BLUE_EYES_DECK, ctx, seed, hand), ctx, guide, TOON_EVALUATOR);
+
+  it.each([
+    ['ディープアイズ', ['67886895', '14558127', '10045474', '97268402', '23434538']],
+    ['賢士（ディープアイズのサーチは不要）', ['8240199', '14558127', '10045474', '97268402', '23434538']],
+    ['賢士＋乙女（賢士①のサーチも不要）', ['8240199', '17947697', '10045474', '97268402', '23434538']],
+  ])('%s から究極竜魔導師＋精霊龍2体まで', (_, hand) => {
+    const route = run(hand)!;
+    expect(route).not.toBeNull();
+    const s = route.final;
+    const field = [...s.mz, ...s.emz].filter((u): u is string => !!u).map((u) => name(s, u));
+    expect(field.sort()).toEqual(['究極竜魔導師', '青眼の精霊龍', '青眼の精霊龍'].sort());
+    expect(s.stz.some((u) => u && name(s, u) === '真の光' && s.cards[u].faceUp)).toBe(true);
+  });
+
+  it('賢士もディープアイズもない手札では使えない', () => {
+    expect(run(['17947697', '14558127', '10045474', '97268402', '23434538'])).toBeNull();
   });
 });

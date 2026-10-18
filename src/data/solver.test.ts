@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { coachFromRoute, explainStep } from '../engine/coach';
 import { applyAction, createGame, type Ctx } from '../engine/game';
-import { findGuideAction, routeFromGuide } from '../engine/guide';
+import { findGuideAction, guideStepSkipped, routeFromGuide } from '../engine/guide';
 import { solveBest as solve } from '../engine/solver';
 import { BUILTIN_DECKS, CARD_DB, CARD_SCRIPTS, PRE_LIMIT_TOON_DECK, TOON_DECK } from '.';
 import { TOON_EVALUATOR } from './toonEval';
-import { TOON_GUIDES } from './toonGuides';
+import { GUIDES as TOON_GUIDES } from './guides';
 
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
 
@@ -46,6 +46,7 @@ describe('ルートガイド', () => {
     it(`「${guide.name}」を最後まで実行できる`, () => {
       let s = createGame(BUILTIN_DECKS.find((d) => d.name === guide.deckName)!, ctx, guide.seed, guide.fixedHand);
       for (const [i, step] of guide.steps.entries()) {
+        if (guideStepSkipped(s, ctx, step)) continue;
         const action = findGuideAction(s, ctx, step);
         if (!action) {
           const board = [...s.emz, ...s.mz].map((u) => (u ? CARD_DB[s.cards[u].defId].name : '-')).join(' / ');

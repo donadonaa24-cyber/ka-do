@@ -35,7 +35,7 @@ import {
   removeImage,
   saveImage,
 } from './cardImages';
-import { TOON_GUIDES } from '../data/toonGuides';
+import { GUIDES } from '../data/guides';
 import { findGuideAction, type Guide } from '../engine/guide';
 import {
   actionHighlights,
@@ -649,7 +649,7 @@ export function App() {
   const coachAction = useMemo(() => {
     if (!coach || !coachStep) return undefined;
     if (coachStep.action) return applyAction(state, coachStep.action, ctx).ok ? coachStep.action : undefined;
-    const guideDef = TOON_GUIDES.find((g) => g.id === coach.guideId);
+    const guideDef = GUIDES.find((g) => g.id === coach.guideId);
     const gs = guideDef?.steps[coachDone];
     return gs ? (findGuideAction(state, ctx, gs) ?? undefined) : undefined;
   }, [coach, coachStep, coachDone, state, ctx]);
@@ -1199,7 +1199,7 @@ export function App() {
             state={state}
             actionCount={session.actions.length}
             deckName={deck.name}
-            guides={TOON_GUIDES}
+            guides={GUIDES}
             coach={coach}
             coachDone={coachDone}
             onPractice={(c) => {

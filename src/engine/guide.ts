@@ -8,6 +8,13 @@ export interface GuideStep {
   match: string[];
   /** ログにこの文言が出る操作は除く（素材の選び方を区別するため） */
   exclude?: string[];
+  /** このカード名のカードが手札にあれば、この手は飛ばす（「賢士が手札にあればサーチ不要」など） */
+  skipIfInHand?: string;
+}
+
+/** 今の手札ではこの手を飛ばすか */
+export function guideStepSkipped(state: GameState, ctx: Ctx, step: GuideStep): boolean {
+  return !!step.skipIfInHand && state.hand.some((u) => ctx.db[state.cards[u].defId]?.name === step.skipIfInHand);
 }
 
 export interface Guide {
@@ -52,6 +59,7 @@ export function routeFromGuide(state: GameState, ctx: Ctx, guide: Guide, evaluat
   let s = state;
   const steps: RouteStep[] = [];
   for (const step of guide.steps) {
+    if (guideStepSkipped(s, strictCtx, step)) continue;
     const action = findGuideAction(s, strictCtx, step);
     if (!action) return null;
     const r = applyAction(s, action, strictCtx);
