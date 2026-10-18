@@ -613,7 +613,9 @@ export function zoneChoices(run: Running): Location[] {
   // EXモンスターゾーンは1つしか使えない（もう片方を使っていれば出せない）
   const emzUsed = t.emz.some((u) => !free(u));
   if (!emzUsed && (findLocation(t, source)?.zone === 'extra' || findLocation(t, fusion)?.zone === 'extra'))
-    out.push(...[0, 1].filter((i) => free(t.emz[i])).map((index) => ({ zone: 'emz' as const, index })));
+    out.push(
+      ...[0, 1].filter((i) => free(t.emz[i]) && !t.opp?.emz?.[i]).map((index) => ({ zone: 'emz' as const, index })),
+    );
   return out;
 }
 

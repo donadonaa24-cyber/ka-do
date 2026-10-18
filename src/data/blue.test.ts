@@ -494,7 +494,10 @@ describe('相手の妨害（トゥーンの最終盤面）', () => {
   it('4妨害：テラー→バロネス→ゲオルギアス③→ア＝バオの順にチェーンして止めてくる', () => {
     let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697', '8240199']);
     s = act(s, oppPresetAction(s, OPP_PRESETS[3]));
-    expect(s.opp!.mz.filter(Boolean)).toHaveLength(4);
+    expect(s.opp!.mz.filter(Boolean)).toHaveLength(3);
+    // ア＝バオ・ア・クゥー（リンク）は左のEXモンスターゾーン。自分は右しか使えない
+    expect(name(s, s.opp!.emz![0]!)).toBe('光なき影 ア＝バオ・ア・クゥー');
+    expect(applyAction(s, { type: 'MOVE', uid: s.extra[0], to: { zone: 'emz', index: 0 } }, ctx).ok).toBe(false);
     // 1回目：白き乙女①（モンスター効果）→ トゥーン・テラーで無効
     const maiden = find(s, 'hand', '白き乙女');
     const e1 = CARD_SCRIPTS[s.cards[maiden].defId].effects!.find((e) => e.label.startsWith('①'))!;

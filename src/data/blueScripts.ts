@@ -1,4 +1,4 @@
-import { type Action, candidates, effectSummonError, type MonsterLocation } from '../engine/game';
+import { type Action, candidates, effectSummonError, type MonsterLocation, oppMonsterSlots } from '../engine/game';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { CardDef, Location } from '../engine/types';
@@ -122,7 +122,7 @@ const beSpecialSummonedSince = (env: Env) => {
 };
 
 /** 相手の場のカード（練習用に置いたもの） */
-const oppMonsters = (env: Env) => (env.state.opp?.mz ?? []).filter((u): u is string => !!u);
+const oppMonsters = (env: Env) => (env.state.opp ? oppMonsterSlots(env.state.opp) : []).filter((u): u is string => !!u);
 const oppSpellTraps = (env: Env) =>
   [...(env.state.opp?.stz ?? []), env.state.opp?.fz ?? null].filter((u): u is string => !!u);
 const needOppMonsters = (env: Env) =>

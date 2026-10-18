@@ -353,6 +353,7 @@ export function App() {
     if (loc.zone === 'emz' && !pending.allowEmz) return false;
     if (pending.zone === 'monster' && (loc.zone === 'mz' || loc.zone === 'emz')) {
       const occ = state[loc.zone][loc.index];
+      if (loc.zone === 'emz' && state.opp?.emz?.[loc.index]) return false;
       return !occ || pending.picked.includes(occ);
     }
     if (pending.zone === 'stz' && loc.zone === 'stz') return !state.stz[loc.index];
@@ -440,13 +441,13 @@ export function App() {
   /** 練習用に置いた相手のカードの操作 */
   const oppButtons = (uid: string, loc: Location): Btn[] => {
     const inst = state.cards[uid];
-    const onField = loc.zone === 'omz' || loc.zone === 'ostz' || loc.zone === 'ofz';
+    const onField = ['omz', 'oemz', 'ostz', 'ofz'].includes(loc.zone);
     const btns: Btn[] = [];
     if (onField) {
       btns.push({ label: '破壊する（相手の墓地へ）', onClick: () => dispatch(move(uid, { zone: 'gy' }, '破壊')) });
       btns.push({ label: '除外する', onClick: () => dispatch(move(uid, { zone: 'banished' }, '除外')) });
       btns.push({ label: '手札に戻す', onClick: () => dispatch(move(uid, { zone: 'hand' }, 'バウンス')) });
-      if (loc.zone === 'omz') {
+      if (loc.zone === 'omz' || loc.zone === 'oemz') {
         if (inst.faceUp)
           btns.push({
             label: inst.position === 'atk' ? '守備表示にする' : '攻撃表示にする',
@@ -937,6 +938,7 @@ export function App() {
     oppMode ||
     (!!opp &&
       (opp.mz.some(Boolean) ||
+        !!opp.emz?.some(Boolean) ||
         opp.stz.some(Boolean) ||
         !!opp.fz ||
         opp.gy.length + opp.banished.length + opp.hand.length > 0));

@@ -78,7 +78,7 @@ export function isExtraDeckCard(def: CardDef): boolean {
 
 export type PileZone = 'deck' | 'hand' | 'extra' | 'gy' | 'banished';
 export type FieldZone = 'mz' | 'emz' | 'stz' | 'fz';
-export type ZoneName = PileZone | FieldZone | 'omz' | 'ostz' | 'ofz' | OppPile;
+export type ZoneName = PileZone | FieldZone | 'omz' | 'oemz' | 'ostz' | 'ofz' | OppPile;
 
 export type Location =
   | { zone: PileZone }
@@ -88,6 +88,7 @@ export type Location =
   | { zone: 'fz' } // フィールドゾーン
   // --- 相手（練習用に手で置く） ---
   | { zone: 'omz'; index: number } // 相手のメインモンスターゾーン
+  | { zone: 'oemz'; index: number } // 相手が使っているEXモンスターゾーン（自分から見て 0(左) / 1(右)）
   | { zone: 'ostz'; index: number } // 相手の魔法＆罠ゾーン
   | { zone: 'ofz' }
   | { zone: OppPile };
@@ -97,6 +98,8 @@ export type OppPile = 'ogy' | 'obanished' | 'ohand';
 /** 相手の盤面（相手は存在しないので、練習のために手で置く） */
 export interface OppBoard {
   mz: (string | null)[];
+  /** EXモンスターゾーンは共有。相手が使っている方（古い記録には無い） */
+  emz?: (string | null)[];
   stz: (string | null)[];
   fz: string | null;
   gy: string[];

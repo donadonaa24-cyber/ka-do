@@ -139,6 +139,11 @@ export function Board({
       </div>
     );
   };
+  // EXモンスターゾーンは共有：相手が使っていれば相手のカードを出す
+  const emzSlot = (i: number) =>
+    opp?.emz?.[i]
+      ? oppSlot({ zone: 'oemz', index: i }, opp.emz[i], 'EX', 'emz')
+      : slot({ zone: 'emz', index: i }, state.emz[i], 'EX', 'emz');
   // 相手から見て左端がM1なので、こちらからは左右反転して並べる
   const mirrored = [4, 3, 2, 1, 0];
 
@@ -167,9 +172,9 @@ export function Board({
       {/* 1段目: EXモンスターゾーン */}
       <div className="zone blank" />
       <div className="zone blank" />
-      {slot({ zone: 'emz', index: 0 }, state.emz[0], 'EX', 'emz')}
+      {emzSlot(0)}
       <div className="zone blank" />
-      {slot({ zone: 'emz', index: 1 }, state.emz[1], 'EX', 'emz')}
+      {emzSlot(1)}
       <div className="zone blank" />
       {pile('banished', '除外')}
 

@@ -116,7 +116,12 @@ export type Action =
   | {
       type: 'OPP_PLACE';
       defId: string;
-      to: { zone: 'omz'; index: number } | { zone: 'ostz'; index: number } | { zone: 'ofz' } | { zone: 'ohand' };
+      to:
+        | { zone: 'omz'; index: number }
+        | { zone: 'oemz'; index: number }
+        | { zone: 'ostz'; index: number }
+        | { zone: 'ofz' }
+        | { zone: 'ohand' };
       faceUp: boolean;
       position?: BattlePosition;
     }
@@ -369,6 +374,7 @@ export function makeEnv(state: GameState, ctx: Ctx, self: string): Env {
 export function emptyOpp(): OppBoard {
   return {
     mz: [null, null, null, null, null],
+    emz: [null, null],
     stz: [null, null, null, null, null],
     fz: null,
     gy: [],
@@ -380,6 +386,7 @@ export function emptyOpp(): OppBoard {
 /** 相手の盤面（古い記録には無いので空で補う） */
 export function oppOf(state: GameState): OppBoard {
   if (!state.opp) state.opp = emptyOpp();
+  if (!state.opp.emz) state.opp.emz = [null, null];
   return state.opp;
 }
 
@@ -387,7 +394,12 @@ export function oppOf(state: GameState): OppBoard {
 export function oppFieldCards(state: GameState): string[] {
   const o = state.opp;
   if (!o) return [];
-  return [...o.mz, ...o.stz, o.fz].filter((u): u is string => !!u);
+  return [...oppMonsterSlots(o), ...o.stz, o.fz].filter((u): u is string => !!u);
+}
+
+/** 相手のモンスターゾーン（メイン＋使っているEXモンスターゾーン） */
+export function oppMonsterSlots(o: OppBoard): (string | null)[] {
+  return [...o.mz, ...(o.emz ?? [])];
 }
 
 export function findLocation(state: GameState, uid: string): Location | null {
@@ -405,6 +417,8 @@ export function findLocation(state: GameState, uid: string): Location | null {
   if (o) {
     i = o.mz.indexOf(uid);
     if (i >= 0) return { zone: 'omz', index: i };
+    i = o.emz?.indexOf(uid) ?? -1;
+    if (i >= 0) return { zone: 'oemz', index: i };
     i = o.stz.indexOf(uid);
     if (i >= 0) return { zone: 'ostz', index: i };
     if (o.fz === uid) return { zone: 'ofz' };
@@ -423,6 +437,7 @@ export function isOnField(loc: Location | null): boolean {
       loc.zone === 'stz' ||
       loc.zone === 'fz' ||
       loc.zone === 'omz' ||
+      loc.zone === 'oemz' ||
       loc.zone === 'ostz' ||
       loc.zone === 'ofz')
   );
@@ -447,6 +462,7 @@ export const ZONE_LABEL: Record<Location['zone'], string> = {
   stz: '魔法＆罠ゾーン',
   fz: 'フィールドゾーン',
   omz: '相手のモンスターゾーン',
+  oemz: '相手のEXモンスターゾーン',
   ostz: '相手の魔法＆罠ゾーン',
   ofz: '相手のフィールドゾーン',
   ogy: '相手の墓地',
@@ -457,7 +473,7 @@ export const ZONE_LABEL: Record<Location['zone'], string> = {
 function locLabel(loc: Location): string {
   if (loc.zone === 'mz' || loc.zone === 'stz' || loc.zone === 'omz' || loc.zone === 'ostz')
     return `${ZONE_LABEL[loc.zone]}${loc.index + 1}`;
-  if (loc.zone === 'emz') return `${ZONE_LABEL.emz}(${loc.index === 0 ? '左' : '右'})`;
+  if (loc.zone === 'emz' || loc.zone === 'oemz') return `${ZONE_LABEL[loc.zone]}(${loc.index === 0 ? '左' : '右'})`;
   return ZONE_LABEL[loc.zone];
 }
 
@@ -488,6 +504,9 @@ function detach(state: GameState, uid: string) {
       break;
     case 'omz':
       oppOf(state).mz[loc.index] = null;
+      break;
+    case 'oemz':
+      oppOf(state).emz![loc.index] = null;
       break;
     case 'ostz':
       oppOf(state).stz[loc.index] = null;
@@ -630,8 +649,9 @@ function placeRaw(state: GameState, uid: string, to: Location, opts: PlaceOpts) 
       state[to.zone].push(uid);
       break;
     case 'omz':
+    case 'oemz':
     case 'ostz':
-      oppOf(state)[to.zone === 'omz' ? 'mz' : 'stz'][to.index] = uid;
+      oppOf(state)[to.zone === 'omz' ? 'mz' : to.zone === 'oemz' ? 'emz' : 'stz']![to.index] = uid;
       inst.faceUp = opts.faceUp ?? true;
       inst.position = opts.position ?? inst.position;
       break;
@@ -664,6 +684,7 @@ function checkMonsterZoneFree(state: GameState, ctx: Ctx, to: MonsterLocation, i
   if (to.index < 0 || to.index >= (to.zone === 'mz' ? 5 : 2)) fail('ゾーン番号が不正です');
   const occupant = state[to.zone][to.index];
   if (occupant && !ignore.includes(occupant)) fail(`${locLabel(to)}は使用中です`);
+  if (to.zone === 'emz' && state.opp?.emz?.[to.index]) fail(`${locLabel(to)}は相手が使用中です`);
   if (to.zone === 'emz' && ctx.options.strict) {
     const other = state.emz[1 - to.index];
     if (other && !ignore.includes(other)) fail('EXモンスターゾーンは1つしか使用できません');
@@ -1131,7 +1152,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
           ? null
           : action.to.zone === 'ofz'
             ? o.fz
-            : o[action.to.zone === 'omz' ? 'mz' : 'stz'][action.to.index];
+            : action.to.zone === 'oemz'
+              ? (o.emz![action.to.index] ?? state.emz[action.to.index])
+              : o[action.to.zone === 'omz' ? 'mz' : 'stz'][action.to.index];
       if (occupied) fail('そのゾーンには既にカードがあります');
       const uid = `o${state.nextUid++}`;
       state.cards[uid] = { ...newInstance(uid, action.defId), opp: true };
@@ -1158,12 +1181,11 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (!inst?.opp) fail('相手のカードではありません');
       inst.faceUp = action.faceUp;
       if (action.position) inst.position = action.position;
-      const pos =
-        findLocation(state, action.uid)?.zone === 'omz'
-          ? `${action.faceUp ? '表側' : '裏側'}${inst.position === 'atk' ? '攻撃' : '守備'}表示`
-          : action.faceUp
-            ? '表側'
-            : '裏側';
+      const pos = ['omz', 'oemz'].includes(findLocation(state, action.uid)?.zone ?? '')
+        ? `${action.faceUp ? '表側' : '裏側'}${inst.position === 'atk' ? '攻撃' : '守備'}表示`
+        : action.faceUp
+          ? '表側'
+          : '裏側';
       log(state, `（練習）相手の${name(state, ctx, action.uid)}を${pos}にした`, 'info');
       return;
     }
@@ -1496,7 +1518,8 @@ export function candidates(state: GameState, zones: string[]): string[] {
     // 相手のカード（練習用に置いたもの）。「フィールドのカード」には相手のカードも含む
     const o = state.opp;
     if (o) {
-      if (z === 'oppMonsters' || z === 'oppField' || z === 'field') out.push(...o.mz.filter((u): u is string => !!u));
+      if (z === 'oppMonsters' || z === 'oppField' || z === 'field')
+        out.push(...oppMonsterSlots(o).filter((u): u is string => !!u));
       if (z === 'oppSpelltraps' || z === 'oppField' || z === 'field')
         out.push(...o.stz.filter((u): u is string => !!u), ...(o.fz ? [o.fz] : []));
       if (z === 'oppGy') out.push(...o.gy);

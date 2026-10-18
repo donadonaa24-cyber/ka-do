@@ -35,7 +35,9 @@ function invariant(s: GameState): string | null {
   const seen = new Map<string, number>();
   const add = (u: string | null | undefined) => u && seen.set(u, (seen.get(u) ?? 0) + 1);
   for (const z of [s.deck, s.hand, s.extra, s.gy, s.banished, s.mz, s.emz, s.stz, [s.fz]]) z.forEach(add);
-  if (s.opp) for (const z of [s.opp.mz, s.opp.stz, [s.opp.fz], s.opp.gy, s.opp.banished, s.opp.hand]) z.forEach(add);
+  if (s.opp)
+    for (const z of [s.opp.mz, s.opp.emz ?? [], s.opp.stz, [s.opp.fz], s.opp.gy, s.opp.banished, s.opp.hand])
+      z.forEach(add);
   for (const u of Object.keys(s.cards)) s.cards[u].overlay.forEach(add);
   for (const [u, n] of seen) if (n > 1) return `重複 ${name(s, u)}`;
   for (const u of Object.keys(s.cards)) if (!seen.has(u)) return `所在不明 ${name(s, u)}`;

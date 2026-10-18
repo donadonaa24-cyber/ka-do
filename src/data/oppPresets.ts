@@ -17,6 +17,13 @@ const mon = (name: string, index: number, position: 'atk' | 'def' = 'atk'): Omit
   faceUp: true,
   position,
 });
+/** リンクモンスターなどEXデッキから出たモンスターはEXモンスターゾーン（自分から見て 0:左 / 1:右） */
+const ex = (name: string, index: number): Omit<Place, 'type'> => ({
+  defId: idOf(name),
+  to: { zone: 'oemz', index },
+  faceUp: true,
+  position: 'atk',
+});
 const st = (name: string, index: number, faceUp: boolean): Omit<Place, 'type'> => ({
   defId: idOf(name),
   to: { zone: 'ostz', index },
@@ -56,7 +63,7 @@ export const OPP_PRESETS: OppPreset[] = [
     cards: () => [
       ...base(),
       mon('フルール・ド・バロネス', 1),
-      mon('光なき影 ア＝バオ・ア・クゥー', 3),
+      ex('光なき影 ア＝バオ・ア・クゥー', 0),
       st('トゥーン・テラー', 2, false),
       { defId: 'opp-monster', to: { zone: 'ohand' }, faceUp: false },
     ],
@@ -70,7 +77,7 @@ export const OPP_PRESETS: OppPreset[] = [
       ...base(),
       mon('ドラグニティロード－ゲオルギアス', 0),
       mon('フルール・ド・バロネス', 1),
-      mon('光なき影 ア＝バオ・ア・クゥー', 3),
+      ex('光なき影 ア＝バオ・ア・クゥー', 0),
       st('ドラグニティナイト－ハールーン', 1, true),
       st('トゥーン・テラー', 2, false),
       st('心を見通す眼', 3, true),
@@ -82,7 +89,9 @@ export const OPP_PRESETS: OppPreset[] = [
 /** 今の相手のカードを全部取り除いて、プリセットの盤面を置く操作 */
 export function oppPresetAction(state: GameState, preset: OppPreset | null): Action {
   const o = state.opp;
-  const current = o ? [...o.mz, ...o.stz, o.fz, ...o.gy, ...o.banished, ...o.hand].filter((u): u is string => !!u) : [];
+  const current = o
+    ? [...o.mz, ...(o.emz ?? []), ...o.stz, o.fz, ...o.gy, ...o.banished, ...o.hand].filter((u): u is string => !!u)
+    : [];
   return {
     type: 'BATCH',
     label: preset ? `（練習）相手の盤面：${preset.name}` : '（練習）相手の盤面を片付ける',

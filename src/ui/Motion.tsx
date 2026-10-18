@@ -83,8 +83,9 @@ const pileOf = (loc: Location | null): string | null => {
   return loc.zone;
 };
 
-const onField = (loc: Location | null) => !!loc && ['mz', 'emz', 'stz', 'fz', 'omz', 'ostz', 'ofz'].includes(loc.zone);
-const isMonsterZone = (loc: Location | null) => !!loc && ['mz', 'emz', 'omz'].includes(loc.zone);
+const onField = (loc: Location | null) =>
+  !!loc && ['mz', 'emz', 'stz', 'fz', 'omz', 'oemz', 'ostz', 'ofz'].includes(loc.zone);
+const isMonsterZone = (loc: Location | null) => !!loc && ['mz', 'emz', 'omz', 'oemz'].includes(loc.zone);
 const sameLoc = (a: Location | null, b: Location | null) =>
   !!a && !!b && a.zone === b.zone && ('index' in a ? a.index : -1) === ('index' in b ? b.index : -1);
 

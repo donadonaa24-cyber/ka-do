@@ -1,4 +1,4 @@
-import { type Action, type Ctx, findLocation, getDef } from './game';
+import { type Action, type Ctx, findLocation, getDef, oppMonsterSlots } from './game';
 import type { ChainLink, GameState } from './types';
 
 // 練習用の相手AI：相手の盤面に置いたカードの妨害を、こちらの効果の発動にチェーンして使ってくる。
@@ -17,7 +17,7 @@ interface Ability {
 
 const def = (s: GameState, ctx: Ctx, uid: string) => getDef(s, ctx, uid);
 const faceUpOpp = (s: GameState, uids: (string | null)[]) => uids.filter((u): u is string => !!u && s.cards[u].faceUp);
-const oppMonsters = (s: GameState) => faceUpOpp(s, s.opp?.mz ?? []);
+const oppMonsters = (s: GameState) => faceUpOpp(s, s.opp ? oppMonsterSlots(s.opp) : []);
 const findOpp = (s: GameState, ctx: Ctx, uids: (string | null)[], name: string) =>
   uids.find((u): u is string => !!u && def(s, ctx, u).name === name);
 const used = (s: GameState, key: string) => (s.effectUses[key] ?? 0) > 0;

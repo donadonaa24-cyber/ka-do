@@ -19,6 +19,7 @@ import {
   isMonsterZone,
   makeEnv,
   type MonsterLocation,
+  oppMonsterSlots,
   type SummonMethod,
 } from './game';
 import { tributesRequired } from './rules';
@@ -115,7 +116,7 @@ export function preferredStz(state: GameState): number[] {
 
 function monsterZonesFor(state: GameState, fromExtra: boolean): MonsterLocation[] {
   const zones: MonsterLocation[] = [];
-  if (fromExtra) [0, 1].forEach((i) => !state.emz[i] && zones.push({ zone: 'emz', index: i }));
+  if (fromExtra) [0, 1].forEach((i) => !state.emz[i] && !state.opp?.emz?.[i] && zones.push({ zone: 'emz', index: i }));
   [0, 1, 2, 3, 4].forEach((i) => !state.mz[i] && zones.push({ zone: 'mz', index: i }));
   return zones;
 }
@@ -359,7 +360,7 @@ function signature(state: GameState): string {
     ids(state.hand),
     ids([...state.mz, ...state.emz]),
     ids(state.stz),
-    state.opp ? ids([...state.opp.mz, ...state.opp.stz, state.opp.fz]) : '',
+    state.opp ? ids([...oppMonsterSlots(state.opp), ...state.opp.stz, state.opp.fz]) : '',
     state.fz ? state.cards[state.fz].defId : '',
     ids(state.gy),
     ids(state.banished),
