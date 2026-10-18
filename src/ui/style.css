@@ -913,6 +913,12 @@ select {
   outline-offset: -2px;
   background: rgba(255, 179, 71, 0.15);
 }
+/* ドラッグ中：置ける場所 */
+.drop-ok {
+  outline: 2px dashed rgba(91, 209, 139, 0.85);
+  outline-offset: -2px;
+  background: rgba(91, 209, 139, 0.08);
+}
 .drop-menu-backdrop {
   position: fixed;
   inset: 0;
@@ -1979,6 +1985,76 @@ button.danger {
   }
 }
 
+/* 儀式：足元に魔法陣が浮かび、青い炎が立ち上る */
+.fx-ritual {
+  --fx: 120, 190, 255;
+}
+.fx-rcircle {
+  inset: 4%;
+  animation: fx-rcircle calc(var(--pre) + 200ms) ease-out var(--delay) both;
+}
+.fx-rcircle svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: rgba(140, 200, 255, 0.95);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 4px rgba(90, 170, 255, 0.95));
+}
+.fx-rcircle svg circle:first-child {
+  stroke-dasharray: 3 2;
+}
+@keyframes fx-rcircle {
+  0% {
+    transform: perspective(400px) rotateX(62deg) rotate(0deg) scale(0.2);
+    opacity: 0;
+  }
+  25% {
+    transform: perspective(400px) rotateX(62deg) rotate(60deg) scale(1);
+    opacity: 1;
+  }
+  85% {
+    transform: perspective(400px) rotateX(62deg) rotate(200deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(400px) rotateX(62deg) rotate(240deg) scale(1.15);
+    opacity: 0;
+  }
+}
+.fx-flame {
+  left: calc(50% - var(--cw) * 0.2 + (var(--i) - 2.5) * var(--cw) * 0.22);
+  top: calc(50% - var(--ch) * 0.1);
+  width: calc(var(--cw) * 0.4);
+  height: calc(var(--ch) * 0.7);
+  border-radius: 50% 50% 45% 45% / 70% 70% 30% 30%;
+  background: radial-gradient(
+    ellipse at 50% 75%,
+    rgba(255, 255, 255, 0.95),
+    rgba(120, 200, 255, 0.85) 30%,
+    rgba(60, 110, 255, 0.4) 55%,
+    rgba(60, 110, 255, 0) 72%
+  );
+  filter: blur(1.5px);
+  transform-origin: 50% 100%;
+  animation: fx-flame 760ms ease-out calc(var(--delay) + 250ms + var(--i) * 90ms) both;
+}
+@keyframes fx-flame {
+  0% {
+    transform: translateY(20%) scale(0.4, 0.2);
+    opacity: 0;
+  }
+  35% {
+    transform: translateY(0) scale(1, 1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-90%) scale(0.5, 1.3);
+    opacity: 0;
+  }
+}
+
 /* リンク：リンクマーカーが外へ伸びて光り、その後カードが現れる */
 .fx-link {
   --fx: 90, 180, 255;
@@ -2096,4 +2172,38 @@ button.danger {
   border: 1px dashed rgba(255, 107, 107, 0.5);
   border-radius: 10px;
   padding: 8px;
+}
+
+/* このターンはもう使った効果 */
+.btn-grid button.used {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-align: left;
+}
+.used-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 90, 90, 0.18);
+  color: #ff8a8a;
+  border: 1px solid rgba(255, 90, 90, 0.5);
+}
+
+/* カードを選ぶ途中で盤面を確認している時の「選択に戻る」 */
+.peek-back {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 10px 18px;
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }

@@ -113,6 +113,24 @@ function nameLimitReached(state: GameState, effect: EffectDef): boolean {
   return !!effect.key && effect.nameLimit !== undefined && (state.effectUses[effect.key] ?? 0) >= effect.nameLimit;
 }
 
+/** このターンの使用回数を使い切った効果か（カードを選んだ時に「使用済み」と見せる） */
+export function effectUsedUp(state: GameState, ctx: Ctx, uid: string, effect: EffectDef): boolean {
+  const used = (key: string, limit: number) => (state.effectUses[key] ?? 0) >= limit;
+  const key = effectKey(state, uid, effect);
+  if (key && effect.limit !== undefined && used(key, effect.limit)) return true;
+  if (nameLimitReached(state, effect)) return true;
+  const d = makeEnv(state, ctx, uid).def(uid);
+  if (effect.isCardActivation && d.oncePerTurnActivation && state.effectUses[`${d.name}:発動`]) return true;
+  if (effect.onSummon) {
+    const inst = state.cards[uid];
+    const k = effect.applied
+      ? `召喚時:${effect.label}:${uid}:${inst.summonedTurn}`
+      : `召喚時:${effect.label}:${uid}:${inst.entryId}`;
+    if (used(k, 1)) return true;
+  }
+  return false;
+}
+
 /** 今のチェーンに続けて発動できる効果（スペルスピード2以上・使用回数が残っている） */
 export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): { uid: string; effect: EffectDef }[] {
   const out: { uid: string; effect: EffectDef }[] = [];
@@ -192,14 +210,20 @@ export function startEffect(
   }
   if (effect.onSummon) {
     const inst = state.cards[uid];
-    if (inst.enteredTurn !== state.turn || inst.summonedEntry !== inst.entryId)
-      return { kind: 'error', error: 'このターンに召喚・特殊召喚されたカードではありません' };
+    // 「召喚・特殊召喚した時に適用する」効果は、召喚した後に一時的に除外されて戻ってきても、
+    // まだ適用していなければ適用できる（追加の召喚権などはこのターンの間残るため）
+    const summoned = effect.applied
+      ? inst.summonedTurn === state.turn
+      : inst.enteredTurn === state.turn && inst.summonedEntry === inst.entryId;
+    if (!summoned) return { kind: 'error', error: 'このターンに召喚・特殊召喚されたカードではありません' };
     // 召喚1回につき1度だけ（ターン1の制限とは別に管理）
     batch.push({
       type: 'ACTIVATE_EFFECT',
       uid,
       silent: true,
-      key: `召喚時:${effect.label}:${uid}:${inst.entryId}`,
+      key: effect.applied
+        ? `召喚時:${effect.label}:${uid}:${inst.summonedTurn}`
+        : `召喚時:${effect.label}:${uid}:${inst.entryId}`,
       limit: 1,
     });
   }

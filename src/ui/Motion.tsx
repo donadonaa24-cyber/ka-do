@@ -60,8 +60,14 @@ const FLIGHT_MS = 560;
 const APPEAR_MS = 520;
 const STAGGER_MS = 140;
 
-/** 融合・シンクロ・エクシーズ・リンク召喚は、演出を見せてからカードが現れる */
-const PRELUDE_MS: Partial<Record<BurstKind, number>> = { fusion: 1100, synchro: 900, xyz: 1150, link: 1100 };
+/** 融合・シンクロ・エクシーズ・リンク・儀式召喚は、演出を見せてからカードが現れる */
+const PRELUDE_MS: Partial<Record<BurstKind, number>> = {
+  fusion: 1100,
+  synchro: 900,
+  xyz: 1150,
+  link: 1100,
+  ritual: 1200,
+};
 
 const reduceMotion = () => {
   try {
@@ -444,6 +450,7 @@ const ARROW_ANGLE: Record<LinkMarker, number> = { T: 0, TR: 45, R: 90, BR: 135, 
 /**
  * 融合・シンクロ・エクシーズ・リンク召喚の演出（この後にカードが現れる）
  * 融合：渦を巻いて吸い込む／シンクロ：光の柱がまっすぐ突き抜ける／エクシーズ：黒い靄が集まって爆発／リンク：リンクマーカーが出る
+ * 儀式：足元に魔法陣が浮かび、青い炎が立ち上る
  */
 function SummonFx({ b, onDone }: { b: Burst; onDone: () => void }) {
   const pre = PRELUDE_MS[b.kind]!;
@@ -511,6 +518,23 @@ function SummonFx({ b, onDone }: { b: Burst; onDone: () => void }) {
           ))}
           <span className="fx-blast" />
           <span className="fx-rays" />
+        </>
+      )}
+      {b.kind === 'ritual' && (
+        <>
+          <span className="fx-rcircle">
+            <svg viewBox="-50 -50 100 100">
+              <circle r="46" />
+              <circle r="40" />
+              <polygon points="0,-40 34.6,20 -34.6,20" />
+              <polygon points="0,40 34.6,-20 -34.6,-20" />
+              <circle r="18" />
+            </svg>
+          </span>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <span key={i} className="fx-flame" style={{ '--i': i } as React.CSSProperties} />
+          ))}
+          <span className="fx-core" />
         </>
       )}
       {b.kind === 'link' && (

@@ -325,7 +325,7 @@ describe('完全なる世界③（効果処理後まで除外）', () => {
     if (run.extraStep) expect(stepCandidates(run, ctx)).not.toContain(tbm);
   });
 
-  it('除外されて戻ったラビットは「召喚した時」の効果を使えない', () => {
+  it('召喚後に除外されて戻ったラビットも、まだ適用していなければ①（召喚時に適用）を使える', () => {
     let s = createGame(TOON_DECK, ctx, 32, ['7293697', '45536531', '89997728']);
     s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
     s = act(s, { type: 'NORMAL_SUMMON', uid: inHand(s, 'ファニー・ダーク・ラビット'), index: 0 });
@@ -339,6 +339,11 @@ describe('完全なる世界③（効果処理後まで除外）', () => {
     s = act(s, (r as { action: Action }).action);
     expect(s.mz[0]).toBe(rabbit);
     const onSummon = CARD_SCRIPTS['45536531'].effects!.find((e) => e.onSummon)!;
+    const applied = startEffect(s, ctx, rabbit, onSummon);
+    expect(applied.kind).toBe('done');
+    s = act(s, (applied as { action: Action }).action);
+    expect(s.summonGrants.some((g) => g.source === 'ファニー・ダーク・ラビット')).toBe(true);
+    // 適用は1ターンに1度（もう一度は使えない）
     expect(startEffect(s, ctx, rabbit, onSummon).kind).toBe('error');
     // ③（カード名の付かない1ターンに1度）は使える
     const third = CARD_SCRIPTS['45536531'].effects!.find((e) => e.label.startsWith('③'))!;

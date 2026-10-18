@@ -282,6 +282,7 @@ function markSummoned(state: GameState, uid: string, type: SummonType = 'special
   const inst = state.cards[uid];
   inst.enteredTurn = state.turn;
   inst.summonedEntry = inst.entryId;
+  inst.summonedTurn = state.turn;
   inst.summonType = type;
   if (type !== 'normal' && type !== 'special') inst.properlySummoned = true;
 }

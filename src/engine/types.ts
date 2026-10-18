@@ -137,6 +137,8 @@ export interface CardInstance {
   entryId: number;
   /** 召喚・特殊召喚でフィールドに出た時の entryId（効果で除外されて戻っただけなら一致しない） */
   summonedEntry: number | null;
+  /** 最後に召喚・特殊召喚したターン（フィールドを離れても残る。「召喚した時に適用する」効果の判定用） */
+  summonedTurn?: number;
   /** 召喚の種類（「S召喚したこのカード」などの判定用） */
   summonType: SummonType | null;
   /** 効果で変わったレベル（フィールドを離れると戻る） */

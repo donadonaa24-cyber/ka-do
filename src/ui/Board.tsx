@@ -18,6 +18,8 @@ interface Props {
   dragStart?: (uid: string) => (e: React.PointerEvent) => void;
   /** ドラッグ中に指している落とし先（data-drop の値） */
   dropTarget?: string | null;
+  /** ドラッグ中のカードを置ける場所か（置ける場所を光らせる） */
+  dropOk?: ((target: string) => boolean) | null;
   /** 練習中の「次の手」で使うカード・出し先 */
   hintCards?: string[];
   hintZones?: Location[];
@@ -41,6 +43,7 @@ export function Board({
   onPileClick,
   dragStart,
   dropTarget,
+  dropOk,
   hintCards = [],
   hintZones = [],
   chainOf = {},
@@ -57,7 +60,7 @@ export function Board({
     const drop = 'index' in loc ? `${loc.zone}:${loc.index}` : loc.zone;
     return (
       <div
-        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''} ${dropTarget === drop ? 'drop-over' : ''} ${
+        className={`zone ${extraCls} ${selectable ? 'zone-selectable' : ''} ${dropTarget === drop ? 'drop-over' : dropOk?.(drop) ? 'drop-ok' : ''} ${
           isHintZone(loc) ? 'hint-zone' : ''
         } ${uid && hintCards.includes(uid) ? 'hint' : ''}`}
         data-drop={drop}
@@ -85,7 +88,7 @@ export function Board({
     const top = zone === 'gy' || zone === 'banished' ? list[list.length - 1] : undefined;
     return (
       <div
-        className={`zone pile ${dropTarget === zone ? 'drop-over' : ''} ${list.some((u) => hintCards.includes(u)) ? 'hint' : ''}`}
+        className={`zone pile ${dropTarget === zone ? 'drop-over' : dropOk?.(zone) ? 'drop-ok' : ''} ${list.some((u) => hintCards.includes(u)) ? 'hint' : ''}`}
         data-drop={zone}
         data-pile={zone}
         onClick={() => onPileClick(zone)}

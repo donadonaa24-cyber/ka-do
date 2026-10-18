@@ -60,6 +60,7 @@ import {
   completeStep,
   currentStep,
   effectAvailable,
+  effectUsedUp,
   effectSpeed,
   pickRange,
   type RunResult,
@@ -99,6 +100,8 @@ interface Btn {
   dest?: DropDest;
   /** 俺ルール：ルール上は本来できない自由な操作（通常は隠す） */
   free?: boolean;
+  /** このターンはもう使った効果（押せない） */
+  used?: boolean;
 }
 
 const defaultSession = (): SessionData => ({
@@ -154,6 +157,10 @@ export function App() {
   };
   /** カード詳細で俺ルールの操作を開いている */
   const [freeOpen, setFreeOpen] = useState(false);
+  /** カードを選ぶ途中で、選択画面をたたんで盤面を確認している */
+  const [peek, setPeek] = useState(false);
+  // 選択が終わったり次の選択に進んだら、選択画面を開き直す
+  useEffect(() => setPeek(false), [run?.stepIndex, run?.stage, !!run, pending?.stage, !!pending]);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   /** 起動時のメニュー画面（デッキ選択・始め方） */
@@ -480,6 +487,10 @@ export function App() {
     const scriptedActivation = !!script?.effects?.some((e) => e.isCardActivation);
     for (const e of script?.effects ?? []) {
       if (!effectAvailable(state, uid, e)) continue;
+      if (effectUsedUp(state, ctx, uid, e)) {
+        btns.push({ label: e.label, used: true, onClick: () => {} });
+        continue;
+      }
       // 手札から発動する魔法・罠、自身を出す効果はドラッグでも使える
       const dest: DropDest | undefined =
         e.isCardActivation && loc.zone === 'hand'
@@ -708,8 +719,49 @@ export function App() {
 
   // ===== ドラッグ＆ドロップ =====
 
+  const DEST_OF: Record<string, DropDest> = {
+    mz: 'monster',
+    emz: 'monster',
+    stz: 'stz',
+    fz: 'fz',
+    hand: 'hand',
+    gy: 'gy',
+    banished: 'banished',
+    deck: 'deck',
+  };
+
+  /** そのカードを置ける場所か（置けない場所はドラッグしても反応しない） */
+  const dropCheckerFor = (uid: string): ((target: string) => boolean) => {
+    const from = findLocation(state, uid);
+    if (!from) return () => false;
+    const allowFree = oreRule || !session.strict;
+    const dests = new Set(
+      buttonsFor(uid)
+        .filter((b) => b.dest && (allowFree || !b.free))
+        .map((b) => b.dest!),
+    );
+    const d = def(uid);
+    // 手札からアドバンス召喚するモンスターは、リリースするモンスターのゾーンにも出せる
+    const tribute = from.zone === 'hand' && d.kind === 'monster' && tributesRequired(d.level ?? 0) > 0;
+    return (target) => {
+      const [zone, idx] = target.split(':');
+      const dest = DEST_OF[zone];
+      if (!dest || !dests.has(dest)) return false;
+      if (from.zone === zone && idx === undefined) return false;
+      if (idx === undefined) return true;
+      const i = Number(idx);
+      if ('index' in from && from.zone === zone && from.index === i) return false;
+      if (zone === 'stz') return !state.stz[i];
+      if (zone === 'emz') return from.zone === 'extra' && !state.emz[i] && !state.opp?.emz?.[i];
+      if (zone === 'mz') return !state.mz[i] || (tribute && !state.cards[state.mz[i]!].opp);
+      return true;
+    };
+  };
+
   const onDrop = (uid: string, target: string, x: number, y: number) => {
     if (run || pending || !state.cards[uid]) return;
+    // 置けない場所に落とした時は何もしない
+    if (!dropCheckerFor(uid)(target)) return;
     const [zone, idx] = target.split(':');
     const loc: Location | null =
       zone === 'mz' || zone === 'emz' || zone === 'stz'
@@ -717,29 +769,14 @@ export function App() {
         : zone === 'fz'
           ? { zone: 'fz' }
           : null;
-    const destOf: Record<string, DropDest> = {
-      mz: 'monster',
-      emz: 'monster',
-      stz: 'stz',
-      fz: 'fz',
-      hand: 'hand',
-      gy: 'gy',
-      banished: 'banished',
-      deck: 'deck',
-    };
-    const dest = destOf[zone];
+    const dest = DEST_OF[zone];
     const from = findLocation(state, uid);
     if (!dest || (from && loc && JSON.stringify(from) === JSON.stringify(loc))) return;
     if (from?.zone === zone && !loc) return;
-    const all = buttonsFor(uid).filter((b) => b.dest === dest);
     // 俺ルールがオフなら、本来できない移動はドラッグでもしない（ルールチェックがオフなら自由）
     const allowFree = oreRule || !session.strict;
-    if (!allowFree && all.length && all.every((b) => b.free)) {
-      setError(`${def(uid).name}はそこに置けません（カードの「俺ルール」から操作できます）`);
-      return;
-    }
-    const options = all
-      .filter((b) => allowFree || !b.free)
+    const options = buttonsFor(uid)
+      .filter((b) => b.dest === dest && (allowFree || !b.free))
       .map((b) => ({
         ...b,
         onClick: () => {
@@ -748,12 +785,18 @@ export function App() {
           presetRef.current = null;
         },
       }));
-    if (options.length === 0) setError(`${def(uid).name}はそこに置けません`);
-    else if (options.length === 1) options[0].onClick();
+    if (options.length === 1) options[0].onClick();
     else setDropMenu({ x, y, title: def(uid).name, options });
   };
 
   const { drag, dragStart, onClickCapture } = useDrag(onDrop);
+  // ドラッグ中のカードを置ける場所（光らせる）
+  const dropOk = useMemo(
+    () => (drag && state.cards[drag.uid] ? dropCheckerFor(drag.uid) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drag?.uid, state, oreRule],
+  );
+  const dropTarget = drag?.target && dropOk?.(drag.target) ? drag.target : null;
 
   // ===== 練習（次の手の表示） =====
 
@@ -975,6 +1018,7 @@ export function App() {
     return Math.min(w + 6, (avail - w) / (n - 1));
   })();
 
+  const peekButton = <button onClick={() => setPeek(true)}>フィールドを確認</button>;
   const actionPanel = pending ? (
     <div className="action-panel">
       <div className="ap-title">{pending.title}</div>
@@ -992,6 +1036,7 @@ export function App() {
         {pending.stage === 'pick' && pending.pickFrom?.includes('gy') && (
           <button onClick={() => setPile('gy')}>墓地を開く</button>
         )}
+        {peekButton}
         <button onClick={() => setPending(null)}>キャンセル</button>
       </div>
     </div>
@@ -1046,6 +1091,7 @@ export function App() {
               {m}
             </button>
           ))}
+        {peekButton}
         {run.resolving ? (
           <>
             <button
@@ -1274,7 +1320,13 @@ export function App() {
               {naviSearching || coachBar}
             </div>
           )}
-          {actionPanel}
+          {peek && (run || pending) ? (
+            <button className="peek-back primary" onClick={() => setPeek(false)}>
+              選択に戻る（{(run ?? pending)!.title}）
+            </button>
+          ) : (
+            actionPanel
+          )}
           <div className="board-wrap">
             <Board
               state={view}
@@ -1286,7 +1338,8 @@ export function App() {
               onZoneClick={onZoneClick}
               onPileClick={(z) => setPile(pile === z ? null : z)}
               dragStart={busy ? undefined : dragStart}
-              dropTarget={drag?.target}
+              dropTarget={dropTarget}
+              dropOk={dropOk}
               hintCards={hl.cards}
               hintZones={hl.zones}
               chainOf={chainOf}
@@ -1299,7 +1352,7 @@ export function App() {
 
         <section
           ref={handRef}
-          className={`hand-strip ${drag?.target === 'hand' ? 'drop-over' : ''}`}
+          className={`hand-strip ${dropTarget === 'hand' ? 'drop-over' : dropOk?.('hand') ? 'drop-ok' : ''}`}
           data-drop="hand"
           data-pile="hand"
         >
@@ -1416,7 +1469,12 @@ export function App() {
                     {list.map((b) => (
                       <button
                         key={b.label}
-                        className={[b.primary ? 'primary' : '', b.label.length > 10 ? 'wide' : ''].join(' ')}
+                        className={[
+                          b.primary ? 'primary' : '',
+                          b.used ? 'used' : '',
+                          b.label.length > 10 || b.used ? 'wide' : '',
+                        ].join(' ')}
+                        disabled={b.used}
                         onClick={() => {
                           b.onClick();
                           setSelected(null);
@@ -1424,6 +1482,7 @@ export function App() {
                           setFreeOpen(false);
                         }}
                       >
+                        {b.used && <span className="used-tag">使用済み</span>}
                         {b.label}
                       </button>
                     ))}
