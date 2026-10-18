@@ -80,9 +80,9 @@ function useEffect(...args: Parameters<typeof tryEffect>): GameState {
 const put = (s: GameState, uid: string, index: number) => act(s, { type: 'SPECIAL_SUMMON', uid, to: mz(index) });
 
 describe('ブルーアイズ', () => {
-  it('デッキはメイン42枚・EX14枚で登録できる', () => {
+  it('デッキはメイン42枚・EX15枚で登録できる', () => {
     expect(BLUE_EYES_DECK.main).toHaveLength(42);
-    expect(BLUE_EYES_DECK.extra).toHaveLength(14);
+    expect(BLUE_EYES_DECK.extra).toHaveLength(15);
     expect(deckProblems(BLUE_EYES_DECK, CARD_DB)).toEqual([]);
   });
 
@@ -345,5 +345,25 @@ describe('魔法・罠を置く場所', () => {
       .filter((r) => r.ok && r.state.stz.some((u) => u && name(r.state, u) === '真の光'));
     expect(placed.length).toBeGreaterThan(0);
     for (const r of placed) if (r.ok) expect(r.state.stz.findIndex((u) => u && name(r.state, u) === '真の光')).toBe(2);
+  });
+});
+
+describe('神を超えたしもべ－青眼の究極竜', () => {
+  it('究極融合で青眼の白龍3体から融合召喚でき、3回攻撃できる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['71143015', '89631139']);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青眼の白龍'), to: { zone: 'gy' } });
+    s = useEffect(s, find(s, 'hand', '究極融合'), '発動', [
+      { pick: ['神を超えたしもべ－青眼の究極竜'] },
+      { pick: ['青眼の白龍', '青眼の白龍', '青眼の白龍'], zone: mz(1) },
+    ]);
+    const servant = s.mz[1]!;
+    expect(name(s, servant)).toBe('神を超えたしもべ－青眼の究極竜');
+    // 3回攻撃（次の自分のターンのバトルフェイズで確認）
+    s = act(s, { type: 'END_TURN' });
+    s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
+    s = { ...s, opponentLp: 100000 }; // 2回の攻撃で勝ってしまうので、相手のLPを増やして回数だけ確かめる
+    for (let i = 0; i < 3; i++) s = act(s, { type: 'ATTACK', uid: servant });
+    expect(applyAction(s, { type: 'ATTACK', uid: servant }, ctx)).toMatchObject({ ok: false });
   });
 });

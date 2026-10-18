@@ -123,10 +123,7 @@ export const PRE_LIMIT_TOON_DECK: DeckList = {
   ],
 };
 
-/**
- * 友達のブルーアイズ（デッキシートのPDFから）。
- * 「神を超えたしもべ－青眼の究極竜」はカードデータベースに無いため未収録（EX14枚）
- */
+/** 友達のブルーアイズ（デッキシートのPDFから） */
 export const BLUE_EYES_DECK: DeckList = {
   name: 'ブルーアイズ',
   main: [
@@ -174,6 +171,7 @@ export const BLUE_EYES_DECK: DeckList = {
     ...n('16699558', 1), // 藍眼の銀龍
     ...n('10515412', 1), // ライトストーム・ドラゴン
     ...n('65424481', 1), // 氷結界の龍胤 エクハジャール
+    ...n('custom-gods-servant-blue-eyes-ultimate', 1), // 神を超えたしもべ－青眼の究極竜
   ],
 };
 

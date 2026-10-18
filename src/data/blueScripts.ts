@@ -155,6 +155,12 @@ const FUSION: Record<string, FusionRecipe> = {
     candidate: isBE,
     check: (env, m) => (m.length === 3 && m.every((u) => isBE(env, u)) ? null : '「青眼の白龍」3体が必要です'),
   },
+  // 神を超えたしもべ－青眼の究極竜
+  'custom-gods-servant-blue-eyes-ultimate': {
+    range: [3, 3],
+    candidate: isBE,
+    check: (env, m) => (m.length === 3 && m.every((u) => isBE(env, u)) ? null : '「青眼の白龍」3体が必要です'),
+  },
   // ブルーアイズ・タイラント・ドラゴン
   '11443677': {
     range: [2, 2],
@@ -991,6 +997,21 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
 
   // 青眼の究極竜
   '23995346': { materialCheck: fusionCheck('23995346') },
+
+  // 神を超えたしもべ－青眼の究極竜（①は耐性、②は3回攻撃なので発動する効果は③だけ）
+  'custom-gods-servant-blue-eyes-ultimate': {
+    materialCheck: fusionCheck('custom-gods-servant-blue-eyes-ultimate'),
+    effects: [
+      {
+        ...logOnly(
+          '③ バトルフェイズに、相手のこのターン特殊召喚されたモンスターか裏側カード1枚を破壊（相手用・1ターンに3度）',
+          ['monster'],
+          '神を超えたしもべ－青眼の究極竜③',
+        ),
+        limit: 3,
+      },
+    ],
+  },
 
   // ブルーアイズ・タイラント・ドラゴン
   '11443677': {

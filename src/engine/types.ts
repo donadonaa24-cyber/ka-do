@@ -51,6 +51,8 @@ export interface CardDef {
   cannotAttackTurnSummoned?: boolean;
   /** 攻撃宣言時に払うLP */
   attackCost?: number;
+  /** 1度のバトルフェイズ中に攻撃できる回数（既定 1） */
+  attacksPerBattle?: number;
   /** 「このカード名のカードは１ターンに１枚しか発動できない」 */
   oncePerTurnActivation?: boolean;
   /** チューナー2体以上でS召喚する（青眼の究極霊竜など） */

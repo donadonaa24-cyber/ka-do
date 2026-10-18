@@ -23,6 +23,10 @@ const MONSTER_VALUE: Record<string, { value: number; note?: string; needsWorld?:
   藍眼の銀龍: { value: 2, note: 'X素材で墓地の通常モンスターを特殊召喚' },
   'ブルーアイズ・タイラント・ドラゴン': { value: 2, note: '罠の効果を受けない・全体攻撃' },
   青眼の究極竜: { value: 1.5 },
+  '神を超えたしもべ－青眼の究極竜': {
+    value: 4,
+    note: '効果で破壊されず相手ターンは相手の効果を受けない・バトルフェイズに特殊召喚されたモンスターや伏せカードを破壊（3度）',
+  },
   'ライトストーム・ドラゴン': { value: 1.5 },
   青眼の白龍: { value: 1 },
   'トゥーン・カオス・ソルジャー': { value: 3, note: '次の自分ターンにフィールドのカード1枚を除外', needsWorld: true },

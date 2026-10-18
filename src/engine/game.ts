@@ -873,7 +873,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (state.phase !== 'BP') fail('攻撃はバトルフェイズに行います');
         if (state.turn === 1) fail('先攻1ターン目は攻撃できません');
         if (!inst.faceUp || inst.position !== 'atk') fail('表側攻撃表示のモンスターのみ攻撃できます');
-        const maxAttacks = inst.doubleAttackTurn === state.turn ? 2 : 1;
+        const maxAttacks = Math.max(def.attacksPerBattle ?? 1, inst.doubleAttackTurn === state.turn ? 2 : 1);
         if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks)
           fail('このモンスターは既に攻撃しています');
         if (def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn)
