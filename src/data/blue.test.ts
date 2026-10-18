@@ -248,3 +248,36 @@ describe('ブルーアイズのルートガイド', () => {
     expect(run(['17947697', '14558127', '10045474', '97268402', '23434538'])).toBeNull();
   });
 });
+
+describe('ブルーアイズのルートガイド（完成形）', () => {
+  const guide = BLUE_GUIDES.find((g) => g.id === 'blue-deep-sage-full')!;
+  const fieldNames = (s: GameState) =>
+    [...s.mz, ...s.emz]
+      .filter((u): u is string => !!u)
+      .map((u) => name(s, u) + (s.cards[u].destroyAtEnd ? '（EP破壊）' : ''));
+
+  it('ディープアイズ始動：天球の聖刻印・究極竜魔導師・シフルが残る', () => {
+    const s = routeFromGuide(
+      createGame(BLUE_EYES_DECK, ctx, 2, ['67886895', '14558127', '10045474', '97268402', '23434538']),
+      ctx,
+      guide,
+      TOON_EVALUATOR,
+    )!.final;
+    expect(fieldNames(s).sort()).toEqual(
+      ['天球の聖刻印', '究極竜魔導師', '聖珖神竜 スターダスト・シフル', '青き眼の賢士'].sort(),
+    );
+    expect(s.hand.map((u) => name(s, u))).toContain('シンクロ・ランブル');
+  });
+
+  it('賢士始動（ディープアイズなし）：天球の手は飛ばし、究極霊竜はエンドフェイズに破壊される', () => {
+    const s = routeFromGuide(
+      createGame(BLUE_EYES_DECK, ctx, 2, ['8240199', '14558127', '10045474', '97268402', '23434538']),
+      ctx,
+      guide,
+      TOON_EVALUATOR,
+    )!.final;
+    expect(fieldNames(s)).toEqual(
+      expect.arrayContaining(['究極竜魔導師', '聖珖神竜 スターダスト・シフル', '青眼の究極霊竜（EP破壊）']),
+    );
+  });
+});

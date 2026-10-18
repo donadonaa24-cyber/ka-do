@@ -662,6 +662,60 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           },
         ],
       },
+      {
+        // よく使う組み合わせ：霊堂②で白き乙女を対象にし、乙女③をチェーンする（チェーン2の乙女③から処理するので、
+        // 霊堂②で墓地へ送る通常モンスターは乙女③では蘇生できない）
+        label: '② 白き乙女を対象に発動し、白き乙女③をチェーン（墓地から青眼かチューナー→通常モンスターを墓地へ）',
+        from: ['field-zone'],
+        key: '光の霊堂②',
+        limit: 1,
+        perCard: true,
+        condition: (env) =>
+          env.state.effectUses['白き乙女③']
+            ? '白き乙女③はこのターン使用済みです'
+            : ownFaceUpMonsters(env).some((u) => env.def(u).name === '白き乙女')
+              ? null
+              : '自分フィールドに白き乙女がいません',
+        steps: [
+          {
+            op: 'pick',
+            prompt: '対象にする自分フィールドの白き乙女',
+            from: ['monsters'],
+            where: (env, u) => env.state.cards[u].faceUp && env.def(u).name === '白き乙女',
+            min: 1,
+            max: 1,
+            then: (_, p) => [
+              {
+                type: 'ACTIVATE_EFFECT',
+                uid: p[0],
+                label: '③ 対象になった時：墓地から特殊召喚',
+                key: '白き乙女③',
+                limit: 1,
+              },
+            ],
+          },
+          {
+            op: 'pick',
+            prompt: 'チェーン2（白き乙女③）：墓地から特殊召喚する「青眼の白龍」か光属性・レベル1チューナー',
+            from: ['gy'],
+            where: (env, u) => isBE(env, u) || env.matches(u, LIGHT_LV1_TUNER),
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, '白き乙女の効果')],
+          },
+          {
+            op: 'pick',
+            prompt: 'チェーン1（光の霊堂②）：墓地へ送る通常モンスター（手札・デッキ）',
+            from: ['hand', 'deck'],
+            where: isNormal,
+            min: 1,
+            max: 1,
+            then: (env, p) =>
+              withShuffle(env, p, [toGy(p[0], `効果（白き乙女の攻守${(env.def(p[0]).level ?? 0) * 100}アップ）`)]),
+          },
+        ],
+      },
     ],
   },
 

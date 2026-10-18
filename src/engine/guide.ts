@@ -10,11 +10,21 @@ export interface GuideStep {
   exclude?: string[];
   /** このカード名のカードが手札にあれば、この手は飛ばす（「賢士が手札にあればサーチ不要」など） */
   skipIfInHand?: string;
+  /** このカードがこの場所に無ければ、この手は飛ばす（「ディープアイズを捨てていれば蘇生」など） */
+  requires?: { name: string; zones: ('hand' | 'gy' | 'field')[] };
 }
 
-/** 今の手札ではこの手を飛ばすか */
+/** 今の盤面ではこの手を飛ばすか */
 export function guideStepSkipped(state: GameState, ctx: Ctx, step: GuideStep): boolean {
-  return !!step.skipIfInHand && state.hand.some((u) => ctx.db[state.cards[u].defId]?.name === step.skipIfInHand);
+  const named = (us: (string | null)[], name: string) =>
+    us.some((u) => !!u && ctx.db[state.cards[u].defId]?.name === name);
+  if (step.skipIfInHand && named(state.hand, step.skipIfInHand)) return true;
+  if (step.requires) {
+    const { name, zones } = step.requires;
+    const where = { hand: state.hand, gy: state.gy, field: [...state.mz, ...state.emz] };
+    if (!zones.some((z) => named(where[z], name))) return true;
+  }
+  return false;
 }
 
 export interface Guide {
