@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { Coach } from '../engine/coach';
 
 interface Props {
+  /** 盤面の右の空きに出す（横長の画面） */
+  dockRight?: boolean;
+  /** 画面・盤面の大きさが変わったら置き場所を計算し直す */
+  layoutKey?: string;
   coach: Coach;
   done: number;
   /** 次の手を今の盤面で実行できるか */
@@ -18,6 +22,8 @@ interface Props {
 
 /** 1手ごとの解説。書いてある通りに盤面を操作すると次の手に進む */
 export function StepPopup({
+  dockRight,
+  layoutKey,
   coach,
   done,
   canDemo,
@@ -34,6 +40,42 @@ export function StepPopup({
   const total = coach.steps.length;
   /** 縮小表示：見出しとボタンだけにして、盤面と手札を広く見せる */
   const [compact, setCompact] = useState(false);
+  // 盤面に重ならない場所（右の空き、または盤面と手札の間の空き）に置く
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ style: React.CSSProperties; tight: boolean } | null>(null);
+  useLayoutEffect(() => {
+    const table = document.querySelector('.table')?.getBoundingClientRect();
+    const board = document.querySelector('.board')?.getBoundingClientRect();
+    if (!table || !board) return;
+    let next: { style: React.CSSProperties; tight: boolean };
+    const right = table.right - board.right - 24;
+    if (dockRight && right >= 260) {
+      next = {
+        style: {
+          left: board.right + 12,
+          right: 'auto',
+          top: table.top + 8,
+          bottom: 'auto',
+          transform: 'none',
+          width: Math.min(400, right),
+          maxHeight: table.height - 16,
+        },
+        tight: false,
+      };
+    } else {
+      // 盤面の下から手札の上までの空き
+      const space = Math.floor(table.bottom - board.bottom - 10);
+      next = { style: { maxHeight: Math.max(space, 150) }, tight: space < 190 };
+    }
+    setPlace((p) => (JSON.stringify(p) === JSON.stringify(next) ? p : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dockRight, layoutKey]);
+  // 空きが狭い時は最初から縮小表示にする
+  const tight = !!place?.tight;
+  useLayoutEffect(() => {
+    if (tight) setCompact(true);
+  }, [tight]);
+
   const toggle = (
     <button className="step-toggle" onClick={() => setCompact((c) => !c)} aria-pressed={compact}>
       {compact ? '詳しく' : '縮小'}
@@ -41,7 +83,15 @@ export function StepPopup({
   );
 
   return (
-    <div className={`step-popup ${compact ? 'compact' : ''}`} role="dialog" aria-label="次の手の解説">
+    <div
+      ref={ref}
+      className={`step-popup ${compact ? 'compact' : ''} ${dockRight && place?.style.left ? 'dock-right' : ''} ${
+        tight ? 'tight' : ''
+      }`}
+      style={place?.style}
+      role="dialog"
+      aria-label="次の手の解説"
+    >
       <div className="step-dots" aria-hidden="true">
         {coach.steps.map((_, i) => (
           <span key={i} className={i < done ? 'done' : i === done ? 'now' : ''} />

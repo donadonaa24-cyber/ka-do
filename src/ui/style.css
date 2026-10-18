@@ -958,14 +958,29 @@ select {
   max-height: min(48vh, calc(100% - var(--hand-h, 0px) - 110px));
   overflow-y: auto;
   z-index: 90;
-  background: var(--panel);
+  /* 少し透かして、後ろの盤面も分かるようにする */
+  background: rgba(28, 31, 40, 0.9);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border: 1px solid var(--gold);
   border-radius: 14px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+}
+/* 解説を出している間は盤面を上に寄せて、下の空きに解説を出す */
+.app.with-popup .board-wrap {
+  align-items: flex-start;
+}
+.step-popup.dock-right {
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45);
+}
+/* 空きが狭い時（相手の盤面を出している時など）はより透かす */
+.step-popup.tight {
+  background: rgba(28, 31, 40, 0.82);
+  padding: 8px 10px;
 }
 .step-dots {
   display: flex;

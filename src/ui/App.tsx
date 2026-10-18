@@ -169,7 +169,8 @@ export function App() {
   const [resolvingChain, setResolvingChain] = useState(false);
   /** ナビモード：自動で最適ルートを探し、1手ずつ解説する */
   const [navi, setNavi] = useState(false);
-  const [popupOpen, setPopupOpen] = useState(true);
+  /** 解説のポップアップ。普段は閉じて盤面で操作し、上の帯の「解説」で開く */
+  const [popupOpen, setPopupOpen] = useState(false);
   /** 最後に自動で探した盤面（同じ盤面で何度も探さないため） */
   const naviKey = useRef('');
   const { w: winWidth, h: winHeight } = useWindowSize();
@@ -823,13 +824,13 @@ export function App() {
     }
     const best = found[0];
     setCoach(coachFromRoute(best.title ?? '最適ルート', best.steps, best.summary, routeSearch.baseLog, best.finalUids));
-    setPopupOpen(true);
+    setPopupOpen(false);
     // 探し終わった結果だけに反応する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSearch.routes]);
 
-  // 次の手に進んだら解説を開く
-  useEffect(() => setPopupOpen(true), [coachDone, coach]);
+  // 次の手に進んだら解説は閉じて、盤面で操作できるようにする（完成した時だけ開いてまとめを見せる）
+  useEffect(() => setPopupOpen(!!coach && coachDone >= coach.steps.length), [coachDone, coach]);
 
   const nameOf = (uid: string) => (state.cards[uid] ? def(uid).name : 'トークン');
   const coachWhy = coach ? explainStep(coach, coachDone, nameOf) : [];
@@ -1159,11 +1160,15 @@ export function App() {
 
   const showStepPopup =
     coach && popupOpen && !busy && !chain.length && !dropMenu && !sel && !pile && !modal && !showSetup && !home;
+  // 横に空きがあれば盤面の右に、無ければ盤面を上に寄せて下の空きに出す
+  const dockRight = winWidth >= 900;
 
   return (
     <CardImageContext.Provider value={shownImages}>
       <div
-        className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''}`}
+        className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
+          showStepPopup && !dockRight ? 'with-popup' : ''
+        }`}
         style={
           {
             '--hand-w': `${handCardWidth(winWidth, winHeight)}px`,
@@ -1286,6 +1291,8 @@ export function App() {
 
         {showStepPopup && (
           <StepPopup
+            dockRight={dockRight}
+            layoutKey={`${winWidth}x${winHeight}:${handHeight}:${showOpp}:${coachDone}`}
             coach={coach}
             done={coachDone}
             canDemo={!!coachAction}
