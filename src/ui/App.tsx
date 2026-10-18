@@ -25,6 +25,7 @@ import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
 import { HomeMenu } from './HomeMenu';
+import { ImageSettings } from './ImageSettings';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
 import {
@@ -145,7 +146,6 @@ export function App() {
   const [customDecks, setCustomDecks] = useState<SavedDeck[]>(() => loadDecks());
   const allDecks = useMemo(() => [...BUILTIN_DECKS, ...customDecks], [customDecks]);
   const deck = allDecks.find((d) => d.name === session.deckName) ?? BUILTIN_DECKS[0];
-  const deckCardIds = useMemo(() => [...new Set([...deck.main, ...deck.extra])], [deck]);
 
   const { state, appliedCount } = useMemo(() => {
     let s: GameState = createGame(deck, replayCtx, session.seed, session.fixedHand, session.handSize ?? 5);
@@ -743,17 +743,20 @@ export function App() {
 
   // ===== カード画像 =====
 
-  const setCardImage = async (cardId: string, file: File | undefined) => {
-    if (!file) return;
+  /** 保存できたら true */
+  const setCardImage = async (cardId: string, file: File | undefined): Promise<boolean> => {
+    if (!file) return false;
     try {
       const url = await fileToDataUrl(file);
       if (!saveImage(cardId, url)) {
         setError('ブラウザの保存容量が足りず、画像を保存できませんでした');
-        return;
+        return false;
       }
       setImages((m) => ({ ...m, [cardId]: url }));
+      return true;
     } catch {
       setError('画像を読み込めませんでした（JPEG・PNGなどの画像を選んでください）');
+      return false;
     }
   };
 
@@ -1522,30 +1525,16 @@ export function App() {
         {/* カード画像の設定 */}
         {modal === 'images' && (
           <div className="modal-backdrop" onClick={() => setModal(null)}>
-            <div className="modal route-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-head">
-                <h2>カード画像の設定</h2>
-                <button onClick={() => setModal(null)}>閉じる</button>
-              </div>
-              <p className="note">
-                スマホに保存したカード画像をカードごとに選べます。画像はこのブラウザの中にだけ保存されます（設定済み{' '}
-                {deckCardIds.filter((id) => shownImages[id]).length}/{deckCardIds.length}）。
-              </p>
-              <div className="img-settings">
-                {deckCardIds.map((id) => (
-                  <div key={id} className="img-item">
-                    <CardView def={CARD_DB[id]} small />
-                    <div className="grow">
-                      <span>{CARD_DB[id].name}</span>
-                      {imagePicker(id, shownImages[id] ? '変更' : '画像を選ぶ', true)}
-                      {images[id] && (
-                        <button onClick={() => clearCardImage(id)}>{BUILTIN_IMAGES[id] ? '最初に戻す' : '外す'}</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ImageSettings
+              images={images}
+              shown={shownImages}
+              builtin={BUILTIN_IMAGES}
+              decks={allDecks}
+              current={deck.name}
+              onSet={(id, f) => setCardImage(id, f)}
+              onClear={clearCardImage}
+              onClose={() => setModal(null)}
+            />
           </div>
         )}
       </div>

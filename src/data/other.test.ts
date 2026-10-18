@@ -148,3 +148,16 @@ describe('禁止制限前トゥーン', () => {
     expect(findLocation(s, rabbit)).toEqual({ zone: 'mz', index: 2 });
   });
 });
+
+describe('カード画像のまとめて読み込み', () => {
+  it('ファイル名からカードを見つける（カード名・カードID・表記ゆれ）', async () => {
+    const { matchCard } = await import('../ui/cardImages');
+    expect(matchCard('青眼の白龍.jpg')).toBe('89631139');
+    expect(matchCard('89631139.png')).toBe('89631139');
+    expect(matchCard('ドロール&ロックバード.jpeg')).toBe('94145021');
+    expect(matchCard('IMG_白き乙女_2.jpg')).toBe('17947697');
+    // 長い名前を優先（「青眼の白龍」ではなく「白き幻獣－青眼の白龍」）
+    expect(matchCard('白き幻獣-青眼の白龍.jpg')).toBe('30397786');
+    expect(matchCard('関係ない写真.jpg')).toBeNull();
+  });
+});

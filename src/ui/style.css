@@ -15,7 +15,9 @@
   --vh: 100vh;
   /* 盤面のカードの大きさ：画面の幅（7列）と高さ（3段＋上部バー・次の手・手札）の小さい方 */
   --hand-w: 72px;
-  --reserve: calc(84px + 78px + var(--hand-w) * 1.43 + 44px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+  --reserve: calc(
+    84px + 78px + var(--hand-w) * 1.43 + 44px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+  );
   --card-w: max(
     30px,
     min(calc((min(100vw, 780px) - 24px) / 7 - 7px), calc((var(--vh) - var(--reserve)) / 3 / 1.43 - 9px), 92px)
@@ -45,7 +47,12 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Hiragino Sans',
+    'Noto Sans JP',
+    sans-serif;
   font-size: 14px;
   overscroll-behavior: none;
 }
@@ -1265,4 +1272,30 @@ button.danger {
   max-width: 9em;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.img-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.img-tools input[type='search'] {
+  flex: 1;
+  min-width: 0;
+}
+.file-btn.wide-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 10px;
+}
+.file-btn.disabled {
+  opacity: 0.6;
+}
+.img-report {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
 }
