@@ -1327,3 +1327,158 @@ button.danger {
   white-space: nowrap;
   padding-inline: 6px;
 }
+
+/* デッキ編集：カードのマス＋タップで出る操作 */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
+}
+.deck-tile-card {
+  position: relative;
+  padding: 2px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+}
+.deck-tile-card .card.small {
+  --card-w: 56px;
+  --card-h: 80px;
+  font-size: 7px;
+  pointer-events: none;
+}
+.deck-tile-card.on {
+  border-color: var(--gold);
+  background: rgba(242, 193, 78, 0.15);
+}
+.deck-tile-card.dim .card {
+  opacity: 0.55;
+}
+.tile-count,
+.tile-side {
+  position: absolute;
+  right: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 999px;
+  line-height: 18px;
+}
+.tile-count {
+  bottom: 0;
+  background: var(--gold);
+  color: #1a1400;
+}
+.tile-side {
+  top: 0;
+  background: #3a5f9a;
+  color: #e6f0ff;
+}
+.deck-action {
+  position: sticky;
+  bottom: -14px;
+  margin: 0 -14px -14px;
+  padding: 10px 14px 14px;
+  background: var(--panel2);
+  border-top: 1px solid var(--gold);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.45);
+}
+.deck-action-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.deck-action-head .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.deck-action-btns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px;
+}
+.deck-action-btns button {
+  padding: 10px 8px;
+  font-size: 14px;
+}
+.deck-action-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  white-space: pre-wrap;
+  max-height: 5.2em;
+  overflow-y: auto;
+}
+.deck-tabs button.bad {
+  color: var(--danger);
+}
+.deck-modal .modal-head {
+  position: sticky;
+  top: -14px;
+  z-index: 3;
+  margin: -14px -14px 0;
+  padding: 14px 14px 8px;
+  background: var(--panel);
+}
+
+/* ===== 相手の盤面（練習用） ===== */
+/* 相手の2段が増えるので、5段が収まる大きさにする */
+.app.with-opp {
+  --card-w: max(
+    26px,
+    min(calc((min(100vw, 780px) - 24px) / 7 - 7px), calc((var(--vh) - var(--reserve)) / 5 / 1.43 - 7px), 80px)
+  );
+}
+.board.with-opp {
+  gap: 2px;
+}
+.zone.opp-zone {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.05);
+  cursor: pointer;
+}
+.zone.opp-zone .zone-label {
+  color: #d99;
+}
+.btn-grid button.on {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.18);
+}
+.opp-generic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.opp-place input[type='search'] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: inherit;
+  font-size: 16px;
+}
+.opp-found {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+.opp-found-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 4px 6px;
+}
+.opp-found-item span {
+  font-size: 13px;
+  min-width: 0;
+}

@@ -47,7 +47,7 @@ export function ImageSettings({ images, shown, builtin, decks, current, onSet, o
   /** タブの中の全カード（検索・未設定の絞り込み前） */
   const tabIds = useMemo(() => {
     const deck = decks.find((d) => d.name === tab);
-    return deck ? [...new Set([...deck.main, ...deck.extra])] : EDITABLE_CARDS.map((c) => c.id);
+    return deck ? [...new Set([...deck.main, ...deck.extra, ...(deck.side ?? [])])] : EDITABLE_CARDS.map((c) => c.id);
   }, [decks, tab]);
   const setCount = tabIds.filter((id) => shown[id]).length;
   const ids = useMemo(() => {

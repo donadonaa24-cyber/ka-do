@@ -1,6 +1,6 @@
 import { getDef, type Ctx } from '../engine/game';
 import { linkedMainZones } from '../engine/rules';
-import type { GameState, Location, PileZone } from '../engine/types';
+import type { GameState, Location, OppPile, PileZone } from '../engine/types';
 import { CardView } from './CardView';
 
 interface Props {
@@ -23,6 +23,11 @@ interface Props {
   hintZones?: Location[];
   /** チェーンに積まれているカード → チェーン番号 */
   chainOf?: Record<string, number>;
+  /** 相手の盤面（練習用）を表示する */
+  showOpp?: boolean;
+  /** 相手の空いているゾーンを押した（カードを置く） */
+  onOppZoneClick?: (loc: Location) => void;
+  onOppPileClick?: (zone: OppPile) => void;
 }
 
 export function Board({
@@ -39,6 +44,9 @@ export function Board({
   hintCards = [],
   hintZones = [],
   chainOf = {},
+  showOpp = false,
+  onOppZoneClick,
+  onOppPileClick,
 }: Props) {
   const isHintZone = (loc: Location) =>
     hintZones.some((z) => z.zone === loc.zone && ('index' in z ? z.index : -1) === ('index' in loc ? loc.index : -1));
@@ -92,8 +100,67 @@ export function Board({
     );
   };
 
+  const opp = state.opp;
+  /** 相手のゾーン：空いていれば押してカードを置く。相手のカードは効果の対象に選べる */
+  const oppSlot = (loc: Location, uid: string | null, label: string, extraCls = '') => (
+    <div
+      className={`zone opp-zone ${extraCls} ${uid && hintCards.includes(uid) ? 'hint' : ''}`}
+      onClick={() => (uid ? onCardClick(uid) : onOppZoneClick?.(loc))}
+    >
+      {uid ? (
+        <CardView
+          def={getDef(state, ctx, uid)}
+          inst={state.cards[uid]}
+          selected={selected === uid}
+          highlighted={picked.includes(uid)}
+        />
+      ) : (
+        <span className="zone-label">{label}</span>
+      )}
+      {uid && chainOf[uid] ? <span className="chain-badge">C{chainOf[uid]}</span> : null}
+    </div>
+  );
+  const oppPile = (zone: OppPile, label: string) => {
+    const list = opp?.[zone === 'ogy' ? 'gy' : zone === 'obanished' ? 'banished' : 'hand'] ?? [];
+    const top = zone === 'ohand' ? undefined : list[list.length - 1];
+    return (
+      <div className="zone pile opp-zone" onClick={() => onOppPileClick?.(zone)}>
+        {top ? (
+          <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} />
+        ) : (
+          <div className={`card ${zone === 'ohand' && list.length ? 'f-back' : 'empty-pile'}`} />
+        )}
+        <span className="pile-count">
+          {label} {list.length}
+        </span>
+      </div>
+    );
+  };
+  // 相手から見て左端がM1なので、こちらからは左右反転して並べる
+  const mirrored = [4, 3, 2, 1, 0];
+
   return (
-    <div className="board">
+    <div className={`board ${showOpp ? 'with-opp' : ''}`}>
+      {showOpp && (
+        <>
+          {/* 相手の魔法＆罠ゾーン */}
+          {oppPile('ohand', '相手手札')}
+          {mirrored.map((i) => (
+            <div key={`ostz${i}`} className="zone-wrap">
+              {oppSlot({ zone: 'ostz', index: i }, opp?.stz[i] ?? null, '相手魔罠')}
+            </div>
+          ))}
+          {oppPile('obanished', '相手除外')}
+          {/* 相手のメインモンスターゾーン */}
+          {oppPile('ogy', '相手墓地')}
+          {mirrored.map((i) => (
+            <div key={`omz${i}`} className="zone-wrap">
+              {oppSlot({ zone: 'omz', index: i }, opp?.mz[i] ?? null, '相手M', 'mz')}
+            </div>
+          ))}
+          {oppSlot({ zone: 'ofz' }, opp?.fz ?? null, '相手F', 'fz')}
+        </>
+      )}
       {/* 1段目: EXモンスターゾーン */}
       <div className="zone blank" />
       <div className="zone blank" />

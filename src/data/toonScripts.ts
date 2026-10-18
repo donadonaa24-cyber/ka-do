@@ -523,8 +523,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
-            prompt: 'リリースする自分フィールドのモンスター',
-            from: ['monsters'],
+            prompt: 'リリースするモンスター（「トゥーン・ワールド」があれば相手のモンスターも選べる）',
+            from: ['monsters', 'oppMonsters'],
+            where: (env, u) => !env.state.cards[u].opp || env.toonWorld,
             min: 1,
             max: 1,
             then: (_, p) => p.map((u) => toGy(u, 'リリース')),

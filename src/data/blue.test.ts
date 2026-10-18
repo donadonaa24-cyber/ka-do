@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   afterPick,
   completeStep,
+  fizzleTop,
   type RunResult,
   type Running,
   startEffect,
+  startResolve,
   stepCandidates,
 } from '../engine/effectRunner';
 import {
@@ -310,8 +312,13 @@ describe('相手ターン（妨害の練習）', () => {
     const beast = s.mz[z]!;
     expect(name(s, beast)).toBe('白き幻獣－青眼の白龍');
     expect(s.cards[beast].position).toBe('def');
-    // 白き幻獣②（相手モンスター全破壊）は相手がいないので記録のみ
-    expect(typeof tryEffect(s, beast, '② 手札・デッキから特殊召喚した時')).not.toBe('string');
+    // 白き幻獣②（相手モンスター全破壊）は相手モンスターがいないと使えない
+    expect(tryEffect(s, beast, '② 手札・デッキから特殊召喚した時')).toMatch(/相手フィールドにモンスターがいません/);
+    // 練習用に相手モンスターを置くと、破壊して相手の墓地へ送れる
+    s = act(s, { type: 'OPP_PLACE', defId: '89631139', to: { zone: 'omz', index: 2 }, faceUp: true });
+    s = useEffect(s, beast, '② 手札・デッキから特殊召喚した時');
+    expect(s.opp!.mz.every((u) => !u)).toBe(true);
+    expect(s.opp!.gy.length).toBe(1);
     // 自分のターンに戻るとドローする
     const hand = s.hand.length;
     s = act(s, { type: 'END_TURN' });
@@ -408,5 +415,44 @@ describe('ブルーアイズのサイドデッキ', () => {
     t = act(t, { type: 'PROC_SUMMON', uid: twin, proc: 0, materials: [t.mz[0]!, t.mz[1]!], to: mz(0) });
     expect(name(t, t.mz[0]!)).toBe('青眼の双爆裂龍');
     expect(t.gy.filter((u) => name(t, u) === '青眼の白龍')).toHaveLength(2);
+  });
+});
+
+describe('究極融合（バグ報告）', () => {
+  const fusion = (s: GameState) => s.hand.find((u) => name(s, u) === '究極融合')!;
+  const effect = CARD_SCRIPTS['71143015'].effects![0];
+
+  it('融合できる組み合わせが無ければ発動できない（空打ちしない）', () => {
+    const s = createGame(BLUE_EYES_DECK, ctx, 1, ['71143015', '14558127']);
+    expect(tryEffect(s, fusion(s), '発動')).toMatch(/融合召喚できる/);
+  });
+
+  it('青眼の白龍2体がいれば発動でき、チェーンの解決中に素材がいなくなれば不発になる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['71143015']);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 0);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 1);
+    const card = fusion(s);
+    const r = startEffect(s, ctx, card, effect, undefined, 'force');
+    expect(r.kind).toBe('done');
+    if (r.kind !== 'done') return;
+    s = act(s, r.action);
+    expect(s.chain.length).toBe(1);
+    // 不発にする：チェーンが消え、究極融合は墓地へ
+    const fizzled = act(s, fizzleTop(s, ctx)!);
+    expect(fizzled.chain.length).toBe(0);
+    expect(fizzled.gy).toContain(card);
+    // 素材が無くなってから解決すると、選べるカードが無いので不発
+    for (const u of [s.mz[0]!, s.mz[1]!]) s = act(s, { type: 'MOVE', uid: u, to: { zone: 'banished' } });
+    const run = startResolve(s, ctx);
+    expect(run.kind).toBe('running');
+    if (run.kind !== 'running') return;
+    const twin = stepCandidates(run.run, ctx).find((u) => name(s, u) === '青眼の双爆裂龍')!;
+    const done = afterPick({ ...run.run, picked: [twin] }, ctx);
+    expect(done.kind).toBe('done');
+    if (done.kind !== 'done') return;
+    s = act(s, done.action);
+    expect(s.chain.length).toBe(0);
+    expect(s.gy).toContain(card);
+    expect(s.log.some((l) => l.text.includes('不発'))).toBe(true);
   });
 });

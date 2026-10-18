@@ -37,7 +37,20 @@ export interface ProcedureDef {
   validate: (env: Env, materials: string[]) => string | null;
 }
 
-export type PickZone = 'deck' | 'hand' | 'gy' | 'banished' | 'extra' | 'monsters' | 'spelltraps' | 'field';
+export type PickZone =
+  | 'deck'
+  | 'hand'
+  | 'gy'
+  | 'banished'
+  | 'extra'
+  | 'monsters'
+  | 'spelltraps'
+  | 'field'
+  // 相手のカード（練習用に置いたもの）
+  | 'oppMonsters'
+  | 'oppSpelltraps'
+  | 'oppField'
+  | 'oppGy';
 
 /** 効果処理の1ステップ。選択が必要なものはUIで選ばせ、結果をアクションに変換する */
 export type Step =

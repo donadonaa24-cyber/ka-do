@@ -18,13 +18,14 @@ import {
 } from '../engine/game';
 import { randomSeed } from '../engine/rng';
 import { tributesRequired } from '../engine/rules';
-import type { BattlePosition, GameState, Location, PileZone } from '../engine/types';
+import type { BattlePosition, GameState, Location, OppPile, PileZone } from '../engine/types';
 import { isExtraDeckCard, PHASE_LABEL } from '../engine/types';
 import { Board } from './Board';
 import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
 import { HomeMenu } from './HomeMenu';
+import { OppPlaceSheet } from './OppPlaceSheet';
 import { ImageSettings } from './ImageSettings';
 import { RoutePanel, useRouteSearch } from './RoutePanel';
 import { useDrag } from './useDrag';
@@ -50,6 +51,7 @@ import {
 import { StepPopup } from './StepPopup';
 import {
   chainableEffects,
+  fizzleTop,
   startResolve,
   afterPick,
   completeStep,
@@ -109,7 +111,25 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [run, setRun] = useState<Running | null>(null);
-  const [pile, setPile] = useState<PileZone | null>(null);
+  const [pile, setPile] = useState<PileZone | OppPile | null>(null);
+  /** 相手の盤面を手で置く練習モード */
+  const [oppMode, setOppModeState] = useState(() => {
+    try {
+      return localStorage.getItem('ygo-opp-mode') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setOppMode = (on: boolean) => {
+    setOppModeState(on);
+    try {
+      localStorage.setItem('ygo-opp-mode', on ? '1' : '0');
+    } catch {
+      // 保存できなくても今の画面では使える
+    }
+  };
+  /** カードを置こうとしている相手のゾーン */
+  const [oppPlace, setOppPlace] = useState<Location | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   /** 起動時のメニュー画面（デッキ選択・始め方） */
@@ -244,6 +264,8 @@ export function App() {
     if (r.kind === 'error') {
       setError(r.error);
       setRun(null);
+      // 解決中のエラーで同じ解決を繰り返さないように止める
+      setResolvingChain(false);
     } else if (r.kind === 'running') {
       setRun(r.run);
     } else {
@@ -381,11 +403,43 @@ export function App() {
     return btns;
   };
 
+  /** 練習用に置いた相手のカードの操作 */
+  const oppButtons = (uid: string, loc: Location): Btn[] => {
+    const inst = state.cards[uid];
+    const onField = loc.zone === 'omz' || loc.zone === 'ostz' || loc.zone === 'ofz';
+    const btns: Btn[] = [];
+    if (onField) {
+      btns.push({ label: '破壊する（相手の墓地へ）', onClick: () => dispatch(move(uid, { zone: 'gy' }, '破壊')) });
+      btns.push({ label: '除外する', onClick: () => dispatch(move(uid, { zone: 'banished' }, '除外')) });
+      btns.push({ label: '手札に戻す', onClick: () => dispatch(move(uid, { zone: 'hand' }, 'バウンス')) });
+      if (loc.zone === 'omz') {
+        if (inst.faceUp)
+          btns.push({
+            label: inst.position === 'atk' ? '守備表示にする' : '攻撃表示にする',
+            onClick: () =>
+              dispatch({ type: 'OPP_EDIT', uid, faceUp: true, position: inst.position === 'atk' ? 'def' : 'atk' }),
+          });
+        btns.push({
+          label: inst.faceUp ? '裏側守備表示にする' : '表側にする',
+          onClick: () => dispatch({ type: 'OPP_EDIT', uid, faceUp: !inst.faceUp, position: 'def' }),
+        });
+      } else {
+        btns.push({
+          label: inst.faceUp ? '裏側にする' : '表側にする',
+          onClick: () => dispatch({ type: 'OPP_EDIT', uid, faceUp: !inst.faceUp }),
+        });
+      }
+    }
+    btns.push({ label: '取り除く（置き間違い）', onClick: () => dispatch({ type: 'OPP_REMOVE', uid }) });
+    return btns;
+  };
+
   const buttonsFor = (uid: string): Btn[] => {
     const d = def(uid);
     const inst = state.cards[uid];
     const loc = findLocation(state, uid);
     if (!loc) return [];
+    if (inst.opp) return oppButtons(uid, loc);
     const btns: Btn[] = [];
     const script = CARD_SCRIPTS[d.id];
     const scriptedActivation = !!script?.effects?.some((e) => e.isCardActivation);
@@ -807,7 +861,20 @@ export function App() {
   // 効果処理中は途中経過の盤面を表示する
   const view = run?.temp ?? state;
   const vdef = (uid: string) => getDef(view, ctx, uid);
-  const pileCards = pile ? view[pile] : [];
+  const oppPileKey = (z: OppPile) => (z === 'ogy' ? 'gy' : z === 'obanished' ? 'banished' : 'hand');
+  const pileCards = !pile
+    ? []
+    : pile === 'ogy' || pile === 'obanished' || pile === 'ohand'
+      ? (view.opp?.[oppPileKey(pile)] ?? [])
+      : view[pile];
+  const opp = view.opp;
+  const showOpp =
+    oppMode ||
+    (!!opp &&
+      (opp.mz.some(Boolean) ||
+        opp.stz.some(Boolean) ||
+        !!opp.fz ||
+        opp.gy.length + opp.banished.length + opp.hand.length > 0));
   const runStep = run && currentStep(run);
   const runCands = run ? stepCandidates(run, ctx) : [];
   const [runMin, runMax] = run ? pickRange(run, ctx) : [0, 0];
@@ -912,7 +979,29 @@ export function App() {
               {m}
             </button>
           ))}
-        <button onClick={() => setRun(null)}>キャンセル</button>
+        {run.resolving ? (
+          <>
+            <button
+              onClick={() => {
+                const a = fizzleTop(state, ctx);
+                setRun(null);
+                if (a) dispatch(a);
+              }}
+            >
+              処理できない（不発にする）
+            </button>
+            <button
+              onClick={() => {
+                setResolvingChain(false);
+                setRun(null);
+              }}
+            >
+              中断（チェーン画面に戻る）
+            </button>
+          </>
+        ) : (
+          <button onClick={() => setRun(null)}>キャンセル</button>
+        )}
       </div>
     </div>
   ) : chain.length ? (
@@ -940,6 +1029,9 @@ export function App() {
       ) : (
         <div className="ap-hint">これ以上チェーンできる効果はありません。</div>
       )}
+      <div className="ap-hint">
+        効果はまだ処理されていません。チェーンしないなら「チェーンを解決する」を押してください。
+      </div>
       <div className="btn-row">
         <button className="primary" onClick={() => setResolvingChain(true)}>
           チェーンを解決する（C{chain.length}から）
@@ -1012,7 +1104,7 @@ export function App() {
   return (
     <CardImageContext.Provider value={shownImages}>
       <div
-        className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''}`}
+        className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''}`}
         style={
           {
             '--hand-w': `${handCardWidth(winWidth, winHeight)}px`,
@@ -1097,6 +1189,9 @@ export function App() {
               hintCards={hl.cards}
               hintZones={hl.zones}
               chainOf={chainOf}
+              showOpp={showOpp}
+              onOppZoneClick={(loc) => !busy && setOppPlace(loc)}
+              onOppPileClick={(z) => setPile(pile === z ? null : z)}
             />
           </div>
         </main>
@@ -1146,6 +1241,17 @@ export function App() {
           <div className="toast" role="alert" onClick={() => setError(null)}>
             {error}
           </div>
+        )}
+
+        {/* 相手のゾーンにカードを置く（練習） */}
+        {oppPlace && (
+          <OppPlaceSheet
+            to={oppPlace}
+            onPlace={(a) => {
+              if (dispatch(a)) setOppPlace(null);
+            }}
+            onClose={() => setOppPlace(null)}
+          />
         )}
 
         {/* カード詳細 */}
@@ -1222,11 +1328,11 @@ export function App() {
               {pile === 'deck' && <p className="note">左上がデッキの一番上です。</p>}
               {busy && <p className="note">カードをタップして選択できます。</p>}
               <div className="pile-cards">
-                {(pile === 'gy' || pile === 'banished' ? [...pileCards].reverse() : pileCards).map((u) => (
+                {(pile === 'deck' || pile === 'extra' ? pileCards : [...pileCards].reverse()).map((u) => (
                   <CardView
                     key={u}
                     def={vdef(u)}
-                    inst={pile === 'banished' ? view.cards[u] : undefined}
+                    inst={pile === 'banished' || pile === 'obanished' ? view.cards[u] : undefined}
                     selected={sel === u}
                     highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                     onClick={() => onCardClick(u)}
@@ -1294,6 +1400,9 @@ export function App() {
                   同じ初手で最初から
                 </button>
                 <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+                <button className={oppMode ? 'on' : ''} aria-pressed={oppMode} onClick={() => setOppMode(!oppMode)}>
+                  相手の盤面を置く（練習）：{oppMode ? 'ON' : 'OFF'}
+                </button>
                 {!state.opponentTurn && (
                   <button
                     onClick={() => {

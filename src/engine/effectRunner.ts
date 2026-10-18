@@ -28,6 +28,8 @@ export interface Running {
   tempBanished?: { uid: string; index: number; position: 'atk' | 'def' };
   /** これまでのステップで選んだカード（後のステップの条件に使う） */
   history?: string[][];
+  /** 選べるカードが無く、効果を処理できなかった（不発） */
+  fizzled?: boolean;
 }
 
 /** ステップに渡す盤面の見え方（前のステップで選んだカードを含む） */
@@ -225,6 +227,19 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
   );
 }
 
+/** チェーンの一番上の効果を処理しない（不発にする）。発動した魔法・罠は墓地へ送る */
+export function fizzleTop(state: GameState, ctx: Ctx): Action | null {
+  const link = state.chain[state.chain.length - 1];
+  if (!link) return null;
+  const name = makeEnv(state, ctx, link.uid).def(link.uid).name;
+  const actions: Action[] = state.cards[link.uid]?.pendingResolve ? [{ type: 'RESOLVE', uid: link.uid }] : [];
+  return {
+    type: 'BATCH',
+    label: `チェーン${state.chain.length}：${name}は不発`,
+    actions: [...actions, { type: 'CHAIN_POP', fizzled: true }],
+  };
+}
+
 /** コストを払い終えたところでチェーンに積むか決める */
 function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   if (run.chainMode === 'never' || run.resolving || run.effect.applied) return null;
@@ -348,6 +363,9 @@ export function advance(run: Running, ctx: Ctx): RunResult {
     const [min, max] = pickRange(cur, ctx);
     const cands = stepCandidates(cur, ctx);
     if (cands.length === 0 || max === 0) {
+      // チェーンの解決中に選べるカードが無くなっていたら、効果は不発になる
+      if (min > 0 && cur.resolving)
+        return finish({ ...cur, title: `${cur.title}（選べるカードが無いため不発）`, fizzled: true }, ctx);
       if (min > 0) return { kind: 'error', error: `選べるカードがありません（${step.prompt}）` };
       cur = cur.extraStep ? { ...cur, extraStep: undefined } : { ...cur, stepIndex: cur.stepIndex + 1 };
       continue;
@@ -376,7 +394,7 @@ function finish(run: Running, ctx: Ctx): RunResult {
     if (typeof next === 'string') return { kind: 'error', error: next };
     cur = next;
   }
-  const actions = run.resolving ? [...cur.batch, { type: 'CHAIN_POP' } as Action] : cur.batch;
+  const actions = run.resolving ? [...cur.batch, { type: 'CHAIN_POP', fizzled: run.fizzled } as Action] : cur.batch;
   return { kind: 'done', action: { type: 'BATCH', label: run.title, actions } };
 }
 

@@ -13,6 +13,7 @@ import type {
   Location,
   LogEntry,
   Phase,
+  OppBoard,
   PileZone,
   SummonGrant,
   SummonType,
@@ -111,6 +112,18 @@ export type Action =
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
   | { type: 'LEVEL_MOD'; uid: string; delta: number }
+  /** 練習用：相手の場にカードを置く（相手は存在しないので手で置く） */
+  | {
+      type: 'OPP_PLACE';
+      defId: string;
+      to: { zone: 'omz'; index: number } | { zone: 'ostz'; index: number } | { zone: 'ofz' };
+      faceUp: boolean;
+      position?: BattlePosition;
+    }
+  /** 練習用：相手のカードを取り除く */
+  | { type: 'OPP_REMOVE'; uid: string }
+  /** 練習用：相手のカードの表裏・表示形式を変える */
+  | { type: 'OPP_EDIT'; uid: string; faceUp: boolean; position?: BattlePosition }
   /** 候補から相手がランダムに1枚選び、手札に加える（ビンゴマシーンGO!GO!など） */
   | { type: 'RANDOM_TO_HAND'; uids: string[]; reason?: string }
   /** 効果処理の条件を満たさない（選び方が合わない）ことを伝える */
@@ -120,7 +133,8 @@ export type Action =
   /** 効果をチェーンに積む（コストは支払い済み） */
   | { type: 'CHAIN_PUSH'; uid: string; effect: number; stepStart: number; speed: number; label: string }
   /** 一番上のチェーンの解決が終わった */
-  | { type: 'CHAIN_POP' }
+  /** チェーンの解決を終える（fizzled：効果を処理しなかった＝不発） */
+  | { type: 'CHAIN_POP'; fizzled?: boolean }
   /** 複数の操作をまとめて1手として行う（効果処理など） */
   | { type: 'BATCH'; label?: string; actions: Action[] };
 
@@ -203,6 +217,7 @@ export function createGame(
     chain: [],
     extraLocks: [],
     opponentTurn: false,
+    opp: emptyOpp(),
   };
   if (second) {
     log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
@@ -323,6 +338,30 @@ export function makeEnv(state: GameState, ctx: Ctx, self: string): Env {
   }
 }
 
+export function emptyOpp(): OppBoard {
+  return {
+    mz: [null, null, null, null, null],
+    stz: [null, null, null, null, null],
+    fz: null,
+    gy: [],
+    banished: [],
+    hand: [],
+  };
+}
+
+/** 相手の盤面（古い記録には無いので空で補う） */
+export function oppOf(state: GameState): OppBoard {
+  if (!state.opp) state.opp = emptyOpp();
+  return state.opp;
+}
+
+/** 相手のフィールドのカード */
+export function oppFieldCards(state: GameState): string[] {
+  const o = state.opp;
+  if (!o) return [];
+  return [...o.mz, ...o.stz, o.fz].filter((u): u is string => !!u);
+}
+
 export function findLocation(state: GameState, uid: string): Location | null {
   for (const z of ['deck', 'hand', 'extra', 'gy', 'banished'] as PileZone[]) {
     if (state[z].includes(uid)) return { zone: z };
@@ -334,11 +373,31 @@ export function findLocation(state: GameState, uid: string): Location | null {
   i = state.stz.indexOf(uid);
   if (i >= 0) return { zone: 'stz', index: i };
   if (state.fz === uid) return { zone: 'fz' };
+  const o = state.opp;
+  if (o) {
+    i = o.mz.indexOf(uid);
+    if (i >= 0) return { zone: 'omz', index: i };
+    i = o.stz.indexOf(uid);
+    if (i >= 0) return { zone: 'ostz', index: i };
+    if (o.fz === uid) return { zone: 'ofz' };
+    if (o.gy.includes(uid)) return { zone: 'ogy' };
+    if (o.banished.includes(uid)) return { zone: 'obanished' };
+    if (o.hand.includes(uid)) return { zone: 'ohand' };
+  }
   return null;
 }
 
 export function isOnField(loc: Location | null): boolean {
-  return !!loc && (loc.zone === 'mz' || loc.zone === 'emz' || loc.zone === 'stz' || loc.zone === 'fz');
+  return (
+    !!loc &&
+    (loc.zone === 'mz' ||
+      loc.zone === 'emz' ||
+      loc.zone === 'stz' ||
+      loc.zone === 'fz' ||
+      loc.zone === 'omz' ||
+      loc.zone === 'ostz' ||
+      loc.zone === 'ofz')
+  );
 }
 
 export function isMonsterZone(loc: Location | null): loc is MonsterLocation {
@@ -359,10 +418,17 @@ export const ZONE_LABEL: Record<Location['zone'], string> = {
   emz: 'EXモンスターゾーン',
   stz: '魔法＆罠ゾーン',
   fz: 'フィールドゾーン',
+  omz: '相手のモンスターゾーン',
+  ostz: '相手の魔法＆罠ゾーン',
+  ofz: '相手のフィールドゾーン',
+  ogy: '相手の墓地',
+  obanished: '相手の除外',
+  ohand: '相手の手札',
 };
 
 function locLabel(loc: Location): string {
-  if (loc.zone === 'mz' || loc.zone === 'stz') return `${ZONE_LABEL[loc.zone]}${loc.index + 1}`;
+  if (loc.zone === 'mz' || loc.zone === 'stz' || loc.zone === 'omz' || loc.zone === 'ostz')
+    return `${ZONE_LABEL[loc.zone]}${loc.index + 1}`;
   if (loc.zone === 'emz') return `${ZONE_LABEL.emz}(${loc.index === 0 ? '左' : '右'})`;
   return ZONE_LABEL[loc.zone];
 }
@@ -392,6 +458,23 @@ function detach(state: GameState, uid: string) {
     case 'fz':
       state.fz = null;
       break;
+    case 'omz':
+      oppOf(state).mz[loc.index] = null;
+      break;
+    case 'ostz':
+      oppOf(state).stz[loc.index] = null;
+      break;
+    case 'ofz':
+      oppOf(state).fz = null;
+      break;
+    case 'ogy':
+    case 'obanished':
+    case 'ohand': {
+      const o = oppOf(state);
+      const key = loc.zone === 'ogy' ? 'gy' : loc.zone === 'obanished' ? 'banished' : 'hand';
+      o[key] = o[key].filter((u) => u !== uid);
+      break;
+    }
     default:
       state[loc.zone] = state[loc.zone].filter((u) => u !== uid);
   }
@@ -454,6 +537,12 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
 
   let dest = to;
   if (isExtraDeckCard(def) && (to.zone === 'hand' || to.zone === 'deck')) dest = { zone: 'extra' };
+  // 相手のカードは相手の墓地・除外・手札へ（デッキ・EXに戻るカードは手札扱い）
+  if (inst.opp) {
+    if (dest.zone === 'gy') dest = { zone: 'ogy' };
+    else if (dest.zone === 'banished') dest = { zone: 'obanished' };
+    else if (dest.zone === 'hand' || dest.zone === 'deck' || dest.zone === 'extra') dest = { zone: 'ohand' };
+  }
   const pendulumToExtra = def.pendulumScale !== undefined && isOnField(from) && to.zone === 'gy';
   if (pendulumToExtra) dest = { zone: 'extra' };
 
@@ -510,6 +599,25 @@ function placeRaw(state: GameState, uid: string, to: Location, opts: PlaceOpts) 
     case 'banished':
       inst.faceUp = opts.faceUp ?? true;
       state[to.zone].push(uid);
+      break;
+    case 'omz':
+    case 'ostz':
+      oppOf(state)[to.zone === 'omz' ? 'mz' : 'stz'][to.index] = uid;
+      inst.faceUp = opts.faceUp ?? true;
+      inst.position = opts.position ?? inst.position;
+      break;
+    case 'ofz':
+      oppOf(state).fz = uid;
+      inst.faceUp = opts.faceUp ?? true;
+      break;
+    case 'ogy':
+    case 'obanished':
+      inst.faceUp = true;
+      oppOf(state)[to.zone === 'ogy' ? 'gy' : 'banished'].push(uid);
+      break;
+    case 'ohand':
+      inst.faceUp = true;
+      oppOf(state).hand.push(uid);
       break;
   }
 }
@@ -986,6 +1094,44 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'FAIL':
       return fail(action.message);
+    case 'OPP_PLACE': {
+      const o = oppOf(state);
+      const occupied = action.to.zone === 'ofz' ? o.fz : o[action.to.zone === 'omz' ? 'mz' : 'stz'][action.to.index];
+      if (occupied) fail('そのゾーンには既にカードがあります');
+      const uid = `o${state.nextUid++}`;
+      state.cards[uid] = { ...newInstance(uid, action.defId), opp: true };
+      getDef(state, ctx, uid);
+      placeRaw(state, uid, action.to, { faceUp: action.faceUp, position: action.position ?? 'atk' });
+      const inst = state.cards[uid];
+      inst.entryId = state.nextUid++;
+      inst.enteredTurn = state.turn;
+      const what = action.faceUp ? name(state, ctx, uid) : `裏側の${name(state, ctx, uid)}`;
+      log(state, `（練習）相手の${locLabel(action.to).replace('相手の', '')}に${what}を置いた`, 'info');
+      return;
+    }
+    case 'OPP_REMOVE': {
+      const inst = state.cards[action.uid];
+      if (!inst?.opp) fail('相手のカードではありません');
+      const label = name(state, ctx, action.uid);
+      detach(state, action.uid);
+      delete state.cards[action.uid];
+      log(state, `（練習）相手の${label}を取り除いた`, 'info');
+      return;
+    }
+    case 'OPP_EDIT': {
+      const inst = state.cards[action.uid];
+      if (!inst?.opp) fail('相手のカードではありません');
+      inst.faceUp = action.faceUp;
+      if (action.position) inst.position = action.position;
+      const pos =
+        findLocation(state, action.uid)?.zone === 'omz'
+          ? `${action.faceUp ? '表側' : '裏側'}${inst.position === 'atk' ? '攻撃' : '守備'}表示`
+          : action.faceUp
+            ? '表側'
+            : '裏側';
+      log(state, `（練習）相手の${name(state, ctx, action.uid)}を${pos}にした`, 'info');
+      return;
+    }
     case 'RANDOM_TO_HAND': {
       if (!action.uids.length) return;
       state.shuffleCount += 1;
@@ -995,7 +1141,11 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       log(state, `${names}から相手がランダムに選んだ：${name(state, ctx, uid)}`, 'info');
       const from = findLocation(state, uid);
       moveCard(state, ctx, uid, { zone: 'hand' }, { reason: action.reason });
-      log(state, `${name(state, ctx, uid)}を${from ? locLabel(from) : '?'}から手札へ（${action.reason ?? '効果'}）`, 'move');
+      log(
+        state,
+        `${name(state, ctx, uid)}を${from ? locLabel(from) : '?'}から手札へ（${action.reason ?? '効果'}）`,
+        'move',
+      );
       return;
     }
     case 'LEVEL_MOD': {
@@ -1038,7 +1188,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'CHAIN_POP': {
       const link = state.chain.pop();
       if (!link) fail('解決するチェーンがありません');
-      log(state, `チェーン${state.chain.length + 1}（${ctx.db[link.defId]?.name ?? ''}）の解決が終わった`, 'info');
+      const what = `チェーン${state.chain.length + 1}（${ctx.db[link.defId]?.name ?? ''}）`;
+      log(state, action.fizzled ? `${what}は不発になった` : `${what}の解決が終わった`, 'info');
       return;
     }
   }
@@ -1282,6 +1433,14 @@ export function candidates(state: GameState, zones: string[]): string[] {
     if (z === 'monsters' || z === 'field') out.push(...fieldMonsters(state));
     if (z === 'spelltraps' || z === 'field')
       out.push(...state.stz.filter((u): u is string => !!u), ...(state.fz ? [state.fz] : []));
+    // 相手のカード（練習用に置いたもの）。「フィールドのカード」には相手のカードも含む
+    const o = state.opp;
+    if (o) {
+      if (z === 'oppMonsters' || z === 'oppField' || z === 'field') out.push(...o.mz.filter((u): u is string => !!u));
+      if (z === 'oppSpelltraps' || z === 'oppField' || z === 'field')
+        out.push(...o.stz.filter((u): u is string => !!u), ...(o.fz ? [o.fz] : []));
+      if (z === 'oppGy') out.push(...o.gy);
+    }
   }
   return [...new Set(out)];
 }

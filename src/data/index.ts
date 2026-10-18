@@ -7,10 +7,19 @@ import { OTHER_CARD_DATA } from './otherCards.generated';
 import { OTHER_SCRIPTS } from './otherScripts';
 import { BLUE_CARD_DATA } from './blueCards.generated';
 import { BLUE_SCRIPTS } from './blueScripts';
+import { OPP_GENERIC_CARDS } from './oppCards';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 
-export const ALL_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA, ...TEST_CARDS];
+export const ALL_CARDS: CardDef[] = [
+  ...TOON_CARDS,
+  ...OTHER_CARD_DATA,
+  ...BLUE_CARD_DATA,
+  ...TEST_CARDS,
+  ...OPP_GENERIC_CARDS,
+];
+
+export { OPP_GENERIC_CARDS };
 
 /** デッキ編集で選べるカード（動作確認用の架空カードは除く） */
 export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA];

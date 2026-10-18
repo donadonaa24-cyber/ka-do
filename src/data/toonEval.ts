@@ -1,4 +1,4 @@
-import { type Ctx, fieldMonsters, getDef, makeEnv } from '../engine/game';
+import { type Ctx, fieldMonsters, getDef, makeEnv, oppFieldCards } from '../engine/game';
 import type { Evaluator } from '../engine/solver';
 import type { GameState } from '../engine/types';
 
@@ -146,6 +146,12 @@ function analyze(state: GameState, ctx: Ctx) {
       score += 0.3;
       notes.push(`魔法＆罠ゾーン：${d.name}`);
     }
+  }
+  // 相手の場に残ったカード（練習用に置いたもの）は減点：除去できるならした方がよい
+  const oppLeft = oppFieldCards(state);
+  if (oppLeft.length) {
+    score -= 1.5 * oppLeft.length;
+    notes.push(`相手の場に残ったカード ${oppLeft.length}枚`);
   }
   for (const u of state.hand) score += HAND_VALUE[def(u).name] ?? 0.3;
   for (const name of new Set(state.hand.map((u) => def(u).name))) {

@@ -359,6 +359,7 @@ function signature(state: GameState): string {
     ids(state.hand),
     ids([...state.mz, ...state.emz]),
     ids(state.stz),
+    state.opp ? ids([...state.opp.mz, ...state.opp.stz, state.opp.fz]) : '',
     state.fz ? state.cards[state.fz].defId : '',
     ids(state.gy),
     ids(state.banished),

@@ -78,14 +78,32 @@ export function isExtraDeckCard(def: CardDef): boolean {
 
 export type PileZone = 'deck' | 'hand' | 'extra' | 'gy' | 'banished';
 export type FieldZone = 'mz' | 'emz' | 'stz' | 'fz';
-export type ZoneName = PileZone | FieldZone;
+export type ZoneName = PileZone | FieldZone | 'omz' | 'ostz' | 'ofz' | OppPile;
 
 export type Location =
   | { zone: PileZone }
   | { zone: 'mz'; index: number } // メインモンスターゾーン 0-4
   | { zone: 'emz'; index: number } // エクストラモンスターゾーン 0(左) / 1(右)
   | { zone: 'stz'; index: number } // 魔法＆罠ゾーン 0-4（0,4はPゾーン兼用）
-  | { zone: 'fz' }; // フィールドゾーン
+  | { zone: 'fz' } // フィールドゾーン
+  // --- 相手（練習用に手で置く） ---
+  | { zone: 'omz'; index: number } // 相手のメインモンスターゾーン
+  | { zone: 'ostz'; index: number } // 相手の魔法＆罠ゾーン
+  | { zone: 'ofz' }
+  | { zone: OppPile };
+
+export type OppPile = 'ogy' | 'obanished' | 'ohand';
+
+/** 相手の盤面（相手は存在しないので、練習のために手で置く） */
+export interface OppBoard {
+  mz: (string | null)[];
+  stz: (string | null)[];
+  fz: string | null;
+  gy: string[];
+  banished: string[];
+  /** 手札に戻ったカード */
+  hand: string[];
+}
 
 export type BattlePosition = 'atk' | 'def';
 
@@ -131,6 +149,8 @@ export interface CardInstance {
   properlySummoned: boolean;
   /** エンドフェイズに破壊される（青眼の精霊龍③で出したモンスターなど） */
   destroyAtEnd: boolean;
+  /** 相手のカード（練習用に手で置いたもの） */
+  opp?: boolean;
 }
 
 export type SummonType = 'normal' | 'special' | 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
@@ -219,6 +239,8 @@ export interface GameState {
   extraLocks: { source: string; filter: import('./filters').CardFilter }[];
   /** 相手ターン（相手は存在しないので、相手ターンに使える効果を練習するためのターン） */
   opponentTurn: boolean;
+  /** 相手の盤面（練習用。古い記録との互換のため省略可） */
+  opp?: OppBoard;
 }
 
 export interface DeckList {

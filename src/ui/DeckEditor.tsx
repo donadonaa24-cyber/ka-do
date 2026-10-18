@@ -45,6 +45,8 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
   const [tab, setTab] = useState<'main' | 'extra' | 'side' | 'add'>('main');
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  /** タップして操作中のカード */
+  const [focus, setFocus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const takenNames = (exceptId?: string) => [
@@ -167,7 +169,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
               </>
             ) : (
               <button disabled={decks.length >= MAX_DECKS} onClick={() => startNew(d)}>
-                コピーして編集
+                編集（自分のデッキとして保存）
               </button>
             )}
           </div>
@@ -198,58 +200,101 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
   // ===== デッキ編集 =====
   const problems = deckProblems(editing, CARD_DB);
   const side = editing.side ?? [];
-  const deckIds = [...new Set(sortIds(editing.main))];
-  const extraIds = [...new Set(sortIds(editing.extra))];
-  const sideIds = [...new Set(sortIds(side))];
-  /** where：この行で増減する場所。add はカードを追加する画面（デッキとサイドの両方を増減できる） */
-  const row = (id: string, where: 'deck' | 'side' | 'add') => {
+  const idsOf = (list: string[]) => [...new Set(sortIds(list))];
+  const tabIds =
+    tab === 'main'
+      ? idsOf(editing.main)
+      : tab === 'extra'
+        ? idsOf(editing.extra)
+        : tab === 'side'
+          ? idsOf(side)
+          : pool.map((c) => c.id);
+  const inDeckOf = (id: string) => countOf(isExtraDeckCard(CARD_DB[id]) ? editing.extra : editing.main, id);
+  const inSideOf = (id: string) => countOf(side, id);
+  const totalOf = (id: string) =>
+    [...editing.main, ...editing.extra, ...side].filter((x) => CARD_DB[x].name === CARD_DB[id].name).length;
+
+  /** カード一覧（画像のマス）。タップすると下に操作ボタンが出る */
+  const tile = (id: string) => {
     const def = CARD_DB[id];
-    const inDeck = countOf(isExtraDeckCard(def) ? editing.extra : editing.main, id);
-    const inSide = countOf(side, id);
-    const stepper = (w: 'deck' | 'side', n: number, label?: string) => (
-      <div className="stepper">
-        {label && <span className="stepper-label">{label}</span>}
-        <button
-          onClick={() => change(id, -1, w)}
-          disabled={n === 0}
-          aria-label={`${def.name}を${label ?? ''}から減らす`}
-        >
-          −
-        </button>
-        <span className="count">{n}</span>
-        <button onClick={() => change(id, 1, w)} aria-label={`${def.name}を${label ?? ''}に増やす`}>
-          ＋
-        </button>
-      </div>
-    );
+    const n = tab === 'side' ? inSideOf(id) : tab === 'add' ? inDeckOf(id) : inDeckOf(id);
+    const sideN = inSideOf(id);
     return (
-      <div key={`${where}:${id}`} className="pool-row">
+      <button
+        key={id}
+        className={`deck-tile-card ${focus === id ? 'on' : ''} ${tab === 'add' && n + sideN === 0 ? 'dim' : ''}`}
+        onClick={() => setFocus(focus === id ? null : id)}
+        aria-label={`${def.name}（${tab === 'side' ? 'サイド' : 'デッキ'}${n}枚）`}
+      >
         <CardView def={def} small />
-        <div className="grow">
-          <span className="pool-name">{def.name}</span>
-          <span className="meta">{statLine(def)}</span>
-          {where === 'deck' && inDeck > 0 && (
-            <button className="move-btn" onClick={() => move(id, 'side')}>
-              1枚サイドへ
-            </button>
-          )}
-          {where === 'side' && inSide > 0 && (
-            <button className="move-btn" onClick={() => move(id, 'deck')}>
-              1枚デッキへ
-            </button>
-          )}
-        </div>
-        {where === 'add' ? (
-          <div className="steppers">
-            {stepper('deck', inDeck, 'デッキ')}
-            {stepper('side', inSide, 'サイド')}
-          </div>
-        ) : (
-          stepper(where, where === 'side' ? inSide : inDeck)
-        )}
-      </div>
+        {n > 0 && <span className="tile-count">×{n}</span>}
+        {tab === 'add' && sideN > 0 && <span className="tile-side">サ{sideN}</span>}
+      </button>
     );
   };
+
+  const focusDef = focus ? CARD_DB[focus] : null;
+  const actionBar = focus && focusDef && (
+    <div className="deck-action">
+      <div className="deck-action-head">
+        <CardView def={focusDef} small />
+        <div className="grow">
+          <strong>{focusDef.name}</strong>
+          <span className="meta">{statLine(focusDef)}</span>
+          <span className="meta">
+            {isExtraDeckCard(focusDef) ? 'EX' : 'メイン'} {inDeckOf(focus)}枚・サイド {inSideOf(focus)}枚（合計
+            {totalOf(focus)}/3）
+          </span>
+        </div>
+        <button onClick={() => setFocus(null)} aria-label="閉じる">
+          ✕
+        </button>
+      </div>
+      <div className="deck-action-btns">
+        {tab === 'side' ? (
+          <>
+            <button onClick={() => change(focus, -1, 'side')} disabled={inSideOf(focus) === 0}>
+              サイドから1枚抜く
+            </button>
+            <button onClick={() => change(focus, 1, 'side')} disabled={totalOf(focus) >= 3}>
+              サイドに1枚足す
+            </button>
+            <button className="primary" onClick={() => move(focus, 'deck')} disabled={inSideOf(focus) === 0}>
+              1枚デッキへ移す
+            </button>
+          </>
+        ) : tab === 'add' ? (
+          <>
+            <button className="primary" onClick={() => change(focus, 1, 'deck')} disabled={totalOf(focus) >= 3}>
+              {isExtraDeckCard(focusDef) ? 'EX' : 'メイン'}に1枚入れる
+            </button>
+            <button onClick={() => change(focus, -1, 'deck')} disabled={inDeckOf(focus) === 0}>
+              {isExtraDeckCard(focusDef) ? 'EX' : 'メイン'}から1枚抜く
+            </button>
+            <button onClick={() => change(focus, 1, 'side')} disabled={totalOf(focus) >= 3}>
+              サイドに1枚入れる
+            </button>
+            <button onClick={() => change(focus, -1, 'side')} disabled={inSideOf(focus) === 0}>
+              サイドから1枚抜く
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => change(focus, -1, 'deck')} disabled={inDeckOf(focus) === 0}>
+              1枚抜く
+            </button>
+            <button onClick={() => change(focus, 1, 'deck')} disabled={totalOf(focus) >= 3}>
+              1枚足す
+            </button>
+            <button className="primary" onClick={() => move(focus, 'side')} disabled={inDeckOf(focus) === 0}>
+              1枚サイドへ移す
+            </button>
+          </>
+        )}
+      </div>
+      <p className="deck-action-text">{focusDef.text}</p>
+    </div>
+  );
 
   return (
     <div className="modal deck-modal" onClick={(e) => e.stopPropagation()}>
@@ -266,13 +311,6 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
           保存
         </button>
       </div>
-      <div className="deck-counts">
-        <span className={editing.main.length < 40 || editing.main.length > 60 ? 'bad' : 'good'}>
-          メイン {editing.main.length}（40〜60）
-        </span>
-        <span className={editing.extra.length > 15 ? 'bad' : 'good'}>EX {editing.extra.length}（〜15）</span>
-        <span className={side.length > 15 ? 'bad' : 'good'}>サイド {side.length}（〜15）</span>
-      </div>
       {problems.length > 0 && (
         <ul className="problems">
           {problems.map((p) => (
@@ -283,45 +321,27 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
       <div className="seg deck-tabs" role="tablist" aria-label="デッキ編集">
         {(
           [
-            ['main', `メイン ${editing.main.length}`],
-            ['extra', `EX ${editing.extra.length}`],
-            ['side', `サイド ${side.length}`],
-            ['add', '全カードから追加'],
+            ['main', `メイン ${editing.main.length}`, editing.main.length < 40 || editing.main.length > 60],
+            ['extra', `EX ${editing.extra.length}`, editing.extra.length > 15],
+            ['side', `サイド ${side.length}`, side.length > 15],
+            ['add', '＋カードを探す', false],
           ] as const
-        ).map(([t, label]) => (
+        ).map(([t, label, bad]) => (
           <button
             key={t}
             role="tab"
             aria-selected={tab === t}
-            className={tab === t ? 'on' : ''}
-            onClick={() => setTab(t)}
+            className={`${tab === t ? 'on' : ''} ${bad ? 'bad' : ''}`}
+            onClick={() => {
+              setTab(t);
+              setFocus(null);
+            }}
           >
             {label}
           </button>
         ))}
       </div>
-      {tab !== 'add' ? (
-        <div className="pool">
-          {tab === 'main' &&
-            (deckIds.length ? (
-              deckIds.map((id) => row(id, 'deck'))
-            ) : (
-              <p className="note">「全カードから追加」で入れてください。</p>
-            ))}
-          {tab === 'extra' &&
-            (extraIds.length ? (
-              extraIds.map((id) => row(id, 'deck'))
-            ) : (
-              <p className="note">なし（「全カードから追加」のEXで探せます）</p>
-            ))}
-          {tab === 'side' &&
-            (sideIds.length ? (
-              sideIds.map((id) => row(id, 'side'))
-            ) : (
-              <p className="note">なし（「1枚サイドへ」か「全カードから追加」のサイドの＋で入れられます）</p>
-            ))}
-        </div>
-      ) : (
+      {tab === 'add' && (
         <>
           <input
             id="card-search"
@@ -336,9 +356,21 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
               </button>
             ))}
           </div>
-          <div className="pool">{pool.map((c) => row(c.id, 'add'))}</div>
         </>
       )}
+      <p className="note">
+        {tab === 'add'
+          ? 'カードをタップすると、メイン（EX）やサイドに入れられます。'
+          : 'カードをタップすると、枚数の増減やサイドとの入れ替えができます。'}
+      </p>
+      <div className="card-grid">
+        {tabIds.length ? (
+          tabIds.map(tile)
+        ) : (
+          <p className="note">カードがありません（「＋カードを探す」から入れられます）</p>
+        )}
+      </div>
+      {actionBar}
     </div>
   );
 }

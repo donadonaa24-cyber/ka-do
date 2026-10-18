@@ -1,4 +1,4 @@
-import type { Action, MonsterLocation } from '../engine/game';
+import { type Action, candidates, type MonsterLocation } from '../engine/game';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { CardDef, Location } from '../engine/types';
@@ -121,6 +121,22 @@ const beSpecialSummonedSince = (env: Env) => {
     : 'このカードが墓地に送られた後に「青眼の白龍」を特殊召喚していません';
 };
 
+/** 相手の場のカード（練習用に置いたもの） */
+const oppMonsters = (env: Env) => (env.state.opp?.mz ?? []).filter((u): u is string => !!u);
+const oppSpellTraps = (env: Env) =>
+  [...(env.state.opp?.stz ?? []), env.state.opp?.fz ?? null].filter((u): u is string => !!u);
+const needOppMonsters = (env: Env) =>
+  oppMonsters(env).length ? null : '相手フィールドにモンスターがいません（相手の盤面を置くと使えます）';
+const needOppSpellTraps = (env: Env) =>
+  oppSpellTraps(env).length ? null : '相手フィールドに魔法・罠がありません（相手の盤面を置くと使えます）';
+const destroyAll = (uids: string[]): Action[] => uids.map((u) => toGy(u, '効果で破壊'));
+const noFaceUpOwn = (env: Env) =>
+  [...env.state.mz, ...env.state.emz, ...env.state.stz, env.state.fz].some(
+    (u) => u && u !== env.self && env.state.cards[u].faceUp,
+  )
+    ? '自分フィールドに表側表示のカードがあると発動できません'
+    : null;
+
 /** 自分のフィールドか墓地に「青眼の白龍」がある */
 const beOnFieldOrGy = (env: Env) => [...ownFaceUpMonsters(env), ...env.state.gy].some((u) => isBE(env, u));
 
@@ -198,14 +214,45 @@ const FUSION: Record<string, FusionRecipe> = {
   },
 };
 
-/** 効果による融合召喚：融合モンスターを選び、素材を選ぶ（2ステップ） */
-const fusionSteps = (opts: {
+interface FusionOpts {
   by: string;
   from: ('hand' | 'monsters' | 'gy')[];
   materialsTo: 'gy' | 'deck';
   monster: (env: Env, uid: string) => boolean;
   materials?: (env: Env, m: string[]) => string | null;
-}): Step[] => [
+}
+
+/** k枚の組み合わせを列挙する（見つかったら true を返して打ち切る） */
+const someCombo = (
+  items: string[],
+  k: number,
+  ok: (c: string[]) => boolean,
+  start = 0,
+  cur: string[] = [],
+): boolean => {
+  if (cur.length === k) return ok(cur);
+  for (let i = start; i <= items.length - (k - cur.length); i++)
+    if (someCombo(items, k, ok, i + 1, [...cur, items[i]])) return true;
+  return false;
+};
+
+/** 今の手札・フィールド・墓地で融合召喚できる組み合わせがあるか（なければ発動できない） */
+const fusionPossible =
+  (opts: FusionOpts) =>
+  (env: Env): string | null => {
+    const pool = candidates(env.state, opts.from).filter((u) => u !== env.self && env.def(u).kind === 'monster');
+    for (const t of env.state.extra) {
+      const recipe = FUSION[env.def(t).id];
+      if (!recipe || env.def(t).frame !== 'fusion' || !opts.monster(env, t)) continue;
+      const mats = pool.filter((u) => recipe.candidate(env, u));
+      for (let k = recipe.range[0]; k <= Math.min(recipe.range[1], mats.length); k++)
+        if (someCombo(mats, k, (c) => !recipe.check(env, c) && !opts.materials?.(env, c))) return null;
+    }
+    return '融合召喚できる融合モンスターと素材の組み合わせがありません';
+  };
+
+/** 効果による融合召喚：融合モンスターを選び、素材を選ぶ（2ステップ） */
+const fusionSteps = (opts: FusionOpts): Step[] => [
   {
     op: 'pick',
     prompt: 'EXデッキから融合召喚する融合モンスター',
@@ -250,6 +297,21 @@ const fusionSteps = (opts: {
   },
 ];
 
+const ULTIMATE_FUSION: FusionOpts = {
+  by: '究極融合',
+  from: ['hand', 'monsters', 'gy'],
+  materialsTo: 'deck',
+  monster: (env, u) => /青眼の白龍|青眼の究極竜/.test(env.def(u).materialText ?? ''),
+};
+const ROAR_FUSION: FusionOpts = {
+  by: '青眼龍轟臨',
+  from: ['hand', 'monsters'],
+  materialsTo: 'gy',
+  monster: () => true,
+  materials: (env, m) =>
+    m.some((u) => env.matches(u, BLUE_EYES)) ? null : '「ブルーアイズ」モンスターを含める必要があります',
+};
+
 const fusionCheck = (id: string) => (env: Env, m: string[], method: string) =>
   method === 'fusion' ? FUSION[id].check(env, m) : 'このカードは融合召喚でしか特殊召喚できません';
 
@@ -259,10 +321,41 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
   // 白き霊龍
   '45467446': {
     effects: [
-      logOnly('② 召喚・特殊召喚時：相手の魔法・罠1枚を除外（相手用）', ['monster']),
-      logOnly('③ 相手フィールドにモンスターがいる時、リリースして手札の「青眼の白龍」を特殊召喚（相手用）', [
-        'monster',
-      ]),
+      {
+        label: '② 召喚・特殊召喚時：相手の魔法・罠1枚を除外',
+        from: ['monster'],
+        onSummon: true,
+        condition: needOppSpellTraps,
+        steps: [
+          {
+            op: 'pick',
+            prompt: '除外する相手フィールドの魔法・罠（対象）',
+            from: ['oppSpelltraps'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => move(u, { zone: 'banished' }, '効果で除外')),
+          },
+        ],
+      },
+      {
+        label: '③ 相手フィールドにモンスターがいる時：リリースして手札の「青眼の白龍」を特殊召喚',
+        from: ['monster'],
+        speed: 2,
+        condition: needOppMonsters,
+        steps: [
+          { op: 'do', cost: true, then: (env) => [toGy(env.self, 'リリース')] },
+          {
+            op: 'pick',
+            prompt: '手札から特殊召喚する「青眼の白龍」',
+            from: ['hand'],
+            filter: { name: [BE] },
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, '白き霊龍の効果')],
+          },
+        ],
+      },
     ],
   },
 
@@ -542,7 +635,20 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         },
         steps: [ssSelf('自身の効果')],
       },
-      logOnly('② 手札・デッキから特殊召喚した時：相手モンスターを全て破壊（相手用）', ['monster']),
+      {
+        label: '② 手札・デッキから特殊召喚した時：相手モンスターを全て破壊',
+        from: ['monster'],
+        onSummon: true,
+        key: '白き幻獣－青眼の白龍②',
+        limit: 1,
+        condition: (env) => {
+          const inst = env.state.cards[env.self];
+          if (inst.summonType === 'normal' || !['hand', 'deck'].includes(inst.movedFrom ?? ''))
+            return '手札・デッキから特殊召喚した時のみ発動できます';
+          return needOppMonsters(env);
+        },
+        steps: [{ op: 'do', then: (env) => destroyAll(oppMonsters(env)) }],
+      },
       logOnly('③ 対象をとる効果を手札1枚捨てて無効（相手用）', ['monster']),
     ],
   },
@@ -617,15 +723,38 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
   '18144506': {
     effects: [
       {
-        ...logOnly('発動：相手の魔法・罠を全て破壊（相手用）', ['hand', 'spelltrap']),
-        speed: 1,
+        label: '発動：相手フィールドの魔法・罠を全て破壊',
+        from: ['hand', 'spelltrap'],
         isCardActivation: true,
+        condition: needOppSpellTraps,
+        steps: [{ op: 'do', then: (env) => destroyAll(oppSpellTraps(env)) }],
       },
     ],
   },
 
   // コズミック・サイクロン
-  '8267140': { effects: [trapLogOnly('発動：1000LP払って相手の魔法・罠1枚を除外（相手用）')] },
+  '8267140': {
+    effects: [
+      {
+        label: '発動：1000LP払って、フィールドの魔法・罠1枚を除外',
+        from: ['hand', 'spelltrap'],
+        isCardActivation: true,
+        condition: needOppSpellTraps,
+        steps: [
+          { op: 'do', cost: true, then: () => [{ type: 'CHANGE_LP', delta: -1000 }] },
+          {
+            op: 'pick',
+            prompt: '除外するフィールドの魔法・罠（対象）',
+            from: ['spelltraps', 'oppSpelltraps'],
+            where: (env, u) => u !== env.self,
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => move(u, { zone: 'banished' }, '効果で除外')),
+          },
+        ],
+      },
+    ],
+  },
 
   // 光の霊堂
   '24382602': {
@@ -750,12 +879,8 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           '発動：手札・フィールド・墓地の素材をデッキに戻し、「青眼の白龍」か「青眼の究極竜」を素材とする融合モンスターを融合召喚',
         from: ['hand', 'spelltrap'],
         isCardActivation: true,
-        steps: fusionSteps({
-          by: '究極融合',
-          from: ['hand', 'monsters', 'gy'],
-          materialsTo: 'deck',
-          monster: (env, u) => /青眼の白龍|青眼の究極竜/.test(env.def(u).materialText ?? ''),
-        }),
+        condition: fusionPossible(ULTIMATE_FUSION),
+        steps: fusionSteps(ULTIMATE_FUSION),
       },
     ],
   },
@@ -884,18 +1009,8 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         from: ['gy'],
         key: '青眼龍轟臨',
         limit: 1,
-        condition: mainPhase,
-        steps: [
-          selfTo('banished'),
-          ...fusionSteps({
-            by: '青眼龍轟臨',
-            from: ['hand', 'monsters'],
-            materialsTo: 'gy',
-            monster: () => true,
-            materials: (env, m) =>
-              m.some((u) => env.matches(u, BLUE_EYES)) ? null : '「ブルーアイズ」モンスターを含める必要があります',
-          }),
-        ],
+        condition: (env) => mainPhase(env) ?? fusionPossible(ROAR_FUSION)(env),
+        steps: [selfTo('banished'), ...fusionSteps(ROAR_FUSION)],
       },
     ],
   },
@@ -1143,7 +1258,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           },
           {
             op: 'pick',
-            prompt: '手札に戻すフィールドの表側表示カード（相手のカードを想定。相手がいないので選ばなくてもよい）',
+            prompt: '手札に戻すフィールドの表側表示カード（相手の盤面を置いていれば相手のカードも選べる）',
             from: ['field'],
             where: (env, u) => env.state.cards[u].faceUp,
             min: 0,
@@ -1383,9 +1498,11 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
   '12580477': {
     effects: [
       {
-        ...logOnly('発動：相手のモンスターを全て破壊（相手用）', ['hand', 'spelltrap']),
-        speed: 1,
+        label: '発動：相手フィールドのモンスターを全て破壊',
+        from: ['hand', 'spelltrap'],
         isCardActivation: true,
+        condition: needOppMonsters,
+        steps: [{ op: 'do', then: (env) => destroyAll(oppMonsters(env)) }],
       },
     ],
   },
@@ -1394,9 +1511,26 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
   '14532163': {
     effects: [
       {
-        ...logOnly('発動：相手の攻撃表示モンスターか魔法・罠を全て破壊（相手用）', ['hand', 'spelltrap']),
-        speed: 1,
+        label: '発動●：相手の攻撃表示モンスターを全て破壊（自分の場に表側カードが無い時）',
+        from: ['hand', 'spelltrap'],
         isCardActivation: true,
+        condition: (env) => noFaceUpOwn(env) ?? needOppMonsters(env),
+        steps: [
+          {
+            op: 'do',
+            then: (env) =>
+              destroyAll(
+                oppMonsters(env).filter((u) => env.state.cards[u].faceUp && env.state.cards[u].position === 'atk'),
+              ),
+          },
+        ],
+      },
+      {
+        label: '発動●：相手の魔法・罠を全て破壊（自分の場に表側カードが無い時）',
+        from: ['hand', 'spelltrap'],
+        isCardActivation: true,
+        condition: (env) => noFaceUpOwn(env) ?? needOppSpellTraps(env),
+        steps: [{ op: 'do', then: (env) => destroyAll(oppSpellTraps(env)) }],
       },
     ],
   },
