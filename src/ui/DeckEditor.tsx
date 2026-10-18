@@ -41,7 +41,8 @@ function countOf(list: string[], id: string) {
 
 export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
   const [editing, setEditing] = useState<SavedDeck | null>(null);
-  const [tab, setTab] = useState<'deck' | 'add'>('deck');
+  /** 編集画面のタブ：メイン・EX・サイドの中身と、全カードからの追加 */
+  const [tab, setTab] = useState<'main' | 'extra' | 'side' | 'add'>('main');
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -60,7 +61,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
       side: from ? [...(from.side ?? [])] : [],
       updatedAt: new Date().toISOString(),
     });
-    setTab(from ? 'deck' : 'add');
+    setTab(from ? 'main' : 'add');
   };
 
   const save = () => {
@@ -145,7 +146,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
                 <button
                   onClick={() => {
                     setEditing({ ...custom });
-                    setTab('deck');
+                    setTab('main');
                   }}
                 >
                   編集
@@ -279,30 +280,46 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
           ))}
         </ul>
       )}
-      <div className="seg">
-        <button className={tab === 'deck' ? 'on' : ''} onClick={() => setTab('deck')}>
-          デッキの中身
-        </button>
-        <button className={tab === 'add' ? 'on' : ''} onClick={() => setTab('add')}>
-          カードを追加
-        </button>
+      <div className="seg deck-tabs" role="tablist" aria-label="デッキ編集">
+        {(
+          [
+            ['main', `メイン ${editing.main.length}`],
+            ['extra', `EX ${editing.extra.length}`],
+            ['side', `サイド ${side.length}`],
+            ['add', '全カードから追加'],
+          ] as const
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            className={tab === t ? 'on' : ''}
+            onClick={() => setTab(t)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      {tab === 'deck' ? (
+      {tab !== 'add' ? (
         <div className="pool">
-          <strong>メインデッキ</strong>
-          {deckIds.length ? (
-            deckIds.map((id) => row(id, 'deck'))
-          ) : (
-            <p className="note">「カードを追加」から入れてください。</p>
-          )}
-          <strong>EXデッキ</strong>
-          {extraIds.length ? extraIds.map((id) => row(id, 'deck')) : <p className="note">なし</p>}
-          <strong>サイドデッキ</strong>
-          {sideIds.length ? (
-            sideIds.map((id) => row(id, 'side'))
-          ) : (
-            <p className="note">なし（「1枚サイドへ」か「カードを追加」のサイドの＋で入れられます）</p>
-          )}
+          {tab === 'main' &&
+            (deckIds.length ? (
+              deckIds.map((id) => row(id, 'deck'))
+            ) : (
+              <p className="note">「全カードから追加」で入れてください。</p>
+            ))}
+          {tab === 'extra' &&
+            (extraIds.length ? (
+              extraIds.map((id) => row(id, 'deck'))
+            ) : (
+              <p className="note">なし（「全カードから追加」のEXで探せます）</p>
+            ))}
+          {tab === 'side' &&
+            (sideIds.length ? (
+              sideIds.map((id) => row(id, 'side'))
+            ) : (
+              <p className="note">なし（「1枚サイドへ」か「全カードから追加」のサイドの＋で入れられます）</p>
+            ))}
         </div>
       ) : (
         <>

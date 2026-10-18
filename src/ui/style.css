@@ -1322,3 +1322,8 @@ button.danger {
   font-size: 12px;
   margin-top: 2px;
 }
+.deck-tabs button {
+  flex: 1;
+  white-space: nowrap;
+  padding-inline: 6px;
+}
