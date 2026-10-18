@@ -2207,3 +2207,31 @@ button.danger {
   border-radius: 999px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
+
+/* 山札などの一覧を開いたままカードを選んだ時 */
+.sheet-backdrop.over-pile {
+  /* スマホ：一覧の上にカードの詳細を重ねる（閉じると一覧に戻る） */
+  z-index: 110;
+}
+.sheet-backdrop.beside-pile {
+  /* 横に広い画面：一覧は右、カードの詳細は左の空きに並べる */
+  z-index: 110;
+  background: none;
+  pointer-events: none;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 12px;
+}
+.sheet-backdrop.beside-pile .sheet {
+  pointer-events: auto;
+  width: min(460px, calc(50vw - 24px));
+  max-height: calc(100vh - 24px);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.modal-backdrop.pile-right {
+  justify-content: flex-end;
+}
+.modal-backdrop.pile-right .modal {
+  width: min(560px, calc(50vw - 24px));
+}

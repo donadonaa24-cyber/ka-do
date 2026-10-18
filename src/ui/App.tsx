@@ -1018,6 +1018,8 @@ export function App() {
     return Math.min(w + 6, (avail - w) / (n - 1));
   })();
 
+  // 山札などの一覧を開いたままカードを選んだ時：横に広い画面では一覧を右へ寄せ、カードの詳細を左の空きに出す
+  const pileSide = winWidth >= 900;
   const peekButton = <button onClick={() => setPeek(true)}>フィールドを確認</button>;
   const actionPanel = pending ? (
     <div className="action-panel">
@@ -1419,7 +1421,10 @@ export function App() {
 
         {/* カード詳細 */}
         {sel && selDef && selLoc && !busy && !dropMenu && (
-          <div className="sheet-backdrop" onClick={() => setSelected(null)}>
+          <div
+            className={`sheet-backdrop ${pile ? (pileSide ? 'beside-pile' : 'over-pile') : ''}`}
+            onClick={() => setSelected(null)}
+          >
             <div className="sheet" onClick={(e) => e.stopPropagation()}>
               <div className="modal-head">
                 <h2>{selDef.name}</h2>
@@ -1511,7 +1516,7 @@ export function App() {
 
         {/* デッキ・墓地・除外・EXの中身 */}
         {pile && (
-          <div className="modal-backdrop" onClick={() => setPile(null)}>
+          <div className={`modal-backdrop ${pileSide && sel ? 'pile-right' : ''}`} onClick={() => setPile(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <div className="modal-head">
                 <h2>
