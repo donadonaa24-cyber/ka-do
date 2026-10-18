@@ -223,7 +223,7 @@ export function createGame(
     log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
   } else {
     log(state, `デュエル開始（先攻・シード ${seed}）。初手5枚をドロー。`, 'info');
-    log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズも行えません。', 'info');
+    log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズでは攻撃できません。', 'info');
   }
   return state;
 }
@@ -285,6 +285,19 @@ function checkEffectSummon(state: GameState, ctx: Ctx, uid: string, from: Locati
     fail(`${def.name}は儀式モンスターなので、効果で手札・デッキから特殊召喚できません`);
   if ((from?.zone === 'gy' || from?.zone === 'banished') && !state.cards[uid].properlySummoned)
     fail(`${def.name}は正規の方法で召喚されていないため、墓地・除外から特殊召喚できません`);
+}
+
+/** 効果で特殊召喚できない理由（できるなら null）。効果の候補を絞るのに使う */
+export function effectSummonError(state: GameState, ctx: Ctx, uid: string, as?: SummonMethod): string | null {
+  try {
+    const from = findLocation(state, uid);
+    checkSummonLocks(state, ctx, uid, from);
+    checkEffectSummon(state, ctx, uid, from, as);
+    return null;
+  } catch (e) {
+    if (e instanceof RuleError) return e.message;
+    throw e;
+  }
 }
 
 /** フィールドのモンスターの今のレベル（効果で変わった分を含む） */
@@ -732,7 +745,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
   const strict = ctx.options.strict;
   // 古い保存データには chain が無い
   state.chain ??= [];
-  if (strict && state.chain.length && BLOCKED_DURING_CHAIN.has(action.type)) {
+  // 効果による融合・儀式召喚（究極融合など）はチェーンの処理中に行う
+  const byEffect = action.type === 'PROCEDURE_SUMMON' && !!action.by;
+  if (strict && state.chain.length && BLOCKED_DURING_CHAIN.has(action.type) && !byEffect) {
     fail('チェーンを解決してから行ってください');
   }
   switch (action.type) {
@@ -742,8 +757,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       let next: Phase | undefined = action.to ?? PHASE_ORDER[cur + 1];
       if (!next) return reduce(state, { type: 'END_TURN' }, ctx);
       if (PHASE_ORDER.indexOf(next) <= cur) fail('前のフェイズには戻れません');
-      // 先攻1ターン目はバトルフェイズを行えない（M2もBPを経由しないので行えない）
-      if (state.turn === 1 && (next === 'BP' || next === 'M2')) next = 'EP';
+      // 先攻1ターン目もバトルフェイズ・メインフェイズ2に入れる（攻撃はできない）
       // BPを行わない場合、M2は行えない
       if (next === 'M2' && state.phase !== 'BP') next = 'EP';
       state.phase = next;

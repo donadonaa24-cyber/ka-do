@@ -16,7 +16,8 @@ import { CARD_DB, CARD_SCRIPTS, TOON_DECK } from '.';
 const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
 const name = (s: GameState, u: string) => CARD_DB[s.cards[u].defId].name;
 const inHand = (s: GameState, n: string) => s.hand.find((u) => name(s, u) === n)!;
-const inZone = (s: GameState, zone: 'deck' | 'gy' | 'extra' | 'hand', n: string) => s[zone].find((u) => name(s, u) === n)!;
+const inZone = (s: GameState, zone: 'deck' | 'gy' | 'extra' | 'hand', n: string) =>
+  s[zone].find((u) => name(s, u) === n)!;
 
 function act(s: GameState, a: Action): GameState {
   const r = applyAction(s, a, ctx);
@@ -107,7 +108,10 @@ describe('トゥーンデッキ', () => {
     s = useEffect(s, rabbit, '③', [{ pick: ['トゥーン・キングダム'], mode: 1 }]);
     expect(name(s, s.fz!)).toBe('トゥーン・キングダム');
     // キャット②：ラビットをリリースしてBEトゥーンをデッキから
-    s = useEffect(s, cat, '②', [{ pick: ['ファニー・ダーク・ラビット'] }, { pick: ['ブルーアイズ・トゥーン・ドラゴン'], zone: mz(0) }]);
+    s = useEffect(s, cat, '②', [
+      { pick: ['ファニー・ダーク・ラビット'] },
+      { pick: ['ブルーアイズ・トゥーン・ドラゴン'], zone: mz(0) },
+    ]);
     expect(name(s, s.mz[0]!)).toBe('ブルーアイズ・トゥーン・ドラゴン');
     expect(findLocation(s, rabbit)).toEqual({ zone: 'gy' });
   });
@@ -127,12 +131,16 @@ describe('トゥーンデッキ', () => {
   it('カートゥーン・シェード：通常召喚できないモンスターがいれば特殊召喚、①でサーチ', () => {
     let s = createGame(TOON_DECK, ctx, 4, ['55363218', '28711704', '7293697', '45536531']);
     const shade = inHand(s, 'カートゥーン・シェード');
-    expect(applyAction(s, { type: 'PROC_SUMMON', uid: shade, proc: 0, materials: [], to: mz(0) }, ctx)).toMatchObject({ ok: false });
+    expect(applyAction(s, { type: 'PROC_SUMMON', uid: shade, proc: 0, materials: [], to: mz(0) }, ctx)).toMatchObject({
+      ok: false,
+    });
     s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
     // カオス・ソルジャー：トゥーンモンスターをレベル合計8以上リリース（ラビットLv4だけでは不足）
     const chaos = inHand(s, 'トゥーン・カオス・ソルジャー');
     const rabbit = inHand(s, 'ファニー・ダーク・ラビット');
-    expect(applyAction(s, { type: 'PROC_SUMMON', uid: chaos, proc: 0, materials: [rabbit], to: mz(0) }, ctx)).toMatchObject({ ok: false });
+    expect(
+      applyAction(s, { type: 'PROC_SUMMON', uid: chaos, proc: 0, materials: [rabbit], to: mz(0) }, ctx),
+    ).toMatchObject({ ok: false });
     s = act(s, { type: 'SPECIAL_SUMMON', uid: chaos, to: mz(0), note: 'テスト' });
     s = act(s, { type: 'PROC_SUMMON', uid: shade, proc: 0, materials: [], to: mz(1) });
     s = useEffect(s, shade, '①', [{ pick: ['トゥーン・ブラック・マジシャン・ガール'] }]);
@@ -142,7 +150,11 @@ describe('トゥーンデッキ', () => {
   it('アルティメット：BEトゥーン＋トゥーン2体をデッキに戻して特殊召喚', () => {
     let s = createGame(TOON_DECK, ctx, 5, ['53183600', '21296502', '64116319', '7293697']);
     s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
-    const mats = ['ブルーアイズ・トゥーン・ドラゴン', 'トゥーン・ブラック・マジシャン', 'トゥーン・ハーピィ・レディ'].map((n) => inHand(s, n));
+    const mats = [
+      'ブルーアイズ・トゥーン・ドラゴン',
+      'トゥーン・ブラック・マジシャン',
+      'トゥーン・ハーピィ・レディ',
+    ].map((n) => inHand(s, n));
     const ult = inZone(s, 'extra', 'ブルーアイズ・トゥーン・アルティメットドラゴン');
     s = act(s, { type: 'PROC_SUMMON', uid: ult, proc: 0, materials: mats, to: mz(2) });
     expect(s.mz[2]).toBe(ult);
@@ -154,7 +166,9 @@ describe('トゥーンデッキ', () => {
     s = act(s, { type: 'SPECIAL_SUMMON', uid: inHand(s, 'トゥーン・ブラック・マジシャン'), to: mz(0) });
     const tbm = s.mz[0]!;
     const destr = inZone(s, 'extra', '滅びの黒魔術師');
-    expect(applyAction(s, { type: 'PROC_SUMMON', uid: destr, proc: 0, materials: [tbm], to: mz(1) }, ctx)).toMatchObject({ ok: false });
+    expect(
+      applyAction(s, { type: 'PROC_SUMMON', uid: destr, proc: 0, materials: [tbm], to: mz(1) }, ctx),
+    ).toMatchObject({ ok: false });
     s = useEffect(s, inHand(s, 'トゥーンのもくじ'), '発動', [{ pick: ['トゥーンのしおり'] }]);
     s = act(s, { type: 'PROC_SUMMON', uid: destr, proc: 0, materials: [tbm], to: mz(1) });
     expect(findLocation(s, tbm)).toEqual({ zone: 'banished' });
@@ -222,15 +236,17 @@ describe('チェーン', () => {
 
     // チェーン2：コミックキャット②
     const catEffect = CARD_SCRIPTS['72921536'].effects![0];
-    r = skipTempBanish(startEffect(s, ctx, cat, catEffect, undefined, 'auto'));
+    // リリースはコストなので、チェーンに積む前に払う
+    r = startEffect(s, ctx, cat, catEffect, undefined, 'auto');
+    let run = (r as { run: Running }).run;
+    r = skipTempBanish(afterPick({ ...run, picked: [cat] }, ctx));
     s = act(s, (r as { action: Action }).action);
     expect(s.chain).toHaveLength(2);
+    expect(s.gy).toContain(cat);
 
-    // チェーン2から解決：キャットをリリースしてデッキからBEトゥーン
+    // チェーン2から解決：デッキからBEトゥーン
     r = skipTempBanish(startResolve(s, ctx));
     expect(r.kind).toBe('running');
-    let run = (r as { run: Running }).run;
-    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'コミックキャット') }, ctx);
     run = (r as { run: Running }).run;
     const be = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'ブルーアイズ・トゥーン・ドラゴン')!;
     r = afterPick({ ...run, picked: [be] }, ctx);
@@ -252,7 +268,14 @@ describe('チェーン', () => {
 
   it('チェーンできる効果が無ければ、その場で最後まで処理する', () => {
     const s = createGame(TOON_DECK, ctx, 22, ['89997728']);
-    const r = startEffect(s, ctx, inHand(s, 'トゥーンのもくじ'), CARD_SCRIPTS['89997728'].effects![0], undefined, 'auto');
+    const r = startEffect(
+      s,
+      ctx,
+      inHand(s, 'トゥーンのもくじ'),
+      CARD_SCRIPTS['89997728'].effects![0],
+      undefined,
+      'auto',
+    );
     expect(r.kind).toBe('running');
   });
 });
@@ -261,14 +284,22 @@ describe('完全なる世界③（効果処理後まで除外）', () => {
   it('TBM③の処理中にTBM自身を除外すると、戻った後にもう一度③を使える', () => {
     let s = createGame(TOON_DECK, ctx, 31, ['7293697', '21296502', '89997728', '70560957']);
     s = useEffect(s, inHand(s, '完全なる世界 トゥーン・ワールド'), '発動');
-    s = act(s, { type: 'SPECIAL_SUMMON', uid: inHand(s, 'トゥーン・ブラック・マジシャン'), to: mz(2), position: 'def' });
+    s = act(s, {
+      type: 'SPECIAL_SUMMON',
+      uid: inHand(s, 'トゥーン・ブラック・マジシャン'),
+      to: mz(2),
+      position: 'def',
+    });
     const tbm = s.mz[2]!;
     const effect = CARD_SCRIPTS['21296502'].effects![0];
 
     // 1回目：コストでもくじを捨てる → 処理の前に③でTBMを除外 → ハーピィを特殊召喚 → TBMが戻る
     let r: RunResult = startEffect(s, ctx, tbm, effect);
     let run = (r as { run: Running }).run;
-    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーンのもくじ') }, ctx);
+    r = afterPick(
+      { ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーンのもくじ') },
+      ctx,
+    );
     run = (r as { run: Running }).run;
     expect(run.extraStep).toBeDefined();
     r = afterPick({ ...run, picked: [tbm] }, ctx);
@@ -286,7 +317,10 @@ describe('完全なる世界③（効果処理後まで除外）', () => {
     // 2回目：戻ったTBMは別のカード扱いなので③をもう一度使える。TBMは③でもう除外できない
     r = startEffect(s, ctx, tbm, effect);
     run = (r as { run: Running }).run;
-    r = afterPick({ ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーン・ロールバック') }, ctx);
+    r = afterPick(
+      { ...run, picked: stepCandidates(run, ctx).filter((u) => name(run.temp, u) === 'トゥーン・ロールバック') },
+      ctx,
+    );
     run = (r as { run: Running }).run;
     if (run.extraStep) expect(stepCandidates(run, ctx)).not.toContain(tbm);
   });

@@ -1,4 +1,4 @@
-import { type Action, candidates, type MonsterLocation } from '../engine/game';
+import { type Action, candidates, effectSummonError, type MonsterLocation } from '../engine/game';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { CardDef, Location } from '../engine/types';
@@ -237,19 +237,24 @@ const someCombo = (
 };
 
 /** 今の手札・フィールド・墓地で融合召喚できる組み合わせがあるか（なければ発動できない） */
+const fusionTargetPossible = (env: Env, opts: FusionOpts, t: string): boolean => {
+  const recipe = FUSION[env.def(t).id];
+  if (!recipe || env.def(t).frame !== 'fusion' || !opts.monster(env, t)) return false;
+  if (effectSummonError(env.state, env.ctx, t, 'fusion')) return false;
+  const mats = candidates(env.state, opts.from).filter(
+    (u) => u !== env.self && env.def(u).kind === 'monster' && recipe.candidate(env, u),
+  );
+  for (let k = recipe.range[0]; k <= Math.min(recipe.range[1], mats.length); k++)
+    if (someCombo(mats, k, (c) => !recipe.check(env, c) && !opts.materials?.(env, c))) return true;
+  return false;
+};
+
 const fusionPossible =
   (opts: FusionOpts) =>
-  (env: Env): string | null => {
-    const pool = candidates(env.state, opts.from).filter((u) => u !== env.self && env.def(u).kind === 'monster');
-    for (const t of env.state.extra) {
-      const recipe = FUSION[env.def(t).id];
-      if (!recipe || env.def(t).frame !== 'fusion' || !opts.monster(env, t)) continue;
-      const mats = pool.filter((u) => recipe.candidate(env, u));
-      for (let k = recipe.range[0]; k <= Math.min(recipe.range[1], mats.length); k++)
-        if (someCombo(mats, k, (c) => !recipe.check(env, c) && !opts.materials?.(env, c))) return null;
-    }
-    return '融合召喚できる融合モンスターと素材の組み合わせがありません';
-  };
+  (env: Env): string | null =>
+    env.state.extra.some((t) => fusionTargetPossible(env, opts, t))
+      ? null
+      : '融合召喚できる融合モンスターと素材の組み合わせがありません';
 
 /** 効果による融合召喚：融合モンスターを選び、素材を選ぶ（2ステップ） */
 const fusionSteps = (opts: FusionOpts): Step[] => [
@@ -258,7 +263,8 @@ const fusionSteps = (opts: FusionOpts): Step[] => [
     prompt: 'EXデッキから融合召喚する融合モンスター',
     from: ['extra'],
     filter: { kind: ['monster'], frame: ['fusion'] },
-    where: (env, u) => !!FUSION[env.def(u).id] && opts.monster(env, u),
+    // 今の手札・フィールド・墓地で素材がそろうものだけ
+    where: (env, u) => fusionTargetPossible(env, opts, u),
     min: 1,
     max: 1,
     then: () => [],
@@ -276,6 +282,7 @@ const fusionSteps = (opts: FusionOpts): Step[] => [
       return target ? FUSION[env.def(target).id].range : [1, 1];
     },
     zone: 'monster',
+    noSummonCheck: true,
     then: (env, p, z) => {
       const target = env.picks![0][0];
       const err = FUSION[env.def(target).id].check(env, p) ?? opts.materials?.(env, p);
@@ -683,6 +690,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             min: 1,
             max: 1,
             zone: 'monster',
+            noSummonCheck: true,
             then: (env, p, z) => [ss(env.self, z, `攻撃力${env.def(p[0]).atk ?? 0}・フィールドを離れると除外`)],
           },
         ],
@@ -791,7 +799,12 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         limit: 1,
         perCard: true,
         targets: true,
-        condition: (env) => (ownFaceUpMonsters(env).length ? null : '自分フィールドに表側表示のモンスターが必要です'),
+        condition: (env) =>
+          !ownFaceUpMonsters(env).length
+            ? '自分フィールドに表側表示のモンスターが必要です'
+            : [...env.state.hand, ...env.state.deck].some((u) => isNormal(env, u))
+              ? null
+              : '手札・デッキに墓地へ送る通常モンスターがいません',
         steps: [
           {
             op: 'pick',
@@ -825,9 +838,13 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         condition: (env) =>
           env.state.effectUses['白き乙女③']
             ? '白き乙女③はこのターン使用済みです'
-            : ownFaceUpMonsters(env).some((u) => env.def(u).name === '白き乙女')
-              ? null
-              : '自分フィールドに白き乙女がいません',
+            : !ownFaceUpMonsters(env).some((u) => env.def(u).name === '白き乙女')
+              ? '自分フィールドに白き乙女がいません'
+              : !env.state.gy.some((u) => isBE(env, u) || env.matches(u, LIGHT_LV1_TUNER))
+                ? '墓地に「青眼の白龍」か光属性・レベル1チューナーがいません（白き乙女③で特殊召喚するモンスター）'
+                : [...env.state.hand, ...env.state.deck].some((u) => isNormal(env, u))
+                  ? null
+                  : '手札・デッキに墓地へ送る通常モンスターがいません',
         steps: [
           {
             op: 'pick',
@@ -1100,6 +1117,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             filter: { name: [BE] },
             count: (env) => Math.max(1, Math.round((env.def(env.picks?.[0]?.[0] ?? env.self).level ?? 8) / 8)),
             zone: 'monster',
+            noSummonCheck: true,
             then: (env, p, z) => [
               {
                 type: 'PROCEDURE_SUMMON',
@@ -1336,11 +1354,17 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             filter: { kind: ['monster'], frame: ['synchro'], race: ['ドラゴン族'] },
             where: (env, u) => {
               const target = env.picks?.[0]?.[0];
-              return !!target && env.def(u).level === env.def(target).level && env.def(u).name !== '赤き竜';
+              return (
+                !!target &&
+                env.def(u).level === env.def(target).level &&
+                env.def(u).name !== '赤き竜' &&
+                !effectSummonError(env.state, env.ctx, u, 'synchro')
+              );
             },
             min: 1,
             max: 1,
             zone: 'monster',
+            noSummonCheck: true,
             then: (_, p, z) => [
               { type: 'SPECIAL_SUMMON', uid: p[0], to: z as MonsterLocation, note: 'S召喚扱い', as: 'synchro' },
             ],

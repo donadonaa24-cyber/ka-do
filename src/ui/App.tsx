@@ -60,7 +60,7 @@ import {
   pickRange,
   type RunResult,
   type Running,
-  runZoneKind,
+  zoneChoices,
   startEffect,
   stepCandidates,
 } from '../engine/effectRunner';
@@ -260,7 +260,13 @@ export function App() {
     );
   };
 
-  const onRunResult = (r: RunResult) => {
+  const onRunResult = (r: RunResult, prev?: Running) => {
+    // 選び方が合わない時は、同じ効果の選択をやり直せるようにする
+    if (r.kind === 'error' && prev) {
+      setError(r.error);
+      setRun({ ...prev, stage: 'pick', picked: [] });
+      return;
+    }
     if (r.kind === 'error') {
       setError(r.error);
       setRun(null);
@@ -290,7 +296,7 @@ export function App() {
     if (!run || run.stage !== 'pick' || !stepCandidates(run, ctx).includes(uid)) return;
     const [, max] = pickRange(run, ctx);
     if (max === 1) {
-      onRunResult(afterPick({ ...run, picked: [uid] }, ctx));
+      onRunResult(afterPick({ ...run, picked: [uid] }, ctx), run);
       return;
     }
     const picked = run.picked.includes(uid) ? run.picked.filter((u) => u !== uid) : [...run.picked, uid];
@@ -311,11 +317,10 @@ export function App() {
 
   const zoneSelectable = (loc: Location) => {
     if (run) {
-      const kind = runZoneKind(run);
-      if (loc.zone === 'emz' && findLocation(run.temp, run.picked[0] ?? '')?.zone !== 'extra') return false;
-      if (kind === 'monster' && (loc.zone === 'mz' || loc.zone === 'emz')) return !run.temp[loc.zone][loc.index];
-      if (kind === 'stz' && loc.zone === 'stz') return !run.temp.stz[loc.index];
-      return false;
+      if (run.stage !== 'zone') return false;
+      return zoneChoices(run).some(
+        (z) => z.zone === loc.zone && 'index' in loc && 'index' in z && z.index === loc.index,
+      );
     }
     if (pending?.stage !== 'zone') return false;
     if (loc.zone === 'emz' && !pending.allowEmz) return false;
@@ -328,7 +333,7 @@ export function App() {
   };
 
   const onZoneClick = (loc: Location) => {
-    if (run) return onRunResult(completeStep(run, ctx, loc));
+    if (run) return onRunResult(completeStep(run, ctx, loc), run);
     if (!pending) return;
     if (dispatch(pending.build(pending.picked, loc))) setPending(null);
   };
@@ -960,13 +965,13 @@ export function App() {
           <button
             className="primary"
             disabled={run.picked.length < runMin}
-            onClick={() => onRunResult(afterPick(run, ctx))}
+            onClick={() => onRunResult(afterPick(run, ctx), run)}
           >
             決定（{run.picked.length}枚）
           </button>
         )}
         {run.stage === 'pick' && runMin === 0 && (
-          <button onClick={() => onRunResult(afterPick({ ...run, picked: [] }, ctx))}>選ばない</button>
+          <button onClick={() => onRunResult(afterPick({ ...run, picked: [] }, ctx), run)}>選ばない</button>
         )}
         {run.stage === 'mode' &&
           runStep?.op === 'pick' &&
@@ -974,7 +979,7 @@ export function App() {
             <button
               key={m}
               className="primary"
-              onClick={() => onRunResult(afterPick({ ...run, mode: i, stage: 'mode' }, ctx))}
+              onClick={() => onRunResult(afterPick({ ...run, mode: i, stage: 'mode' }, ctx), run)}
             >
               {m}
             </button>

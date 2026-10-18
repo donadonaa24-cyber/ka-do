@@ -94,15 +94,21 @@ describe('通常召喚', () => {
 });
 
 describe('フェイズとターン', () => {
-  it('先攻1ターン目はBPに入れずEPへ', () => {
-    let s = createGame(TEST_DECK, ctx, 1);
+  it('先攻1ターン目もBP・M2に入れるが、攻撃はできない', () => {
+    let s = createGame(TEST_DECK, ctx, 1, ['t-lv4-a']);
+    s = run(s, { type: 'NORMAL_SUMMON', uid: s.hand.find((u) => s.cards[u].defId === 't-lv4-a')!, index: 0 });
+    s = run(s, { type: 'NEXT_PHASE' });
+    expect(s.phase).toBe('BP');
+    expect(err(s, { type: 'ATTACK', uid: s.mz[0]! })).toMatch('先攻1ターン目');
+    s = run(s, { type: 'NEXT_PHASE' });
+    expect(s.phase).toBe('M2');
     s = run(s, { type: 'NEXT_PHASE' });
     expect(s.phase).toBe('EP');
   });
 
   it('2ターン目はドローする', () => {
     let s = createGame(TEST_DECK, ctx, 1);
-    s = run(s, { type: 'NEXT_PHASE' }, { type: 'NEXT_PHASE' });
+    s = run(s, { type: 'NEXT_PHASE', to: 'EP' }, { type: 'NEXT_PHASE' });
     expect(s.turn).toBe(2);
     expect(s.phase).toBe('DP');
     expect(s.hand).toHaveLength(6);

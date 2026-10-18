@@ -75,6 +75,11 @@ export type Step =
       zone?: 'monster' | 'stz';
       /** ゾーンを選ばせる条件（「手札に加えるかセットする」のセットの時だけなど）。省略時は常に選ばせる */
       zoneIf?: (env: Env, picked: string[], mode: number) => boolean;
+      /**
+       * zone: 'monster' のステップは選んだカードを効果で特殊召喚するものとして、特殊召喚できないカード
+       * （召喚制限・正規の召喚をしていないEXモンスターなど）を候補から外す。素材を選ぶステップなどは true にする
+       */
+      noSummonCheck?: boolean;
       then: (env: Env, picked: string[], zone: Location | null, mode: number) => Action[];
     }
   | {

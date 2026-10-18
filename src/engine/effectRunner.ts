@@ -1,4 +1,13 @@
-import { type Action, applyAction, candidates, type Ctx, findLocation, isMonsterZone, makeEnv } from './game';
+import {
+  type Action,
+  applyAction,
+  candidates,
+  type Ctx,
+  effectSummonError,
+  findLocation,
+  isMonsterZone,
+  makeEnv,
+} from './game';
 import type { EffectDef, Env, Step } from './scripts';
 import type { GameState, Location } from './types';
 
@@ -28,6 +37,8 @@ export interface Running {
   tempBanished?: { uid: string; index: number; position: 'atk' | 'def' };
   /** これまでのステップで選んだカード（後のステップの条件に使う） */
   history?: string[][];
+  /** 処理で選ぶカードがあることを確認済み */
+  feasible?: boolean;
   /** 選べるカードが無く、効果を処理できなかった（不発） */
   fizzled?: boolean;
 }
@@ -40,7 +51,8 @@ function stepEnv(run: Running, ctx: Ctx): Env {
 export type RunResult =
   | { kind: 'running'; run: Running }
   | { kind: 'done'; action: Action }
-  | { kind: 'error'; error: string };
+  /** blocked：処理で選ぶカードが無いため発動できない */
+  | { kind: 'error'; error: string; blocked?: boolean };
 
 type EffectFrom = EffectDef['from'][number];
 
@@ -122,9 +134,16 @@ export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): 
       )
         continue;
       if (effect.condition?.(makeEnv(state, ctx, uid))) continue;
-      // 罠はセットしたターンには発動できない
-      if (effect.isCardActivation && env.def(uid).kind === 'trap' && state.cards[uid].enteredTurn === state.turn)
+      // 罠・速攻魔法はセットしたターンには発動できない（手札から発動する速攻魔法は除く）
+      const d = env.def(uid);
+      if (
+        effect.isCardActivation &&
+        state.cards[uid].enteredTurn === state.turn &&
+        (d.kind === 'trap' || (d.spellType === 'quick' && effectLocation(state, uid) === 'spelltrap'))
+      )
         continue;
+      // コストを払えて、処理で選ぶカードがあるか
+      if (startEffect(state, ctx, uid, effect, undefined, 'never', true).kind === 'error') continue;
       out.push({ uid, effect });
     }
   }
@@ -139,6 +158,8 @@ export function startEffect(
   /** 魔法・罠を手札から発動するときに置くゾーン */
   activationZone?: Location,
   chainMode: Running['chainMode'] = 'never',
+  /** 発動できるかの確認だけ（チェーンに積まずに最初の選択まで進める） */
+  probe = false,
 ): RunResult {
   const env = makeEnv(state, ctx, uid);
   // 相手ターンに使えるのは速攻効果（スペルスピード2以上）と誘発効果だけ
@@ -184,7 +205,7 @@ export function startEffect(
   let r = applyAction(state, first, ctx);
   for (const a of batch.slice(1)) if (r.ok) r = applyAction(r.state, a, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
-  return advance(
+  const res = advance(
     {
       title: `${env.def(uid).name}：${effect.label}`,
       self: uid,
@@ -195,11 +216,48 @@ export function startEffect(
       stage: 'pick',
       picked: [],
       mode: 0,
-      chainMode: state.chain?.length ? 'force' : chainMode,
+      chainMode: probe ? 'never' : state.chain?.length ? 'force' : chainMode,
       resolving: false,
     },
     ctx,
   );
+  // コストを選ぶ前に、コストを払った後で効果を処理できるか確かめる
+  if (res.kind === 'running') {
+    const blocked = costLookaheadBlocked(res.run, ctx);
+    if (blocked) return { kind: 'error', error: blocked, blocked: true };
+  }
+  return res;
+}
+
+/**
+ * コストの選択で止まっている時、いくつかの選び方でコストを払ってみて、効果を処理できる選び方があるか確かめる。
+ * どの選び方でも処理で選ぶカードが無い場合だけ、その理由を返す
+ */
+function costLookaheadBlocked(run: Running, ctx: Ctx, depth = 0): string | null {
+  const step = currentStep(run);
+  if (run.extraStep || run.stage !== 'pick' || step?.op !== 'pick' || !step.cost || depth > 2) return null;
+  const cands = stepCandidates(run, ctx);
+  const [min] = pickRange(run, ctx);
+  if (cands.length < min) return `選べるカードがありません（${step.prompt}）`;
+  let reason: string | null = null;
+  const tries = min === 0 ? 1 : Math.min(cands.length, 8);
+  for (let i = 0; i < tries; i++) {
+    const picked = Array.from({ length: min }, (_, k) => cands[(i + k) % cands.length]);
+    const r = completeStep({ ...run, chainMode: 'never', picked }, ctx, null);
+    if (r.kind === 'error') {
+      if (!r.blocked) return null;
+      reason = r.error;
+      continue;
+    }
+    if (r.kind === 'running') {
+      const sub = costLookaheadBlocked(r.run, ctx, depth + 1);
+      if (!sub) return null;
+      reason = sub;
+      continue;
+    }
+    return null;
+  }
+  return reason;
 }
 
 /** チェーンの一番上の効果を解決する */
@@ -327,9 +385,51 @@ export function stepCandidates(run: Running, ctx: Ctx): string[] {
   const step = currentStep(run);
   if (!step || step.op !== 'pick') return [];
   const env = stepEnv(run, ctx);
+  // 選んだカードを特殊召喚するステップでは、特殊召喚できないカードを外す
+  const summons = step.zone === 'monster' && !step.zoneIf && !step.noSummonCheck;
   return candidates(run.temp, step.from).filter(
-    (u) => (!step.filter || env.matches(u, step.filter)) && (!step.where || step.where(env, u)),
+    (u) =>
+      (!step.filter || env.matches(u, step.filter)) &&
+      (!step.where || step.where(env, u)) &&
+      (!summons ||
+        env.def(u).kind !== 'monster' ||
+        isMonsterZone(findLocation(run.temp, u)) ||
+        !effectSummonError(run.temp, ctx, u)),
   );
+}
+
+/**
+ * 発動できるか（効果の処理で最初に選ぶカードがあるか）を、コストを払った後の盤面で確かめる。
+ * 選べるカードが無い効果は発動できない（チェーンに積んでから不発になるのを防ぐ）
+ */
+function resolutionBlocked(run: Running, ctx: Ctx): string | null {
+  let sim: Running = { ...run, extraStep: undefined };
+  for (let i = run.stepIndex; i < run.effect.steps.length; i++) {
+    const step = run.effect.steps[i];
+    if (step.op === 'place') {
+      if (step.zone !== 'monster') return null;
+      if (!zoneChoices({ ...sim, stepIndex: i, stage: 'zone', picked: [] }).length)
+        return 'モンスターゾーンに空きがありません';
+      return effectSummonError(sim.temp, ctx, run.self);
+    }
+    if (step.op === 'do') {
+      const next = applyAll(sim, ctx, step.then(stepEnv(sim, ctx)));
+      if (typeof next === 'string') return null;
+      sim = { ...next, stepIndex: i + 1 };
+      continue;
+    }
+    sim = { ...sim, stepIndex: i };
+    const [min] = pickRange(sim, ctx);
+    if (min > 0 && stepCandidates(sim, ctx).length < min) return `選べるカードがありません（${step.prompt}）`;
+    if (min > 0 && step.zone && !step.zoneIf && !step.noSummonCheck) {
+      // EXデッキのカードを出すならEXモンスターゾーンも使える
+      const fromExtra = stepCandidates(sim, ctx).find((u) => findLocation(sim.temp, u)?.zone === 'extra');
+      if (!zoneChoices({ ...sim, stage: 'zone', picked: fromExtra ? [fromExtra] : [] }).length)
+        return step.zone === 'stz' ? '魔法＆罠ゾーンに空きがありません' : 'モンスターゾーンに空きがありません';
+    }
+    return null;
+  }
+  return null;
 }
 
 /** 選択不要なステップを進め、選択が必要なところで止まる */
@@ -337,6 +437,12 @@ export function advance(run: Running, ctx: Ctx): RunResult {
   let cur = run;
   for (;;) {
     const step = currentStep(cur);
+    // コストを払い終えたら、効果を処理できるか確かめる
+    if (!cur.resolving && !cur.feasible && !cur.extraStep && (!step || !step.cost)) {
+      const blocked = resolutionBlocked(cur, ctx);
+      if (blocked) return { kind: 'error', error: blocked, blocked: true };
+      cur = { ...cur, feasible: true };
+    }
     // コストを払い終えたら、チェーンに積むか（積まずにこのまま処理するか）を決める
     if (cur.chainMode !== 'never' && !cur.resolving && (!step || !step.cost)) {
       const pushed = pushToChain(cur, ctx);
@@ -359,7 +465,20 @@ export function advance(run: Running, ctx: Ctx): RunResult {
       cur = { ...next, stepIndex: cur.stepIndex + 1 };
       continue;
     }
-    if (step.op === 'place') return { kind: 'running', run: { ...cur, stage: 'zone', picked: [] } };
+    if (step.op === 'place') {
+      const next: Running = { ...cur, stage: 'zone', picked: [] };
+      const cannot = step.zone === 'monster' && effectSummonError(cur.temp, ctx, cur.self);
+      if (cannot && cur.resolving)
+        return finish({ ...cur, title: `${cur.title}（${cannot}・不発）`, fizzled: true }, ctx);
+      if (cannot) return { kind: 'error', error: cannot };
+      if (zoneChoices(next).length) return { kind: 'running', run: next };
+      if (cur.resolving)
+        return finish({ ...cur, title: `${cur.title}（出すゾーンが無いため不発）`, fizzled: true }, ctx);
+      return {
+        kind: 'error',
+        error: step.zone === 'stz' ? '魔法＆罠ゾーンに空きがありません' : 'モンスターゾーンに空きがありません',
+      };
+    }
     const [min, max] = pickRange(cur, ctx);
     const cands = stepCandidates(cur, ctx);
     if (cands.length === 0 || max === 0) {
@@ -434,9 +553,39 @@ export function afterPick(run: Running, ctx: Ctx): RunResult {
   if (step?.op !== 'pick') return { kind: 'running', run };
   if (run.picked.length === 0) return completeStep(run, ctx, null);
   if (step.modes && run.stage === 'pick') return { kind: 'running', run: { ...run, stage: 'mode' } };
-  if (step.zone && (!step.zoneIf || step.zoneIf(stepEnv(run, ctx), run.picked, run.mode)))
-    return { kind: 'running', run: { ...run, stage: 'zone' } };
+  if (step.zone && (!step.zoneIf || step.zoneIf(stepEnv(run, ctx), run.picked, run.mode))) {
+    const next: Running = { ...run, stage: 'zone' };
+    if (zoneChoices(next).length) return { kind: 'running', run: next };
+    // 出すゾーンが無い：解決中なら不発、発動中なら選び直し
+    if (run.resolving) return finish({ ...run, title: `${run.title}（出すゾーンが無いため不発）`, fizzled: true }, ctx);
+    return {
+      kind: 'error',
+      error: step.zone === 'stz' ? '魔法＆罠ゾーンに空きがありません' : 'モンスターゾーンに空きがありません',
+    };
+  }
   return completeStep(run, ctx, null);
+}
+
+/** ゾーン選択で選べるゾーン（空いているゾーンと、素材として離れるカードのゾーン） */
+export function zoneChoices(run: Running): Location[] {
+  const step = currentStep(run);
+  const t = run.temp;
+  const kind = step?.op === 'pick' || step?.op === 'place' ? (step.zone ?? null) : null;
+  const idx = [0, 1, 2, 3, 4];
+  if (kind === 'stz') return idx.filter((i) => !t.stz[i]).map((index) => ({ zone: 'stz', index }));
+  if (kind !== 'monster') return [];
+  // 融合・儀式の素材として選んだフィールドのカードは、出す前に離れる
+  const leaving = new Set(step?.op === 'pick' && step.noSummonCheck ? run.picked : []);
+  const free = (u: string | null) => !u || leaving.has(u);
+  const out: Location[] = idx.filter((i) => free(t.mz[i])).map((index) => ({ zone: 'mz', index }));
+  // EXデッキから出すモンスター（選んだカードか、融合で先に選んだ融合モンスター）はEXモンスターゾーンにも出せる
+  const source = run.picked[0] ?? '';
+  const fusion = step?.op === 'pick' && step.noSummonCheck ? (run.history?.[0]?.[0] ?? '') : '';
+  // EXモンスターゾーンは1つしか使えない（もう片方を使っていれば出せない）
+  const emzUsed = t.emz.some((u) => !free(u));
+  if (!emzUsed && (findLocation(t, source)?.zone === 'extra' || findLocation(t, fusion)?.zone === 'extra'))
+    out.push(...[0, 1].filter((i) => free(t.emz[i])).map((index) => ({ zone: 'emz' as const, index })));
+  return out;
 }
 
 export function runZoneKind(run: Running): 'monster' | 'stz' | null {

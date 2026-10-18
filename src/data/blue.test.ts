@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   afterPick,
+  chainableEffects,
   completeStep,
   fizzleTop,
   type RunResult,
@@ -112,11 +113,18 @@ describe('ブルーアイズ', () => {
   it('カオス・MAXは儀式召喚でしか出せない（賢士②でデッキから出せない）。白き龍の威光②で儀式召喚', () => {
     let a = createGame(BLUE_EYES_DECK, ctx, 1, ['8240199']);
     a = put(a, find(a, 'deck', '白き乙女'), 0);
-    const r = tryEffect(a, find(a, 'hand', '青き眼の賢士'), '② 手札から捨て', [
-      { pick: ['白き乙女'] },
-      { pick: ['ブルーアイズ・カオス・ＭＡＸ・ドラゴン'], zone: mz(1) },
-    ]);
-    expect(r).toMatch(/儀式召喚でしか/);
+    // 儀式召喚でしか出せないので、デッキから特殊召喚する候補に出ない
+    const r = (() => {
+      try {
+        return tryEffect(a, find(a, 'hand', '青き眼の賢士'), '② 手札から捨て', [
+          { pick: ['白き乙女'] },
+          { pick: ['ブルーアイズ・カオス・ＭＡＸ・ドラゴン'], zone: mz(1) },
+        ]);
+      } catch (e) {
+        return (e as Error).message;
+      }
+    })();
+    expect(r).toMatch(/候補にありません: ブルーアイズ・カオス・ＭＡＸ・ドラゴン/);
 
     let s = createGame(BLUE_EYES_DECK, ctx, 1, ['55410871', '89631139']);
     s = act(s, { type: 'MOVE', uid: find(s, 'deck', '白き龍の威光'), to: { zone: 'gy' } });
@@ -182,9 +190,10 @@ describe('ブルーアイズ', () => {
       to: mz(0),
     });
     const spirit = s.mz[0]!;
-    expect(
+    // シフルはS召喚でしか出せないので候補に出ない
+    expect(() =>
       tryEffect(s, spirit, '③ S召喚したこのカード', [{ pick: ['聖珖神竜 スターダスト・シフル'], zone: mz(1) }]),
-    ).toMatch(/シンクロ召喚でしか/);
+    ).toThrow(/候補にありません: 聖珖神竜 スターダスト・シフル/);
     s = useEffect(s, spirit, '③ S召喚したこのカード', [{ pick: ['赤き竜'], zone: mz(1) }]);
     expect(s.cards[s.mz[1]!].destroyAtEnd).toBe(true);
     // 赤き竜は精霊龍③で出したのでS召喚扱いではないが、②は使える（レベル12の究極霊竜を対象にはできないので、別のSを用意）
@@ -422,6 +431,24 @@ describe('究極融合（バグ報告）', () => {
   const fusion = (s: GameState) => s.hand.find((u) => name(s, u) === '究極融合')!;
   const effect = CARD_SCRIPTS['71143015'].effects![0];
 
+  it('融合できない究極融合が手札にあっても、賢士①はチェーン確認で止まらずに処理できる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['8240199', '71143015']);
+    const sage = find(s, 'hand', '青き眼の賢士');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: sage, index: 0 });
+    const effect = CARD_SCRIPTS[s.cards[sage].defId].effects!.find((e) => e.label.includes('① 召喚時'))!;
+    const r = startEffect(s, ctx, sage, effect, undefined, 'auto');
+    expect(r.kind).toBe('running');
+    expect(chainableEffects(s, ctx, 2).map((c) => name(s, c.uid))).not.toContain('究極融合');
+  });
+
+  it('セットしたターンの速攻魔法はチェーンできない', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['71143015']);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 0);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 1);
+    s = act(s, { type: 'SET_SPELL_TRAP', uid: fusion(s), index: 0 });
+    expect(chainableEffects(s, ctx, 1).map((c) => name(s, c.uid))).not.toContain('究極融合');
+  });
+
   it('融合できる組み合わせが無ければ発動できない（空打ちしない）', () => {
     const s = createGame(BLUE_EYES_DECK, ctx, 1, ['71143015', '14558127']);
     expect(tryEffect(s, fusion(s), '発動')).toMatch(/融合召喚できる/);
@@ -443,11 +470,7 @@ describe('究極融合（バグ報告）', () => {
     expect(fizzled.gy).toContain(card);
     // 素材が無くなってから解決すると、選べるカードが無いので不発
     for (const u of [s.mz[0]!, s.mz[1]!]) s = act(s, { type: 'MOVE', uid: u, to: { zone: 'banished' } });
-    const run = startResolve(s, ctx);
-    expect(run.kind).toBe('running');
-    if (run.kind !== 'running') return;
-    const twin = stepCandidates(run.run, ctx).find((u) => name(s, u) === '青眼の双爆裂龍')!;
-    const done = afterPick({ ...run.run, picked: [twin] }, ctx);
+    const done = startResolve(s, ctx);
     expect(done.kind).toBe('done');
     if (done.kind !== 'done') return;
     s = act(s, done.action);

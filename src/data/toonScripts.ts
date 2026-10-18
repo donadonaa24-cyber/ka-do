@@ -523,7 +523,8 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
-            prompt: 'リリースするモンスター（「トゥーン・ワールド」があれば相手のモンスターも選べる）',
+            cost: true,
+            prompt: 'コスト：リリースするモンスター（「トゥーン・ワールド」があれば相手のモンスターも選べる）',
             from: ['monsters', 'oppMonsters'],
             where: (env, u) => !env.state.cards[u].opp || env.toonWorld,
             min: 1,
