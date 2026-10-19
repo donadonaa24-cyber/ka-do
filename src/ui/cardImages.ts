@@ -93,13 +93,13 @@ export function matchCard(fileName: string): string | null {
 
 /** キラカードの光り方（カードごとに選ぶ。ブラウザの中にだけ保存） */
 export type FoilStyle = 'ultra' | 'secret' | 'parallel' | 'prismatic' | 'starlight' | 'gold';
-export const FOIL_STYLES: { id: FoilStyle; label: string }[] = [
-  { id: 'ultra', label: 'ウルトラ（光が走る）' },
-  { id: 'secret', label: 'シークレット（虹の斜線）' },
-  { id: 'parallel', label: 'パラレル（細かいホロ）' },
-  { id: 'prismatic', label: 'プリズマティック（虹が回る）' },
-  { id: 'starlight', label: 'スターライト（星がきらめく）' },
-  { id: 'gold', label: 'ゴールド（金色に輝く）' },
+export const FOIL_STYLES: { id: FoilStyle; label: string; short: string }[] = [
+  { id: 'ultra', label: 'ウルトラ（光が走る）', short: 'ウルトラ' },
+  { id: 'secret', label: 'シークレット（虹の斜線）', short: 'シークレット' },
+  { id: 'parallel', label: 'パラレル（細かいホロ）', short: 'パラレル' },
+  { id: 'prismatic', label: 'プリズマティック（虹が回る）', short: 'プリズマティック' },
+  { id: 'starlight', label: 'スターライト（星がきらめく）', short: 'スターライト' },
+  { id: 'gold', label: 'ゴールド（金色に輝く）', short: 'ゴールド' },
 ];
 export type CardFoils = Record<string, FoilStyle>;
 export const CardFoilContext = createContext<CardFoils>({});

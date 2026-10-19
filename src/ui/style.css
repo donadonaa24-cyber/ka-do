@@ -2740,18 +2740,21 @@ button.danger {
   display: block;
   width: 100%;
 }
-.foil-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
+.foil-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
 }
-.foil-row button {
+.foil-list button {
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 8px;
+  text-align: left;
 }
-.foil-row button.on {
+.foil-list button.on {
   border-color: var(--gold);
   background: rgba(242, 193, 78, 0.18);
 }
@@ -2794,12 +2797,22 @@ button.danger {
 /* シークレット：虹色の細い斜線がゆらめく */
 .foil-secret .foil-fx {
   background:
-    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0) 0 2px, rgba(255, 255, 255, 0.45) 2px 3px),
-    linear-gradient(125deg, #ff5f6d, #ffc371, #f9f871, #5effa1, #47d1ff, #8f6bff, #ff5fd2, #ff5f6d);
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0) 0 2px, rgba(255, 255, 255, 0.25) 2px 3px),
+    linear-gradient(
+      125deg,
+      rgba(255, 120, 130, 0.7),
+      rgba(255, 200, 130, 0.7),
+      rgba(250, 245, 140, 0.7),
+      rgba(130, 255, 180, 0.7),
+      rgba(120, 210, 255, 0.7),
+      rgba(170, 140, 255, 0.7),
+      rgba(255, 130, 220, 0.7),
+      rgba(255, 120, 130, 0.7)
+    );
   background-size:
     auto,
     300% 300%;
-  mix-blend-mode: color-dodge;
+  mix-blend-mode: soft-light;
   opacity: 0.55;
   animation: foil-drift 5s ease-in-out infinite alternate;
 }
@@ -2848,8 +2861,17 @@ button.danger {
   content: '';
   position: absolute;
   inset: -60%;
-  background: conic-gradient(#ff5f6d, #ffc371, #f9f871, #5effa1, #47d1ff, #8f6bff, #ff5fd2, #ff5f6d);
-  mix-blend-mode: color-dodge;
+  background: conic-gradient(
+    rgba(255, 120, 130, 0.8),
+    rgba(255, 200, 130, 0.8),
+    rgba(250, 245, 140, 0.8),
+    rgba(130, 255, 180, 0.8),
+    rgba(120, 210, 255, 0.8),
+    rgba(170, 140, 255, 0.8),
+    rgba(255, 130, 220, 0.8),
+    rgba(255, 120, 130, 0.8)
+  );
+  mix-blend-mode: soft-light;
   opacity: 0.5;
   animation: foil-spin 6s linear infinite;
 }
@@ -2878,12 +2900,13 @@ button.danger {
 /* ゴールド：金色に染まり、光が走る */
 .foil-gold .foil-fx {
   background:
-    linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.8) 50%, transparent 60%),
-    linear-gradient(135deg, rgba(255, 215, 90, 0.55), rgba(184, 134, 11, 0.45), rgba(255, 236, 160, 0.55));
+    linear-gradient(115deg, transparent 40%, rgba(255, 250, 225, 0.55) 50%, transparent 60%),
+    linear-gradient(135deg, rgba(255, 215, 90, 0.3), rgba(200, 150, 30, 0.22), rgba(255, 236, 160, 0.3));
   background-size:
     300% 100%,
     100% 100%;
-  mix-blend-mode: hard-light;
+  mix-blend-mode: screen;
+  opacity: 0.8;
   animation: foil-sweep 3.2s ease-in-out infinite;
 }
 .card.foil {

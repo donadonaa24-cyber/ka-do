@@ -1313,6 +1313,9 @@ export function App() {
   const selDef = sel ? def(sel) : null;
   // 別のカードを開いたら、俺ルールの操作は閉じておく
   useEffect(() => setFreeOpen(false), [sel]);
+  /** カードの加工（キラ）の一覧を開いている */
+  const [foilOpen, setFoilOpen] = useState(false);
+  useEffect(() => setFoilOpen(false), [sel]);
   const selLoc = sel ? findLocation(state, sel) : null;
   // 効果処理中は途中経過の盤面を表示する
   const view = run?.temp ?? state;
@@ -2031,27 +2034,45 @@ export function App() {
                 </div>
                 <div className="btn-row">
                   {imagePicker(selDef.id, shownImages[selDef.id] ? '画像を変更' : '画像を設定')}
+                  <button
+                    className={foilOpen ? 'on' : ''}
+                    aria-expanded={foilOpen}
+                    onClick={() => setFoilOpen(!foilOpen)}
+                  >
+                    加工を変更
+                    {foils[selDef.id] ? `（${FOIL_STYLES.find((f) => f.id === foils[selDef.id])?.short}）` : ''}
+                  </button>
                   {images[selDef.id] && (
                     <button onClick={() => clearCardImage(selDef.id)}>
                       {BUILTIN_IMAGES[selDef.id] ? '最初の画像に戻す' : '画像を外す'}
                     </button>
                   )}
                 </div>
-                <div className="foil-row">
-                  <span className="foil-title">キラ：</span>
-                  <button className={!foils[selDef.id] ? 'on' : ''} onClick={() => setFoil(selDef.id, null)}>
-                    なし
-                  </button>
-                  {FOIL_STYLES.map((f) => (
+                {foilOpen && (
+                  <div className="foil-list" role="listbox" aria-label="加工">
                     <button
-                      key={f.id}
-                      className={foils[selDef.id] === f.id ? 'on' : ''}
-                      onClick={() => setFoil(selDef.id, f.id)}
+                      className={!foils[selDef.id] ? 'on' : ''}
+                      onClick={() => {
+                        setFoil(selDef.id, null);
+                        setFoilOpen(false);
+                      }}
                     >
-                      {f.label}
+                      なし
                     </button>
-                  ))}
-                </div>
+                    {FOIL_STYLES.map((f) => (
+                      <button
+                        key={f.id}
+                        className={foils[selDef.id] === f.id ? 'on' : ''}
+                        onClick={() => {
+                          setFoil(selDef.id, f.id);
+                          setFoilOpen(false);
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {state.cards[sel].overlay.length > 0 && (
                   <div className="overlay-list">
                     エクシーズ素材:
