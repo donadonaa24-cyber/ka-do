@@ -112,6 +112,20 @@ export type Action =
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
   | { type: 'LEVEL_MOD'; uid: string; delta: number }
+  /**
+   * 攻撃力・守備力を変える。untilEnd はターン終了時まで、setAtk は攻撃力を決まった値にする、
+   * equip は装備カード（uid）が装備しているモンスターの攻守を上げる量
+   */
+  | {
+      type: 'STAT_MOD';
+      uid: string;
+      atk?: number;
+      def?: number;
+      untilEnd?: boolean;
+      setAtk?: number;
+      equip?: boolean;
+      source?: string;
+    }
   /** 練習用：相手の場にカードを置く（相手は存在しないので手で置く） */
   | {
       type: 'OPP_PLACE';
@@ -322,6 +336,28 @@ export function effectSummonError(state: GameState, ctx: Ctx, uid: string, as?: 
 }
 
 /** フィールドのモンスターの今のレベル（効果で変わった分を含む） */
+/** 今の攻撃力・守備力（効果・装備で変わった分を含む）。モンスター以外は undefined */
+export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: number; def?: number } {
+  const d = getDef(state, ctx, uid);
+  const inst = state.cards[uid];
+  if (d.kind !== 'monster' || !inst) return {};
+  let atk = inst.atkSet ?? d.atk;
+  let def = d.def;
+  if (!isMonsterZone(findLocation(state, uid))) return { atk, def };
+  let da = (inst.atkMod ?? 0) + (inst.turnAtkMod ?? 0);
+  let dd = (inst.defMod ?? 0) + (inst.turnDefMod ?? 0);
+  for (const u of state.stz) {
+    const eq = u ? state.cards[u] : null;
+    if (eq && eq.equippedTo === uid) {
+      da += eq.equipAtk ?? 0;
+      dd += eq.equipDef ?? 0;
+    }
+  }
+  if (atk !== undefined) atk = Math.max(0, atk + da);
+  if (def !== undefined && d.frame !== 'link') def = Math.max(0, def + dd);
+  return { atk, def };
+}
+
 export function currentLevel(state: GameState, ctx: Ctx, uid: string): number | undefined {
   const base = levelOf(getDef(state, ctx, uid));
   return base === undefined ? undefined : base + (state.cards[uid]?.levelMod ?? 0);
@@ -541,6 +577,13 @@ function resetInstance(inst: CardInstance) {
   inst.summonedEntry = null;
   inst.summonType = null;
   inst.levelMod = 0;
+  delete inst.atkMod;
+  delete inst.defMod;
+  delete inst.turnAtkMod;
+  delete inst.turnDefMod;
+  delete inst.atkSet;
+  delete inst.equipAtk;
+  delete inst.equipDef;
   inst.destroyAtEnd = false;
   delete inst.oppSpent;
 }
@@ -820,6 +863,10 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       state.spellActivatedThisTurn = false;
       state.summonGrants = state.summonGrants.filter((g) => !g.thisTurnOnly);
       state.extraLocks = [];
+      for (const inst of Object.values(state.cards)) {
+        delete inst.turnAtkMod;
+        delete inst.turnDefMod;
+      }
       if (toOpponent) {
         log(
           state,
@@ -1048,7 +1095,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         state.lp -= def.attackCost;
         log(state, `攻撃宣言のコストとして${def.attackCost}LPを払った（LP ${state.lp}）`, 'info');
       }
-      const dmg = def.atk ?? 0;
+      const dmg = currentStats(state, ctx, action.uid).atk ?? 0;
       state.opponentLp = Math.max(0, state.opponentLp - dmg);
       log(state, `${def.name}で直接攻撃！ ${dmg}ダメージ（相手LP ${state.opponentLp}）`, 'activate');
       if (state.opponentLp === 0 && state.status === 'playing') {
@@ -1211,6 +1258,36 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
       inst.levelMod += action.delta;
       log(state, `${name(state, ctx, action.uid)}のレベルが${currentLevel(state, ctx, action.uid)}になった`, 'info');
+      return;
+    }
+    case 'STAT_MOD': {
+      const inst = state.cards[action.uid];
+      const nm = name(state, ctx, action.uid);
+      if (action.equip) {
+        inst.equipAtk = (inst.equipAtk ?? 0) + (action.atk ?? 0);
+        inst.equipDef = (inst.equipDef ?? 0) + (action.def ?? 0);
+        return;
+      }
+      // 対象のモンスターがもうフィールドにいなければ、上がらない
+      if (!isMonsterZone(findLocation(state, action.uid)) || !inst.faceUp) {
+        log(state, `${nm}はフィールドに表側表示で存在しないため、攻撃力・守備力は変わらない`, 'info');
+        return;
+      }
+      if (action.setAtk !== undefined) inst.atkSet = action.setAtk;
+      if (action.untilEnd) {
+        inst.turnAtkMod = (inst.turnAtkMod ?? 0) + (action.atk ?? 0);
+        inst.turnDefMod = (inst.turnDefMod ?? 0) + (action.def ?? 0);
+      } else {
+        inst.atkMod = (inst.atkMod ?? 0) + (action.atk ?? 0);
+        inst.defMod = (inst.defMod ?? 0) + (action.def ?? 0);
+      }
+      const st = currentStats(state, ctx, action.uid);
+      const by = action.source ? `${action.source}の効果：` : '';
+      log(
+        state,
+        `${by}${nm}の攻撃力${st.atk ?? '-'}・守備力${st.def ?? '-'}${action.untilEnd ? '（ターン終了時まで）' : ''}`,
+        'info',
+      );
       return;
     }
     case 'EXTRA_LOCK': {

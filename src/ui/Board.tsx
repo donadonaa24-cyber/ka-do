@@ -1,4 +1,4 @@
-import { getDef, type Ctx } from '../engine/game';
+import { currentStats, getDef, type Ctx } from '../engine/game';
 import { linkedMainZones } from '../engine/rules';
 import type { GameState, Location, OppPile, PileZone } from '../engine/types';
 import { CardView } from './CardView';
@@ -55,6 +55,7 @@ export function Board({
     hintZones.some((z) => z.zone === loc.zone && ('index' in z ? z.index : -1) === ('index' in loc ? loc.index : -1));
   const linked = linkedMainZones(state, (u) => getDef(state, ctx, u));
 
+  const monsterZone = (loc: Location) => ['mz', 'emz', 'omz', 'oemz'].includes(loc.zone);
   const slot = (loc: Location, uid: string | null, label: string, extraCls = '') => {
     const selectable = zoneSelectable(loc);
     const drop = 'index' in loc ? `${loc.zone}:${loc.index}` : loc.zone;
@@ -74,6 +75,7 @@ export function Board({
             highlighted={picked.includes(uid)}
             onPointerDown={dragStart?.(uid)}
             uid={uid}
+            stats={monsterZone(loc) ? currentStats(state, ctx, uid) : undefined}
           />
         ) : (
           <span className="zone-label">{label}</span>
@@ -119,6 +121,7 @@ export function Board({
           selected={selected === uid}
           highlighted={picked.includes(uid)}
           uid={uid}
+          stats={monsterZone(loc) ? currentStats(state, ctx, uid) : undefined}
         />
       ) : (
         <span className="zone-label">{label}</span>

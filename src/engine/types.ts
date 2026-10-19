@@ -143,6 +143,17 @@ export interface CardInstance {
   summonType: SummonType | null;
   /** 効果で変わったレベル（フィールドを離れると戻る） */
   levelMod: number;
+  /** 効果で変わった攻撃力・守備力（フィールドを離れると戻る） */
+  atkMod?: number;
+  defMod?: number;
+  /** ターン終了時まで変わった攻撃力・守備力 */
+  turnAtkMod?: number;
+  turnDefMod?: number;
+  /** 「攻撃力が〜になる」効果で決まった元の攻撃力 */
+  atkSet?: number;
+  /** 装備カードとして、装備したモンスターの攻撃力・守備力を上げる量 */
+  equipAtk?: number;
+  equipDef?: number;
   /** 最後に移動した順番・ターン・元の場所・理由（「墓地へ送られた場合」などの判定用） */
   movedAt: number;
   movedTurn: number | null;

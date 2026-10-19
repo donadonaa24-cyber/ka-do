@@ -691,7 +691,10 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             max: 1,
             zone: 'monster',
             noSummonCheck: true,
-            then: (env, p, z) => [ss(env.self, z, `攻撃力${env.def(p[0]).atk ?? 0}・フィールドを離れると除外`)],
+            then: (env, p, z) => [
+              ss(env.self, z, `攻撃力${env.def(p[0]).atk ?? 0}・フィールドを離れると除外`),
+              { type: 'STAT_MOD', uid: env.self, setAtk: env.def(p[0]).atk ?? 0 },
+            ],
           },
         ],
       },
@@ -715,7 +718,8 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             prompt: 'セットする「列王」罠か「ドミナス・パージ」罠（デッキ・墓地）',
             from: ['deck', 'gy'],
             filter: { kind: ['trap'] },
-            where: (env, u) => env.def(u).name.includes('列王') || env.def(u).name.includes('ドミナス・パージ'),
+            // 「列王」（レジェネシス）は「聖王の粉砕」など「聖王」と書くカードも含む
+            where: (env, u) => /列王|聖王|ドミナス・パージ/.test(env.def(u).name),
             min: 1,
             max: 1,
             zone: 'stz',
@@ -822,8 +826,13 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             where: isNormal,
             min: 1,
             max: 1,
-            then: (env, p) =>
-              withShuffle(env, p, [toGy(p[0], `効果（攻守${(env.def(p[0]).level ?? 0) * 100}アップ）`)]),
+            then: (env, p) => {
+              const up = (env.def(p[0]).level ?? 0) * 100;
+              return withShuffle(env, p, [
+                toGy(p[0], `効果（攻守${up}アップ）`),
+                { type: 'STAT_MOD', uid: env.picks![0][0], atk: up, def: up, untilEnd: true, source: '光の霊堂' },
+              ]);
+            },
           },
         ],
       },
@@ -880,8 +889,13 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             where: isNormal,
             min: 1,
             max: 1,
-            then: (env, p) =>
-              withShuffle(env, p, [toGy(p[0], `効果（白き乙女の攻守${(env.def(p[0]).level ?? 0) * 100}アップ）`)]),
+            then: (env, p) => {
+              const up = (env.def(p[0]).level ?? 0) * 100;
+              return withShuffle(env, p, [
+                toGy(p[0], `効果（白き乙女の攻守${up}アップ）`),
+                { type: 'STAT_MOD', uid: env.picks![0][0], atk: up, def: up, untilEnd: true, source: '光の霊堂' },
+              ]);
+            },
           },
         ],
       },
@@ -987,6 +1001,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
                 faceUp: true,
                 equipTo: env.picks![0][0],
               }),
+              { type: 'STAT_MOD', uid: p[0], equip: true, atk: 400 },
             ],
           },
         ],
@@ -1496,7 +1511,10 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
             min: 1,
             max: 1,
             zone: 'monster',
-            then: (_, p, z) => [ss(p[0], z, '藍眼の銀龍の効果・攻撃力1000アップ')],
+            then: (_, p, z) => [
+              ss(p[0], z, '藍眼の銀龍の効果・攻撃力1000アップ'),
+              { type: 'STAT_MOD', uid: p[0], atk: 1000, source: '藍眼の銀龍' },
+            ],
           },
         ],
       },

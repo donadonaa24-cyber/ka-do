@@ -354,7 +354,10 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
             min: 1,
             max: 1,
             zone: 'stz',
-            then: (env, p, z) => [equipTo(env, env.self, `${env.def(p[0]).name}に装備（攻守1000アップ）`, z, p[0])],
+            then: (env, p, z) => [
+              equipTo(env, env.self, `${env.def(p[0]).name}に装備（攻守1000アップ）`, z, p[0]),
+              { type: 'STAT_MOD', uid: env.self, equip: true, atk: 1000, def: 1000 },
+            ],
           },
         ],
       },

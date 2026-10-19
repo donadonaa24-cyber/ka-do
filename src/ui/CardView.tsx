@@ -39,6 +39,23 @@ interface Props {
   small?: boolean;
   /** 盤面・手札のカード（移動の演出で位置を探すため data-uid を付ける） */
   uid?: string;
+  /** フィールドのモンスターの今の攻撃力・守備力（常に表示し、元の値から変わっていれば色を付ける） */
+  stats?: { atk?: number; def?: number };
+}
+
+function StatBadge({ def, stats }: { def: CardDef; stats: { atk?: number; def?: number } }) {
+  const cls = (now?: number, base?: number) =>
+    now === undefined || base === undefined || now === base ? '' : now > base ? 'up' : 'down';
+  return (
+    <div className="card-atk">
+      <span className={cls(stats.atk, def.atk)}>{stats.atk ?? '?'}</span>
+      {def.frame !== 'link' && (
+        <>
+          /<span className={cls(stats.def, def.def)}>{stats.def ?? '?'}</span>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function CardView({
@@ -51,6 +68,7 @@ export function CardView({
   onPointerDown,
   small,
   uid,
+  stats,
 }: Props) {
   const image = useContext(CardImageContext)[def.id];
   const faceDown = inst ? !inst.faceUp : false;
@@ -87,6 +105,7 @@ export function CardView({
       >
         {inst && inst.overlay.length > 0 && <div className="card-overlay">素材{inst.overlay.length}</div>}
         {faceDown && <div className="card-tag">裏側</div>}
+        {stats && !faceDown && <StatBadge def={def} stats={stats} />}
       </div>
     );
   }
@@ -106,6 +125,7 @@ export function CardView({
       )}
       {inst && inst.overlay.length > 0 && <div className="card-overlay">素材{inst.overlay.length}</div>}
       {faceDown && <div className="card-tag">裏側</div>}
+      {stats && !faceDown && <StatBadge def={def} stats={stats} />}
     </div>
   );
 }

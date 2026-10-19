@@ -2235,3 +2235,27 @@ button.danger {
 .modal-backdrop.pile-right .modal {
   width: min(560px, calc(50vw - 24px));
 }
+
+/* フィールドのモンスターの攻撃力・守備力（変わっていれば色付き） */
+.card-atk {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: max(9px, calc(var(--card-w) * 0.15));
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(10, 12, 18, 0.85);
+  color: #fff;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.card-atk .up {
+  color: #6dffa0;
+}
+.card-atk .down {
+  color: #ff7a7a;
+}

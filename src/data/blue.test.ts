@@ -16,6 +16,7 @@ import {
   createGame,
   type Ctx,
   currentLevel,
+  currentStats,
   findLocation,
   type MonsterLocation,
 } from '../engine/game';
@@ -551,5 +552,27 @@ describe('相手の妨害（トゥーンの最終盤面）', () => {
     const top = startResolve(s, ctx);
     s = act(s, (top as { action: Action }).action);
     expect(s.gy).toContain(sage);
+  });
+});
+
+describe('攻撃力・守備力の変化とセットするカード', () => {
+  it('ローズパメラ②で、デッキの「聖王の粉砕」（列王＝レジェネシスの罠）をセットできる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['65302903']);
+    const pamela = find(s, 'hand', '聖王女ローズパメラ');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: pamela, index: 0 });
+    s = useEffect(s, pamela, '② 召喚・特殊召喚時', [{ pick: ['聖王の粉砕'], zone: { zone: 'stz', index: 0 } }]);
+    expect(name(s, s.stz[0]!)).toBe('聖王の粉砕');
+    expect(s.cards[s.stz[0]!].faceUp).toBe(false);
+  });
+
+  it('光の霊堂②：対象の青眼の白龍の攻守が、墓地へ送った通常モンスターのレベル×100アップ（ターン終了時まで）', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['24382602', '89631139']);
+    s = useEffect(s, find(s, 'hand', '光の霊堂'), '発動');
+    const be = find(s, 'hand', '青眼の白龍');
+    s = act(s, { type: 'MOVE', uid: be, to: mz(2) });
+    s = useEffect(s, s.fz!, '② 手札・デッキの通常モンスター', [{ pick: ['青眼の白龍'] }, { pick: ['青眼の白龍'] }]);
+    expect(currentStats(s, ctx, be)).toEqual({ atk: 3800, def: 3300 });
+    s = act(s, { type: 'END_TURN' });
+    expect(currentStats(s, ctx, be)).toEqual({ atk: 3000, def: 2500 });
   });
 });
