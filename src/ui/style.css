@@ -2451,3 +2451,30 @@ button.danger {
   background: var(--panel2);
   color: inherit;
 }
+
+/* ===== 広い画面（PCなど）：モンスター・魔法＆罠ゾーンを正方形にする ===== */
+/* 守備表示のカードを縮めずに横向きで置ける。両端は山札の列（縦長のまま） */
+@media (min-width: 700px) {
+  :root,
+  .app {
+    --card-w: max(
+      30px,
+      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 3 / 1.43 - 9px), 104px)
+    );
+  }
+  .app.with-opp {
+    --card-w: max(
+      26px,
+      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 5 / 1.43 - 7px), 90px)
+    );
+  }
+  .board {
+    grid-template-columns:
+      calc(var(--card-w) + 4px)
+      repeat(5, calc(var(--card-h) + 6px))
+      calc(var(--card-w) + 4px);
+  }
+  .board .card.def-pos {
+    transform: rotate(90deg);
+  }
+}
