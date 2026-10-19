@@ -44,6 +44,7 @@ import type { PvpEntry } from '../engine/pvp';
 import { useDrag } from './useDrag';
 import {
   BUILTIN_IMAGES,
+  CARD_BACK,
   CardFoilContext,
   CardImageContext,
   type CardFoils,
@@ -1815,7 +1816,7 @@ export function App() {
     <CardImageContext.Provider value={shownImages}>
       <CardFoilContext.Provider value={foils}>
         <div
-          className={`app motion-${motionMode} ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
+          className={`app motion-${motionMode} ${images[CARD_BACK] ? 'has-back' : ''} ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
             showStepPopup && !dockRight ? 'with-popup' : ''
           }`}
           style={
@@ -1824,6 +1825,7 @@ export function App() {
               '--hand-h': `${handHeight}px`,
               '--coach-h': `${coachHeight}px`,
               '--hud-h': `${hudHeight}px`,
+              ...(images[CARD_BACK] ? { '--back-img': `url(${images[CARD_BACK]})` } : {}),
             } as React.CSSProperties
           }
           onClickCapture={onClickCapture}

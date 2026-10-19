@@ -2984,3 +2984,26 @@ button.danger {
     font-size: 13px;
   }
 }
+
+/* ===== カードの裏面（画像の設定で変えた時） ===== */
+.app.has-back .f-back {
+  background: #2b1a0c var(--back-img) center / cover no-repeat;
+}
+.back-setting {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+}
+.back-setting .note {
+  margin: 2px 0 6px;
+}
+.back-preview {
+  --card-w: 56px;
+  --card-h: 80px;
+  flex: none;
+}

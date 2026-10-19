@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CARD_DB, EDITABLE_CARDS } from '../data';
 import type { DeckList } from '../engine/types';
 import { CardView } from './CardView';
-import { type CardImages, matchCard, normalizeName } from './cardImages';
+import { CARD_BACK, type CardImages, matchCard, normalizeName } from './cardImages';
 
 interface Props {
   /** 自分で設定した画像 */
@@ -66,6 +66,30 @@ export function ImageSettings({ images, shown, builtin, decks, current, onSet, o
       <p className="note">
         画像はカードごとに保存され、どのデッキで使っても同じ画像が表示されます（このブラウザの中にだけ保存）。
       </p>
+
+      {/* カードの裏面（デッキ・EXデッキ・裏側のカード・相手の手札） */}
+      <div className="back-setting">
+        <div className="card f-back back-preview" />
+        <div className="grow">
+          <strong>カードの裏面</strong>
+          <p className="note">デッキ・EXデッキ・裏側のカード・相手の手札に使う画像です。</p>
+          <div className="btn-row">
+            <label className="file-btn">
+              {images[CARD_BACK] ? '裏面の画像を変更' : '裏面の画像を設定'}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onSet(CARD_BACK, f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {images[CARD_BACK] && <button onClick={() => onClear(CARD_BACK)}>最初の裏面に戻す</button>}
+          </div>
+        </div>
+      </div>
 
       <div className="seg wrap" role="tablist" aria-label="表示するカード">
         <button role="tab" aria-selected={all} className={all ? 'on' : ''} onClick={() => setTab(ALL)}>

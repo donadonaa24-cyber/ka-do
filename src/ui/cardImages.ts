@@ -9,6 +9,9 @@ const WIDTH = 240;
 
 export type CardImages = Record<string, string>;
 
+/** カードの裏面の画像（カード画像と同じ場所に、この名前で保存する） */
+export const CARD_BACK = '__back';
+
 export const CardImageContext = createContext<CardImages>({});
 
 /** 非公開ページのビルドで埋め込んだ画像（scripts/build-artifact.mjs）。自分で設定した画像が優先 */
