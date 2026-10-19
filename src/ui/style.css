@@ -2916,3 +2916,10 @@ button.danger {
 .motion-off .foil-fx::before {
   animation: none;
 }
+
+/* カードの詳細：画像・加工の変更（操作ボタンの下） */
+.btn-row.card-look {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}

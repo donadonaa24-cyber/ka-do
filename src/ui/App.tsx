@@ -2032,47 +2032,6 @@ export function App() {
                   )}
                   <CardText text={selDef.text} />
                 </div>
-                <div className="btn-row">
-                  {imagePicker(selDef.id, shownImages[selDef.id] ? '画像を変更' : '画像を設定')}
-                  <button
-                    className={foilOpen ? 'on' : ''}
-                    aria-expanded={foilOpen}
-                    onClick={() => setFoilOpen(!foilOpen)}
-                  >
-                    加工を変更
-                    {foils[selDef.id] ? `（${FOIL_STYLES.find((f) => f.id === foils[selDef.id])?.short}）` : ''}
-                  </button>
-                  {images[selDef.id] && (
-                    <button onClick={() => clearCardImage(selDef.id)}>
-                      {BUILTIN_IMAGES[selDef.id] ? '最初の画像に戻す' : '画像を外す'}
-                    </button>
-                  )}
-                </div>
-                {foilOpen && (
-                  <div className="foil-list" role="listbox" aria-label="加工">
-                    <button
-                      className={!foils[selDef.id] ? 'on' : ''}
-                      onClick={() => {
-                        setFoil(selDef.id, null);
-                        setFoilOpen(false);
-                      }}
-                    >
-                      なし
-                    </button>
-                    {FOIL_STYLES.map((f) => (
-                      <button
-                        key={f.id}
-                        className={foils[selDef.id] === f.id ? 'on' : ''}
-                        onClick={() => {
-                          setFoil(selDef.id, f.id);
-                          setFoilOpen(false);
-                        }}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 {state.cards[sel].overlay.length > 0 && (
                   <div className="overlay-list">
                     エクシーズ素材:
@@ -2129,6 +2088,48 @@ export function App() {
                     </>
                   );
                 })()}
+                {/* カードの見た目（画像・加工）：操作の邪魔にならないよう一番下に置く */}
+                <div className="btn-row card-look">
+                  {imagePicker(selDef.id, shownImages[selDef.id] ? '画像を変更' : '画像を設定')}
+                  <button
+                    className={foilOpen ? 'on' : ''}
+                    aria-expanded={foilOpen}
+                    onClick={() => setFoilOpen(!foilOpen)}
+                  >
+                    加工を変更
+                    {foils[selDef.id] ? `（${FOIL_STYLES.find((f) => f.id === foils[selDef.id])?.short}）` : ''}
+                  </button>
+                  {images[selDef.id] && (
+                    <button onClick={() => clearCardImage(selDef.id)}>
+                      {BUILTIN_IMAGES[selDef.id] ? '最初の画像に戻す' : '画像を外す'}
+                    </button>
+                  )}
+                </div>
+                {foilOpen && (
+                  <div className="foil-list" role="listbox" aria-label="加工">
+                    <button
+                      className={!foils[selDef.id] ? 'on' : ''}
+                      onClick={() => {
+                        setFoil(selDef.id, null);
+                        setFoilOpen(false);
+                      }}
+                    >
+                      なし
+                    </button>
+                    {FOIL_STYLES.map((f) => (
+                      <button
+                        key={f.id}
+                        className={foils[selDef.id] === f.id ? 'on' : ''}
+                        onClick={() => {
+                          setFoil(selDef.id, f.id);
+                          setFoilOpen(false);
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
