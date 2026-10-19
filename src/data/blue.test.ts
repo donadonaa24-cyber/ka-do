@@ -697,3 +697,23 @@ describe('戦闘の段階・巻き戻し・タイミングを逃す', () => {
     expect(r.kind === 'error' && r.error).toMatch('タイミングを逃しました');
   });
 });
+
+describe('エンシェント・フェアリー・ライフ・ドラゴン②', () => {
+  it('「エンシェント・フェアリー・ドラゴン」は表側守備表示のまま、守備力を攻撃力として攻撃できる', () => {
+    let s = createGame({ ...BLUE_EYES_DECK, extra: [...BLUE_EYES_DECK.extra, '25862681', '43321985'] }, ctx, 1);
+    const afd = find(s, 'extra', 'エンシェント・フェアリー・ドラゴン');
+    const afld = find(s, 'extra', 'エンシェント・フェアリー・ライフ・ドラゴン');
+    s = act(s, { type: 'MOVE', uid: afd, to: mz(2), position: 'def' });
+    s = act(s, { type: 'END_TURN' });
+    s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 0 }, faceUp: true });
+    const target = s.opp!.mz[0]!;
+    // ライフ・ドラゴンがいなければ守備表示では攻撃できない
+    expect(applyAction(s, { type: 'ATTACK', uid: afd, target }, ctx).ok).toBe(false);
+    s = act(s, { type: 'MOVE', uid: afld, to: mz(3) });
+    s = fight(act(s, { type: 'ATTACK', uid: afd, target }));
+    expect(s.cards[afd].position).toBe('def');
+    expect(s.opp!.gy).toContain(target);
+    expect(s.opponentLp).toBe(8000 - (3000 - 2000));
+  });
+});

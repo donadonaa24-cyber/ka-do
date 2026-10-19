@@ -6,6 +6,7 @@ import {
   type Action,
   applyAction,
   canAttackDirectly,
+  canAttackInDefense,
   createGame,
   type Ctx,
   findLocation,
@@ -638,7 +639,12 @@ export function App() {
       btns.push(effectBtn(uid));
       if (inst.faceUp) {
         btns.push({ label: '表示形式変更', onClick: () => dispatch({ type: 'CHANGE_POSITION', uid }) });
-        if (state.phase === 'BP' && !state.opponentTurn && !state.battle) {
+        if (
+          state.phase === 'BP' &&
+          !state.opponentTurn &&
+          !state.battle &&
+          (inst.position === 'atk' || canAttackInDefense(state, ctx, uid))
+        ) {
           // 相手フィールドにモンスターがいれば、攻撃するモンスターを選ぶ（直接攻撃できるのはトゥーンなど）
           const targets = view.opp ? oppMonsterSlots(view.opp).filter((u): u is string => !!u) : [];
           for (const t of targets)

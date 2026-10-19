@@ -401,6 +401,27 @@ export function canAttackDirectly(state: GameState, ctx: Ctx, uid: string): bool
   return !oppMons.some((u) => u && state.cards[u].faceUp && getDef(state, ctx, u).toon);
 }
 
+/**
+ * 表側守備表示のまま攻撃できるか（エンシェント・フェアリー・ライフ・ドラゴン②：
+ * 自分の「エンシェント・フェアリー・ドラゴン」及びそのカード名が記されたモンスター。ダメージ計算では守備力を攻撃力として扱う）
+ */
+export function canAttackInDefense(state: GameState, ctx: Ctx, uid: string): boolean {
+  const inst = state.cards[uid];
+  if (!inst || inst.opp) return false;
+  const d = getDef(state, ctx, uid);
+  const afd = 'エンシェント・フェアリー・ドラゴン';
+  if (d.name !== afd && !d.text.includes(`「${afd}」`)) return false;
+  return fieldMonsters(state).some(
+    (u) => state.cards[u].faceUp && getDef(state, ctx, u).name === 'エンシェント・フェアリー・ライフ・ドラゴン',
+  );
+}
+
+/** ダメージ計算で使う攻撃するモンスターの数値（守備表示で攻撃しているなら守備力） */
+function attackValue(state: GameState, ctx: Ctx, uid: string): number {
+  const st = currentStats(state, ctx, uid);
+  return (state.cards[uid].position === 'def' ? st.def : st.atk) ?? 0;
+}
+
 /** 「このカードは戦闘では破壊されない」 */
 function battleIndestructible(state: GameState, ctx: Ctx, uid: string): boolean {
   return /このカードは戦闘(・効果)?では破壊されない/.test(getDef(state, ctx, uid).text);
@@ -443,11 +464,15 @@ function checkLp(state: GameState) {
 /** ダメージ計算：戦闘ダメージを与え、破壊されるモンスターを決める（墓地へ送るのはダメージステップ終了時） */
 function damageCalc(state: GameState, ctx: Ctx, b: Battle) {
   const an = name(state, ctx, b.attacker);
-  const a = currentStats(state, ctx, b.attacker).atk ?? 0;
+  const a = attackValue(state, ctx, b.attacker);
   // 攻撃したモンスターのコントローラーの相手がダメージを受ける
   const attackerIsOpp = !!state.cards[b.attacker].opp;
   if (!b.target) {
-    log(state, `ダメージ計算：${an}の直接攻撃（攻撃力${a}）`, 'activate');
+    log(
+      state,
+      `ダメージ計算：${an}の直接攻撃（${state.cards[b.attacker].position === 'def' ? '守備力を攻撃力として' : '攻撃力'}${a}）`,
+      'activate',
+    );
     damage(state, !attackerIsOpp, a);
     return;
   }
@@ -456,7 +481,8 @@ function damageCalc(state: GameState, ctx: Ctx, b: Battle) {
   const ts = currentStats(state, ctx, b.target);
   const vsAtk = t.position === 'atk';
   const d = (vsAtk ? ts.atk : ts.def) ?? 0;
-  log(state, `ダメージ計算：${an}（攻撃力${a}）→ ${tn}（${vsAtk ? '攻撃力' : '守備力'}${d}）`, 'activate');
+  const asDef = state.cards[b.attacker].position === 'def' ? '守備力を攻撃力として' : '攻撃力';
+  log(state, `ダメージ計算：${an}（${asDef}${a}）→ ${tn}（${vsAtk ? '攻撃力' : '守備力'}${d}）`, 'activate');
   const destroyed: string[] = [];
   const destroy = (u: string) => {
     if (battleIndestructible(state, ctx, u)) {
@@ -1305,7 +1331,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (!byOpp && state.opponentTurn) fail('相手ターンには攻撃できません');
         if (state.phase !== 'BP') fail('攻撃はバトルフェイズに行います');
         if (state.turn === 1) fail('先攻1ターン目は攻撃できません');
-        if (!inst.faceUp || inst.position !== 'atk') fail('表側攻撃表示のモンスターのみ攻撃できます');
+        if (!inst.faceUp || (inst.position !== 'atk' && !canAttackInDefense(state, ctx, action.uid)))
+          fail('表側攻撃表示のモンスターのみ攻撃できます');
         const maxAttacks = byOpp
           ? 1
           : Math.max(def.attacksPerBattle ?? 1, inst.doubleAttackTurn === state.turn ? 2 : 1);
