@@ -595,6 +595,18 @@ select {
   overflow-x: auto;
   padding-bottom: 4px;
 }
+.run-cand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.cand-where {
+  font-size: 11px;
+  color: #c9d6f0;
+  white-space: nowrap;
+}
 .btn-row {
   display: flex;
   flex-wrap: wrap;

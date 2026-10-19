@@ -35,7 +35,11 @@ export interface Coach {
 
 /** ゾーン番号の違いは同じ手とみなす */
 export function normalize(text: string): string {
-  return text.replace(/[0-9]/g, '').replace(/\((左|右)\)/g, '');
+  // 特殊召喚の表示形式はプレイヤーが選べるので、ルートと違っても同じ手順とみなす
+  return text
+    .replace(/[0-9]/g, '')
+    .replace(/\((左|右)\)/g, '')
+    .replace(/(攻撃|守備)表示で特殊召喚/g, '表示で特殊召喚');
 }
 
 /** 「Aの効果「①…」を発動」を「A ①…」に縮める */

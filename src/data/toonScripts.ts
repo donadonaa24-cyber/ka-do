@@ -84,7 +84,8 @@ const move = (
 const toHand = (uid: string, reason = '効果') => move(uid, { zone: 'hand' }, reason);
 const toGy = (uid: string, reason = 'コスト') => move(uid, { zone: 'gy' }, reason);
 const banish = (uid: string, reason = '効果') => move(uid, { zone: 'banished' }, reason);
-const ss = (uid: string, zone: Location | null, note: string, position: 'atk' | 'def' = 'atk'): Action => ({
+// 表示形式を指定しなければ、特殊召喚する時にプレイヤーが選ぶ（自動では攻撃表示）
+const ss = (uid: string, zone: Location | null, note: string, position?: 'atk' | 'def'): Action => ({
   type: 'SPECIAL_SUMMON',
   uid,
   to: zone as MonsterLocation,

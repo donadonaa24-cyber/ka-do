@@ -20,7 +20,8 @@ const move = (
   ...extra,
 });
 
-const ss = (uid: string, zone: Location | null, note: string, position: 'atk' | 'def' = 'atk'): Action => ({
+// 表示形式を指定しなければ、特殊召喚する時にプレイヤーが選ぶ（自動では攻撃表示）
+const ss = (uid: string, zone: Location | null, note: string, position?: 'atk' | 'def'): Action => ({
   type: 'SPECIAL_SUMMON',
   uid,
   to: zone as MonsterLocation,

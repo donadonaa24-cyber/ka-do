@@ -9,6 +9,7 @@ import {
   canAttackInDefense,
   createGame,
   type Ctx,
+  currentStats,
   findLocation,
   getDef,
   isMonsterZone,
@@ -124,6 +125,12 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [run, setRun] = useState<Running | null>(null);
+  /** 特殊召喚するモンスターの表示形式を聞いている間の、まだ行っていない操作 */
+  const [posAsk, setPosAsk] = useState<{
+    action: Action;
+    uids: string[];
+    chosen: Record<string, BattlePosition>;
+  } | null>(null);
   const [pile, setPile] = useState<PileZone | OppPile | null>(null);
   /** 相手の盤面を手で置く練習モード */
   const [oppMode, setOppModeState] = useState(() => {
@@ -328,6 +335,43 @@ export function App() {
     );
   };
 
+  /** 表示形式を選べる特殊召喚（効果で表示形式が決まっていないもの・リンクモンスター以外） */
+  const positionChoices = (action: Action): string[] => {
+    if (action.type === 'BATCH') return action.actions.flatMap(positionChoices);
+    const free =
+      (action.type === 'SPECIAL_SUMMON' && !action.position && !action.faceDown) ||
+      (action.type === 'PROCEDURE_SUMMON' && !action.position && action.method !== 'link');
+    return free && def(action.uid).frame !== 'link' ? [action.uid] : [];
+  };
+  const withPositions = (action: Action, chosen: Record<string, BattlePosition>): Action =>
+    action.type === 'BATCH'
+      ? { ...action, actions: action.actions.map((a) => withPositions(a, chosen)) }
+      : (action.type === 'SPECIAL_SUMMON' || action.type === 'PROCEDURE_SUMMON') && chosen[action.uid]
+        ? { ...action, position: chosen[action.uid] }
+        : action;
+  /** 特殊召喚を含む操作：できるか確かめてから、表示形式を聞いて行う */
+  const dispatchAskPosition = (action: Action): boolean => {
+    const uids = positionChoices(action);
+    if (!uids.length) return dispatch(action);
+    const r = applyAction(stateRef.current, action, ctx);
+    if (!r.ok) {
+      setError(r.error);
+      return false;
+    }
+    setPosAsk({ action, uids, chosen: {} });
+    return true;
+  };
+  const choosePosition = (position: BattlePosition) => {
+    if (!posAsk) return;
+    const uid = posAsk.uids.find((u) => !posAsk.chosen[u]);
+    if (!uid) return;
+    const chosen = { ...posAsk.chosen, [uid]: position };
+    if (posAsk.uids.every((u) => chosen[u])) {
+      setPosAsk(null);
+      dispatch(withPositions(posAsk.action, chosen));
+    } else setPosAsk({ ...posAsk, chosen });
+  };
+
   const onRunResult = (r: RunResult, prev?: Running) => {
     // 選び方が合わない時は、同じ効果の選択をやり直せるようにする
     if (r.kind === 'error' && prev) {
@@ -344,7 +388,7 @@ export function App() {
       setRun(r.run);
     } else {
       setRun(null);
-      dispatch(r.action);
+      dispatchAskPosition(r.action);
     }
   };
 
@@ -407,7 +451,7 @@ export function App() {
   const onZoneClick = (loc: Location) => {
     if (run) return onRunResult(completeStep(run, ctx, loc), run);
     if (!pending) return;
-    if (dispatch(pending.build(pending.picked, loc))) setPending(null);
+    if (dispatchAskPosition(pending.build(pending.picked, loc))) setPending(null);
   };
 
   // ===== 選択中カードの操作ボタン =====
@@ -525,6 +569,32 @@ export function App() {
     return btns;
   };
 
+  /** フィールドのカードの場所と表示形式（「M2・守備」など） */
+  const fieldCaption = (uid: string): string => {
+    const loc = findLocation(state, uid);
+    if (!loc) return '';
+    const inst = state.cards[uid];
+    const where =
+      loc.zone === 'mz' || loc.zone === 'omz'
+        ? `${loc.zone === 'omz' ? '相手' : ''}M${loc.index + 1}`
+        : loc.zone === 'emz' || loc.zone === 'oemz'
+          ? `${loc.zone === 'oemz' ? '相手' : ''}EX${loc.index === 0 ? '左' : '右'}`
+          : loc.zone === 'stz' || loc.zone === 'ostz'
+            ? `${loc.zone === 'ostz' ? '相手' : ''}魔罠${loc.index + 1}`
+            : ZONE_LABEL[loc.zone];
+    const monster = ['mz', 'emz', 'omz', 'oemz'].includes(loc.zone);
+    const pos = monster
+      ? inst.faceUp
+        ? inst.position === 'def'
+          ? '守備'
+          : '攻撃'
+        : '裏守備'
+      : inst.faceUp
+        ? ''
+        : '裏';
+    return pos ? `${where}・${pos}` : where;
+  };
+
   const buttonsFor = (uid: string): Btn[] => {
     // CPUのターン中は手札誘発（CPUの操作ごとに聞く）以外は操作しない
     if (cpuTurn) return [];
@@ -536,8 +606,11 @@ export function App() {
     const btns: Btn[] = [];
     const script = CARD_SCRIPTS[d.id];
     const scriptedActivation = !!script?.effects?.some((e) => e.isCardActivation);
-    for (const e of script?.effects ?? []) {
+    for (const [i, e] of (script?.effects ?? []).entries()) {
       if (!effectAvailable(state, uid, e)) continue;
+      // 同じ効果の別の使い方（「白き乙女を対象に発動し…」など）は、今その使い方ができる時だけ出す
+      const variant = e.key && script!.effects!.slice(0, i).some((o) => o.key === e.key);
+      if (variant && e.condition?.(makeEnv(state, ctx, uid))) continue;
       if (effectUsedUp(state, ctx, uid, e)) {
         btns.push({ label: e.label, used: true, onClick: () => {} });
         continue;
@@ -1108,14 +1181,14 @@ export function App() {
 
   // 「解決する」を押したら、チェーンが無くなるまで上から順に解決する（途中の選択は都度聞く）
   useEffect(() => {
-    if (!resolvingChain || run || pending) return;
+    if (!resolvingChain || run || pending || posAsk) return;
     if (!chain.length) {
       setResolvingChain(false);
       return;
     }
     onRunResult(startResolve(state, ctx));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvingChain, chain.length, run, pending]);
+  }, [resolvingChain, chain.length, run, pending, posAsk]);
 
   // ===== 表示 =====
 
@@ -1188,7 +1261,24 @@ export function App() {
   // 山札などの一覧を開いたままカードを選んだ時：横に広い画面では一覧を右へ寄せ、カードの詳細を左の空きに出す
   const pileSide = winWidth >= 900;
   const peekButton = <button onClick={() => setPeek(true)}>フィールドを確認</button>;
-  const actionPanel = pending ? (
+  const askingUid = posAsk?.uids.find((u) => !posAsk.chosen[u]);
+  const actionPanel = askingUid ? (
+    <div className="action-panel">
+      <div className="ap-title">表示形式を選択</div>
+      <div className="ap-hint">{def(askingUid).name}を特殊召喚する表示形式</div>
+      <div className="run-cands">
+        <CardView def={def(askingUid)} small />
+      </div>
+      <div className="btn-row">
+        <button className="primary" onClick={() => choosePosition('atk')}>
+          攻撃表示
+        </button>
+        <button className="primary" onClick={() => choosePosition('def')}>
+          守備表示
+        </button>
+      </div>
+    </div>
+  ) : pending ? (
     <div className="action-panel">
       <div className="ap-title">{pending.title}</div>
       <div className="ap-hint">
@@ -1225,15 +1315,23 @@ export function App() {
       </div>
       {run.stage === 'pick' && (
         <div className="run-cands">
-          {runCands.map((u) => (
-            <CardView
-              key={u}
-              def={vdef(u)}
-              small
-              highlighted={run.picked.includes(u)}
-              onClick={() => toggleRunPick(u)}
-            />
-          ))}
+          {runCands.map((u) => {
+            // フィールドのカードは場所と表示形式も出す（同じ名前のカードを見分けるため）
+            const loc = findLocation(state, u);
+            const onField = isOnField(loc);
+            return (
+              <div key={u} className="run-cand">
+                <CardView
+                  def={vdef(u)}
+                  small
+                  highlighted={run.picked.includes(u)}
+                  onClick={() => toggleRunPick(u)}
+                  stats={isMonsterZone(loc) ? currentStats(state, ctx, u) : undefined}
+                />
+                {onField && <div className="cand-where">{fieldCaption(u)}</div>}
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="btn-row">

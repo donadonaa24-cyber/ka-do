@@ -25,7 +25,8 @@ const move = (
 ): Action => ({ type: 'MOVE', uid, to, reason, ...extra });
 const toHand = (uid: string, reason = '効果') => move(uid, { zone: 'hand' }, reason);
 const toGy = (uid: string, reason = 'コスト') => move(uid, { zone: 'gy' }, reason);
-const ss = (uid: string, zone: Location | null, note: string, position: 'atk' | 'def' = 'atk'): Action => ({
+// 表示形式を指定しなければ、特殊召喚する時にプレイヤーが選ぶ（自動では攻撃表示）
+const ss = (uid: string, zone: Location | null, note: string, position?: 'atk' | 'def'): Action => ({
   type: 'SPECIAL_SUMMON',
   uid,
   to: zone as MonsterLocation,
@@ -46,7 +47,7 @@ const selfTo = (zone: 'gy' | 'banished', reason = 'コスト'): Step => ({
   cost: reason === 'コスト',
   then: (env) => [move(env.self, { zone }, reason)],
 });
-const ssSelf = (note: string, position: 'atk' | 'def' = 'atk'): Step => ({
+const ssSelf = (note: string, position?: 'atk' | 'def'): Step => ({
   op: 'place',
   prompt: 'このカードを出すゾーンを選択',
   zone: 'monster',
