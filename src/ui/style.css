@@ -2424,3 +2424,20 @@ button.danger {
   background: rgba(242, 193, 78, 0.12);
   box-shadow: 0 0 0 1px var(--gold) inset;
 }
+
+/* ===== 通信対戦 ===== */
+.room-code {
+  font-size: 18px;
+  letter-spacing: 2px;
+  user-select: all;
+}
+.room-input {
+  width: 100%;
+  font-size: 18px;
+  padding: 8px 10px;
+  letter-spacing: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: inherit;
+}

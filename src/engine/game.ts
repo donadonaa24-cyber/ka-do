@@ -109,6 +109,10 @@ export type Action =
   | { type: 'TIMING' }
   /** このモンスターはエンドフェイズに除外される */
   | { type: 'BANISH_AT_END'; uid: string }
+  /** 通信対戦：チェーンの一番上に相手が応答した（妨害を使わなかった） */
+  | { type: 'OPP_PASS' }
+  /** 通信対戦：相手のゲームで受けたダメージ・払ったLPを反映する */
+  | { type: 'LP_SET'; lp: number; reason: string }
   /** CPU戦：CPUの盤面（フィールド・墓地・除外・手札）を相手の盤面に写す */
   | {
       type: 'OPP_SYNC';
@@ -1548,6 +1552,18 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'TIMING':
       state.timingGroup = (state.timingGroup ?? 0) + 1;
       return;
+    case 'OPP_PASS': {
+      const top = state.chain[state.chain.length - 1];
+      if (top) top.oppPassed = true;
+      return;
+    }
+    case 'LP_SET': {
+      const diff = action.lp - state.lp;
+      state.lp = Math.max(0, action.lp);
+      log(state, `${action.reason}：LP ${diff > 0 ? '+' : ''}${diff}（LP ${state.lp}）`, diff < 0 ? 'warn' : 'info');
+      checkLp(state);
+      return;
+    }
     case 'BANISH_AT_END':
       if (state.cards[action.uid]) state.cards[action.uid].banishAtEnd = true;
       return;

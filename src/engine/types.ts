@@ -197,6 +197,8 @@ export interface ChainLink {
   label: string;
   /** 誘発効果（同時に発動条件を満たした誘発効果は、スペルスピード1でもチェーンを組める） */
   trigger?: boolean;
+  /** 通信対戦：このチェーンに相手が応答した（使わなかった・使った） */
+  oppPassed?: boolean;
   /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */
   opp?: string;
   /** 相手の妨害が対象にしたチェーン番号（0始まり）・カード */
@@ -337,4 +339,6 @@ export interface GameOptions {
   strict: boolean;
   /** 相手の盤面の妨害を自動で使う（CPU戦のCPUのゲームでは、使うかはプレイヤーが選ぶので false） */
   oppAI?: boolean;
+  /** 通信対戦：相手が妨害を使えるなら、効果の発動をチェーンに積んで相手の応答を待つ */
+  oppAsk?: boolean;
 }

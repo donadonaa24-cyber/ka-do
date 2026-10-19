@@ -10,7 +10,7 @@ import {
   missedTiming,
   simultaneousTriggers,
 } from './game';
-import { oppResponse, resolveOppLink } from './oppAI';
+import { oppCanRespond, oppResponse, resolveOppLink } from './oppAI';
 import { type EffectDef, type Env, effectText, type Step } from './scripts';
 import type { CardDef, GameState, Location } from './types';
 
@@ -426,6 +426,9 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
         (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
       ),
     );
+  // 通信対戦：相手が妨害を使えるなら、チェーンに積んで相手の応答を待つ
+  if (ctx.options.oppAsk && oppCanRespond(r.state, ctx))
+    return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
   // 相手（練習用の相手AI）が妨害をチェーンしてくるか
   const opp = ctx.options.strict && ctx.options.oppAI !== false ? oppResponse(r.state, ctx) : null;
   if (run.chainMode === 'auto' && responses.length === 0 && !opp) return null;

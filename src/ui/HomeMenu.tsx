@@ -3,6 +3,7 @@ import { CARD_DB } from '../data';
 import type { Guide } from '../engine/guide';
 import type { DeckList } from '../engine/types';
 import { isExtraDeckCard } from '../engine/types';
+import { PVP_ENABLED } from './features';
 
 interface Props {
   decks: DeckList[];
@@ -35,6 +36,8 @@ export interface StartConfig {
   method: 'random' | 'pick' | { guide: Guide };
   /** CPU戦のCPUのデッキ（null はCPUなし） */
   cpuDeck: string | null;
+  /** 通信対戦（join があれば、その部屋コードの部屋に入る。無ければ部屋を作る） */
+  pvp?: { join?: string };
 }
 
 /** デッキの中で多く入っているモンスター（デッキの顔として表示） */
@@ -67,7 +70,10 @@ export function HomeMenu(p: Props) {
   const [deckName, setDeckName] = useState(p.current);
   const [handSize, setHandSize] = useState<5 | 6>(5);
   const [navi, setNavi] = useState(true);
-  const [cpuOn, setCpuOn] = useState(false);
+  const [opponent, setOpponent] = useState<'none' | 'cpu' | 'pvp'>('none');
+  const cpuOn = opponent === 'cpu';
+  const [pvpJoin, setPvpJoin] = useState(false);
+  const [roomCode, setRoomCode] = useState('');
   const [cpuDeck, setCpuDeck] = useState(p.builtinNames[0]);
   const [method, setMethod] = useState<StartConfig['method']>('random');
   /** 名前を変えている途中のデッキの新しい名前（null は変えていない） */
@@ -282,14 +288,14 @@ export function HomeMenu(p: Props) {
         {step === 'opponent' && (
           <section className="step-body">
             <h2>相手</h2>
-            <button className={`choice-option ${!cpuOn ? 'on' : ''}`} onClick={() => setCpuOn(false)}>
+            <button className={`choice-option ${opponent === 'none' ? 'on' : ''}`} onClick={() => setOpponent('none')}>
               <strong>CPUなし（一人回し）</strong>
               <span>
                 自分の展開を練習します。{!guide && handSize === 6 ? '後攻は自分のドローフェイズから始まります。' : ''}
                 相手の盤面（妨害）は後からメニューで置けます。
               </span>
             </button>
-            <button className={`choice-option ${cpuOn ? 'on' : ''}`} onClick={() => setCpuOn(true)}>
+            <button className={`choice-option ${cpuOn ? 'on' : ''}`} onClick={() => setOpponent('cpu')}>
               <strong>CPUあり</strong>
               <span>
                 {guide || handSize === 5
@@ -298,6 +304,51 @@ export function HomeMenu(p: Props) {
                 止められたCPUは今の盤面からルートを探し直します。
               </span>
             </button>
+            {PVP_ENABLED && (
+              <>
+                <button
+                  className={`choice-option ${opponent === 'pvp' ? 'on' : ''}`}
+                  onClick={() => setOpponent('pvp')}
+                >
+                  <strong>通信対戦</strong>
+                  <span>
+                    友達と対戦します。部屋を作って部屋コードを伝えるか、伝えられたコードで部屋に入ります。相手の効果には、手札誘発を使うか毎回聞きます（初手はランダム・ナビなし）。
+                  </span>
+                </button>
+                {opponent === 'pvp' && (
+                  <>
+                    <div className="seg" role="tablist" aria-label="部屋">
+                      <button
+                        className={!pvpJoin ? 'on' : ''}
+                        aria-selected={!pvpJoin}
+                        onClick={() => setPvpJoin(false)}
+                      >
+                        部屋を作る（{handSize === 5 ? '自分が先攻' : '自分が後攻'}）
+                      </button>
+                      <button className={pvpJoin ? 'on' : ''} aria-selected={pvpJoin} onClick={() => setPvpJoin(true)}>
+                        部屋に入る
+                      </button>
+                    </div>
+                    {pvpJoin ? (
+                      <input
+                        className="room-input"
+                        value={roomCode}
+                        onChange={(e) => setRoomCode(e.target.value)}
+                        placeholder="部屋コード（5文字）"
+                        aria-label="部屋コード"
+                      />
+                    ) : (
+                      <p className="note">
+                        先攻・後攻は前の画面の選択で決まります。部屋に入る人の先攻・後攻は、部屋を作った人の逆になります。
+                      </p>
+                    )}
+                    <p className="note">
+                      相手もこのページを開いている必要があります。友達をページの「共有」でメールアドレスから編集者として招待してください（編集できる人だけが対戦のデータを書けます）。
+                    </p>
+                  </>
+                )}
+              </>
+            )}
             {cpuOn && (
               <>
                 <h3>CPUのデッキ</h3>
@@ -317,6 +368,7 @@ export function HomeMenu(p: Props) {
             )}
             <button
               className="primary wide resume"
+              disabled={opponent === 'pvp' && pvpJoin && roomCode.trim().length < 5}
               onClick={() =>
                 p.onStart({
                   deckName: deck.name,
@@ -324,10 +376,19 @@ export function HomeMenu(p: Props) {
                   navi,
                   method,
                   cpuDeck: cpuOn ? cpuDeck : null,
+                  ...(opponent === 'pvp' ? { pvp: pvpJoin ? { join: roomCode.trim() } : {} } : {}),
                 })
               }
             >
-              {method === 'pick' ? '初手を選ぶ画面へ' : cpuOn ? 'CPU戦を始める' : '始める'}
+              {opponent === 'pvp'
+                ? pvpJoin
+                  ? '部屋に入る'
+                  : '部屋を作る'
+                : method === 'pick'
+                  ? '初手を選ぶ画面へ'
+                  : cpuOn
+                    ? 'CPU戦を始める'
+                    : '始める'}
             </button>
           </section>
         )}

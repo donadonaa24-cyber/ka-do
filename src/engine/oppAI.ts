@@ -556,3 +556,18 @@ export function oppAbilityChoices(s: GameState, ctx: Ctx): { id: string; label: 
   }
   return out;
 }
+
+/** 手札から捨てて使う、効果を止めない手札誘発（通信対戦では相手が使うかを聞く） */
+export const DRAW_HAND_TRAPS = ['増殖するＧ', 'マルチャミー・フワロス'];
+
+/** 通信対戦：チェーンの一番上（こちらの効果）に、相手が使える妨害・手札誘発があるか */
+export function oppCanRespond(s: GameState, ctx: Ctx): boolean {
+  const top = s.chain[s.chain.length - 1];
+  if (!top || top.opp || top.oppPassed || !s.opp) return false;
+  if (oppAbilityChoices(s, ctx).length) return true;
+  const oppField = oppFieldCards(s).length > 0;
+  return s.opp.hand.some((u) => {
+    const n = def(s, ctx, u).name;
+    return n === '増殖するＧ' || (n === 'マルチャミー・フワロス' && !oppField);
+  });
+}

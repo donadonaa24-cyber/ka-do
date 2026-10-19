@@ -36,6 +36,9 @@ import { MotionLayer } from './Motion';
 import { ImageSettings } from './ImageSettings';
 import { type FoundRoute, RoutePanel, useRouteSearch } from './RoutePanel';
 import { useCpuDuel } from './useCpuDuel';
+import { hasSavedPvp, usePvpDuel } from './usePvpDuel';
+import { PVP_ENABLED } from './features';
+import type { PvpEntry } from '../engine/pvp';
 import { useDrag } from './useDrag';
 import {
   BUILTIN_IMAGES,
@@ -209,9 +212,15 @@ export function App() {
   /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
   const presetRef = useRef<Location | null>(null);
 
+  /** 通信対戦中（相手の妨害は相手が選び、相手が使えるなら応答を待つ） */
+  const [pvpOn, setPvpOn] = useState(() => PVP_ENABLED && hasSavedPvp());
   const ctx: Ctx = useMemo(
-    () => ({ db: CARD_DB, options: { strict: session.strict }, scripts: CARD_SCRIPTS }),
-    [session.strict],
+    () => ({
+      db: CARD_DB,
+      options: pvpOn ? { strict: true, oppAI: false, oppAsk: true } : { strict: session.strict },
+      scripts: CARD_SCRIPTS,
+    }),
+    [session.strict, pvpOn],
   );
   const [customDecks, setCustomDecks] = useState<SavedDeck[]>(() => loadDecks());
   /** 既製のデッキの表示名（名前を変えたもの） */
@@ -243,8 +252,10 @@ export function App() {
   // 続けて dispatch しても最新の盤面に適用されるよう、盤面は ref でも持つ
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** 通信対戦：自分の操作を記録して相手に送る */
+  const pvpLocalRef = useRef<((e: PvpEntry) => void) | null>(null);
   const dispatch = useCallback(
-    (action: Action): boolean => {
+    (action: Action, entry?: PvpEntry): boolean => {
       const r = applyAction(stateRef.current, action, ctx);
       if (!r.ok) {
         setError(r.error);
@@ -253,6 +264,7 @@ export function App() {
       stateRef.current = r.state;
       setError(null);
       setSession((s) => ({ ...s, actions: [...s.actions, action] }));
+      pvpLocalRef.current?.(entry ?? action);
       return true;
     },
     [ctx],
@@ -269,16 +281,37 @@ export function App() {
     paused: home,
   });
   const cpuTurn = !!cpu.duel?.cpuTurn;
+
+  // 通信対戦
+  const pvpHook = usePvpDuel({
+    ctx,
+    decks: allDecks,
+    dispatch,
+    startSession: useCallback((s: SessionData) => {
+      setSession(s);
+      setHome(false);
+      setModal(null);
+      setCoach(null);
+      setRun(null);
+      setPending(null);
+    }, []),
+    onError: setError,
+    onActive: setPvpOn,
+    sessionCount: session.actions.length,
+  });
+  pvpLocalRef.current = pvpOn ? pvpHook.onLocal : null;
+  const pvp = pvpHook.pvp;
+  const pvpWaiting = !!pvp && pvp.waitingOpp;
   // CPUのターン中・CPUの盤面を写した直後は、1手戻すと盤面がずれるので戻せない
   const lastAction = session.actions[session.actions.length - 1];
   const undoLocked =
-    !!cpu.duel && (cpuTurn || !lastAction || ['END_TURN', 'OPP_SYNC', 'DRAW'].includes(lastAction.type));
+    pvpOn || (!!cpu.duel && (cpuTurn || !lastAction || ['END_TURN', 'OPP_SYNC', 'DRAW'].includes(lastAction.type)));
   const undoLockedRef = useRef(false);
   undoLockedRef.current = undoLocked;
 
   const undo = useCallback(() => {
     if (undoLockedRef.current) {
-      setError('CPU戦では、CPUのターンの操作は戻せません');
+      setError('CPU戦・通信対戦では、操作を戻せません');
       return;
     }
     setPending(null);
@@ -1025,6 +1058,18 @@ export function App() {
 
   /** メニューで選んだ内容で始める */
   const beginGame = (c: StartConfig) => {
+    if (c.pvp && PVP_ENABLED) {
+      cpu.stop();
+      setCoach(null);
+      setNavi(false);
+      if (c.pvp.join !== undefined) void pvpHook.join(c.pvp.join, c.deckName);
+      else
+        void pvpHook.host(c.deckName, c.handSize === 5).then((code) => {
+          if (code) setHome(false);
+        });
+      return;
+    }
+    if (pvpOn) pvpHook.stop();
     if (typeof c.method === 'object') {
       // ルートガイドは先攻（ガイドの初手）
       const g = c.method.guide;
@@ -1397,7 +1442,14 @@ export function App() {
           </li>
         ))}
       </ol>
-      {chainResponses.length > 0 ? (
+      {pvpWaiting ? (
+        <>
+          <div className="ap-hint">相手が手札誘発などを使うか選んでいます…</div>
+          <div className="btn-row">
+            <button onClick={pvpHook.skipWait}>待たずに進める（相手は使わない扱い）</button>
+          </div>
+        </>
+      ) : chainResponses.length > 0 ? (
         <>
           <div className="ap-hint">さらにチェーンできる効果（後から発動したものから解決します）</div>
           <div className="btn-row">
@@ -1415,7 +1467,7 @@ export function App() {
         効果はまだ処理されていません。チェーンしないなら「チェーンを解決する」を押してください。
       </div>
       <div className="btn-row">
-        <button className="primary" onClick={() => setResolvingChain(true)}>
+        <button className="primary" disabled={pvpWaiting} onClick={() => setResolvingChain(true)}>
           チェーンを解決する（C{chain.length}から）
         </button>
       </div>
@@ -1541,6 +1593,70 @@ export function App() {
     </div>
   );
 
+  // 通信対戦：相手の効果に手札誘発を使うか聞くパネル・部屋の案内
+  const theirTop = pvp?.theirs?.chain[pvp.theirs.chain.length - 1];
+  const pvpPrompt =
+    pvp && (pvp.waiting || pvp.options.length > 0) ? (
+      <div className="action-panel cpu-panel">
+        {pvp.waiting ? (
+          <>
+            <div className="ap-title">通信対戦：相手を待っています</div>
+            <div className="ap-hint">
+              部屋コード <strong className="room-code">{pvp.code}</strong>{' '}
+              を相手に伝えてください。相手がメニューの「通信対戦」→「部屋に入る」でこのコードを入れると始まります。
+            </div>
+            <div className="btn-row">
+              <button onClick={() => pvpHook.stop()}>やめる</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {pvp.askMe && theirTop && (
+              <div className="cpu-announce">
+                相手：{CARD_DB[theirTop.defId]?.name}の「{theirTop.label}」
+              </div>
+            )}
+            <div className="ap-hint">手札誘発・場の妨害を使いますか？</div>
+            <div className="btn-row">
+              {pvp.options.map((o) => (
+                <button
+                  key={`${o.uid}-${o.abilityId ?? o.kind}`}
+                  className="primary"
+                  onClick={() => pvpHook.respond(o)}
+                >
+                  {o.name}：{o.label}
+                </button>
+              ))}
+              {pvp.askMe && <button onClick={() => pvpHook.respond(null)}>使わない</button>}
+            </div>
+          </>
+        )}
+      </div>
+    ) : null;
+  const pvpBanner = pvp && !pvp.waiting && (
+    <div className="cpu-banner">
+      通信対戦（部屋 {pvp.code}・相手：{pvp.opponentDeck}）：
+      {state.status !== 'playing'
+        ? state.status === 'won'
+          ? 'あなたの勝ち'
+          : 'あなたの負け'
+        : pvp.myTurn
+          ? `あなたのターン${pvp.first ? '（先攻）' : '（後攻）'}。エンドフェイズで「相手ターンへ」`
+          : '相手のターン。相手の効果に手札誘発を使えます'}
+      {!pvp.connected && '（接続を確認しています…）'}
+      {pvp.recent.length > 0 && (
+        <details className="cpu-log">
+          <summary>相手のゲームで起きたこと</summary>
+          <ul>
+            {pvp.recent.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+
   const quitCoach = () => {
     setCoach(null);
     setNavi(false);
@@ -1647,6 +1763,8 @@ export function App() {
             </button>
             {cpuTurn ? (
               <button disabled>CPUのターン</button>
+            ) : pvpOn && state.opponentTurn ? (
+              <button disabled>相手のターン</button>
             ) : state.opponentTurn ? (
               <>
                 {state.phase !== 'EP' && (
@@ -1694,7 +1812,9 @@ export function App() {
               {naviSearching || coachBar}
             </div>
           )}
-          {cpu.duel && (cpuTurn || cpu.duel.stage === 'over') ? (
+          {pvpPrompt && !run && !pending ? (
+            pvpPrompt
+          ) : cpu.duel && (cpuTurn || cpu.duel.stage === 'over') ? (
             cpuPanel
           ) : peek && (run || pending) ? (
             <button className="peek-back primary" onClick={() => setPeek(false)}>
@@ -1703,6 +1823,7 @@ export function App() {
           ) : (
             actionPanel
           )}
+          {pvpBanner && !busy && pvpBanner}
           {cpu.duel?.stage === 'human' && !busy && (
             <div className="cpu-banner">
               {cpu.duel.cpuDone
@@ -2021,6 +2142,16 @@ export function App() {
                 >
                   同じ初手で最初から
                 </button>
+                {pvpOn && (
+                  <button
+                    onClick={() => {
+                      pvpHook.stop();
+                      setModal(null);
+                    }}
+                  >
+                    通信対戦をやめる
+                  </button>
+                )}
                 <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
                 <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
                   俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
