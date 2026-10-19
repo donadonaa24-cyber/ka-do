@@ -247,7 +247,15 @@ export function App() {
   );
 
   // CPU戦：CPU（先攻）の展開に手札誘発を使い、そのまま後攻のターンを続ける
-  const cpu = useCpuDuel({ ctx, decks: allDecks, human: state, dispatchHuman: dispatch, onError: setError });
+  const cpu = useCpuDuel({
+    ctx,
+    decks: allDecks,
+    human: state,
+    dispatchHuman: dispatch,
+    onError: setError,
+    sessionKey: `${session.deckName}:${session.seed}`,
+    paused: home,
+  });
   const cpuTurn = !!cpu.duel?.cpuTurn;
   // CPUのターン中・CPUの盤面を写した直後は、1手戻すと盤面がずれるので戻せない
   const lastAction = session.actions[session.actions.length - 1];
@@ -2004,10 +2012,11 @@ export function App() {
             }}
             onGuide={startGuide}
             onCpuDuel={(humanDeck, cpuDeck) => {
+              const seed = randomSeed();
               newGame(
                 {
                   deckName: humanDeck,
-                  seed: randomSeed(),
+                  seed,
                   fixedHand: [],
                   handSize: 5,
                   strict: true,
@@ -2016,7 +2025,7 @@ export function App() {
                 },
                 false,
               );
-              cpu.start(cpuDeck, randomSeed());
+              cpu.start(cpuDeck, randomSeed(), `${humanDeck}:${seed}`);
             }}
             onEditDecks={() => setModal('decks')}
             onImages={() => setModal('images')}
