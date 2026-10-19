@@ -13,6 +13,8 @@ interface Props {
   nameOf: (name: string) => string;
   /** デッキの名前を変える（変えた後のデッキの名前を返す） */
   onRename: (name: string, newName: string) => string;
+  /** 自分で作ったデッキを削除する */
+  onDelete: (name: string) => void;
   /** 続きから再開できるゲーム（操作がある時だけ） */
   resume: { deckName: string; actions: number } | null;
   guides: Guide[];
@@ -61,6 +63,7 @@ export function HomeMenu(p: Props) {
   const [cpuDeck, setCpuDeck] = useState(p.builtinNames[0]);
   /** 名前を変えている途中のデッキの新しい名前（null は変えていない） */
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const deck = p.decks.find((d) => d.name === deckName) ?? p.decks[0];
   const guides = p.guides.filter((g) => g.deckName === deck.name);
   const builtin = p.decks.filter((d) => p.builtinNames.includes(d.name));
@@ -77,6 +80,7 @@ export function HomeMenu(p: Props) {
       onClick={() => {
         setDeckName(d.name);
         setRenaming(null);
+        setConfirmDelete(false);
       }}
     >
       <strong>{p.nameOf(d.name)}</strong>
@@ -149,6 +153,26 @@ export function HomeMenu(p: Props) {
                 <button onClick={() => setRenaming(p.nameOf(deck.name))}>
                   「{p.nameOf(deck.name)}」の名前を変える
                 </button>
+                {/* 削除できるのは自分で作ったデッキだけ（既製のデッキは残す） */}
+                {!p.builtinNames.includes(deck.name) &&
+                  (confirmDelete ? (
+                    <>
+                      <button
+                        className="danger"
+                        onClick={() => {
+                          p.onDelete(deck.name);
+                          setDeckName(p.builtinNames[0]);
+                          setConfirmDelete(false);
+                        }}
+                      >
+                        本当に削除
+                      </button>
+                      <button onClick={() => setConfirmDelete(false)}>やめる</button>
+                    </>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(true)}>削除</button>
+                  ))}
+                {p.builtinNames.includes(deck.name) && <span className="note">既製のデッキは削除できません</span>}
               </div>
             ) : (
               <form

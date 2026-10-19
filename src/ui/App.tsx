@@ -916,6 +916,18 @@ export function App() {
     return name;
   };
 
+  /** 自分で作ったデッキを削除する（遊んでいたデッキなら既製のデッキに戻す） */
+  const deleteDeck = (name: string) => {
+    const list = customDecks.filter((d) => d.name !== name);
+    if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
+    setCustomDecks(list);
+    if (session.deckName === name) {
+      cpu.stop();
+      setSession({ ...defaultSession(), deckName: BUILTIN_DECKS[0].name });
+      setCoach(null);
+    }
+  };
+
   const startGuide = (g: Guide) => {
     cpu.stop();
     setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
@@ -2035,6 +2047,7 @@ export function App() {
             current={deck.name}
             nameOf={deckLabel}
             onRename={renameDeck}
+            onDelete={deleteDeck}
             resume={session.actions.length ? { deckName: deckLabel(deck.name), actions: session.actions.length } : null}
             guides={GUIDES}
             onResume={() => setHome(false)}
