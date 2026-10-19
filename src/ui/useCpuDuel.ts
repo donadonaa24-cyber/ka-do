@@ -45,7 +45,7 @@ const SAVE_KEY = 'ygo-solo:cpu-duel';
 interface Saved {
   /** どのゲーム（自分のデッキ・シード）のCPU戦か */
   sessionKey: string;
-  duel: { cpuDeckName: string; seed: number; actions: Action[] };
+  duel: { cpuDeckName: string; seed: number; actions: Action[]; fixedHand?: string[] };
   stage: CpuStage;
   plan: RouteStep[];
   planIndex: number;
@@ -125,7 +125,7 @@ export function useCpuDuel(opts: {
     const deck = decks.find((d) => d.name === duel.cpuDeckName);
     if (!deck) return null;
     try {
-      return replay(createGame(deck, ctx, duel.seed), duel.actions, ctx);
+      return replay(createGame(deck, ctx, duel.seed, duel.fixedHand ?? []), duel.actions, ctx);
     } catch {
       return null;
     }
