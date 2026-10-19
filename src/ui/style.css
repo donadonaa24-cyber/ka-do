@@ -953,11 +953,18 @@ select {
   text-align: left;
 }
 
+/* 演出を出さない設定（「端末に合わせる」なら、端末でアニメーションを減らしている時だけ） */
+.motion-off .zone.hint .card,
+.motion-off .zone.pile.hint,
+.motion-off .hand-slot.hint .card,
+.motion-off .card.resolving {
+  animation: none;
+}
 @media (prefers-reduced-motion: reduce) {
-  .zone.hint .card,
-  .zone.pile.hint,
-  .hand-slot.hint .card,
-  .card.resolving {
+  .motion-auto .zone.hint .card,
+  .motion-auto .zone.pile.hint,
+  .motion-auto .hand-slot.hint .card,
+  .motion-auto .card.resolving {
     animation: none;
   }
 }
@@ -2132,8 +2139,11 @@ button.danger {
     opacity: 0;
   }
 }
+.motion-off .motion-layer {
+  display: none;
+}
 @media (prefers-reduced-motion: reduce) {
-  .motion-layer {
+  .motion-auto .motion-layer {
     display: none;
   }
 }

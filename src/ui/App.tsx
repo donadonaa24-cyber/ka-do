@@ -32,7 +32,7 @@ import { HomeMenu, type StartConfig } from './HomeMenu';
 import { OppPlaceSheet } from './OppPlaceSheet';
 import { OPP_PRESETS, oppPresetAction } from '../data/oppPresets';
 import { oppWouldRespond } from '../engine/oppAI';
-import { MotionLayer } from './Motion';
+import { loadMotionMode, type MotionMode, MotionLayer, saveMotionMode } from './Motion';
 import { ImageSettings } from './ImageSettings';
 import { type FoundRoute, RoutePanel, useRouteSearch } from './RoutePanel';
 import { useCpuDuel } from './useCpuDuel';
@@ -153,6 +153,12 @@ export function App() {
   };
   /** カードを置こうとしている相手のゾーン */
   const [oppPlace, setOppPlace] = useState<Location | null>(null);
+  /** 召喚・移動の演出（既定は端末の設定に関係なく出す） */
+  const [motionMode, setMotionModeState] = useState<MotionMode>(() => loadMotionMode());
+  const setMotionMode = (m: MotionMode) => {
+    setMotionModeState(m);
+    saveMotionMode(m);
+  };
   /** 俺ルール：本来できない操作（自由に墓地へ送る・除外するなど）を常に出す */
   const [oreRule, setOreRuleState] = useState(() => {
     try {
@@ -1725,7 +1731,7 @@ export function App() {
   return (
     <CardImageContext.Provider value={shownImages}>
       <div
-        className={`app ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
+        className={`app motion-${motionMode} ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
           showStepPopup && !dockRight ? 'with-popup' : ''
         }`}
         style={
@@ -2153,6 +2159,12 @@ export function App() {
                   </button>
                 )}
                 <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+                <button
+                  onClick={() => setMotionMode(motionMode === 'on' ? 'auto' : motionMode === 'auto' ? 'off' : 'on')}
+                >
+                  召喚・移動の演出：
+                  {motionMode === 'on' ? '常に出す' : motionMode === 'auto' ? '端末の設定に合わせる' : '出さない'}
+                </button>
                 <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
                   俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
                 </button>

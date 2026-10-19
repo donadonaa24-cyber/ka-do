@@ -69,7 +69,30 @@ const PRELUDE_MS: Partial<Record<BurstKind, number>> = {
   ritual: 1200,
 };
 
+/** 召喚・移動の演出：常に出す／端末の「アニメーションを減らす」設定に合わせる／出さない */
+export type MotionMode = 'on' | 'auto' | 'off';
+const MOTION_KEY = 'ygo-motion';
+
+export function loadMotionMode(): MotionMode {
+  try {
+    const v = localStorage.getItem(MOTION_KEY);
+    return v === 'auto' || v === 'off' ? v : 'on';
+  } catch {
+    return 'on';
+  }
+}
+
+export function saveMotionMode(mode: MotionMode) {
+  try {
+    localStorage.setItem(MOTION_KEY, mode);
+  } catch {
+    // 保存できなくても今の画面では使える
+  }
+}
+
 const reduceMotion = () => {
+  const mode = loadMotionMode();
+  if (mode !== 'auto') return mode === 'off';
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   } catch {
