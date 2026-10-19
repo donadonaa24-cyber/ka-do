@@ -343,7 +343,9 @@ export function useCpuDuel(opts: {
   useEffect(() => {
     if (!duel?.humanFirst || cpuDone || stage !== 'human' || !human.opponentTurn || !cpuState || paused) return;
     // プレイヤーのカードを写し、CPUのターン（ドローフェイズで1枚ドロー）→ メインフェイズ1
+    // （エンドフェイズに除外されたＰＳＹフレームギアなど、CPUのカードの動きを先に戻す）
     const actions: Action[] = [
+      ...reverseSync(human, cpuState),
       syncAction(human),
       { type: 'END_TURN', startOwnTurn: true },
       { type: 'NEXT_PHASE', to: 'M1' },

@@ -283,6 +283,16 @@ export function applyHandTrap(
   return { cpuActions, humanActions, replan: true, banishAtEnd, keep };
 }
 
+/** 相手の盤面の場所を、そのカードの持ち主から見た場所にする */
+function ownZone(loc: Location): Location | null {
+  if (loc.zone === 'omz') return { zone: 'mz', index: loc.index };
+  // EXモンスターゾーンは共有：相手から見て左はこちらから見て右
+  if (loc.zone === 'oemz') return { zone: 'emz', index: 1 - loc.index };
+  if (loc.zone === 'ostz') return { zone: 'stz', index: loc.index };
+  if (loc.zone === 'ofz') return { zone: 'fz' };
+  return null;
+}
+
 /**
  * CPUのゲームで動いたプレイヤーのカード（破壊された・妨害に使った・表になったなど）を、
  * プレイヤーのゲームにも反映する操作。keep のカードは反映しない
@@ -305,6 +315,15 @@ export function reverseSync(cpu: GameState, human: GameState, keep: string[] = [
     if (c !== cat(hLoc.zone)) {
       if (c === 'gy' || c === 'banished' || c === 'hand')
         out.push({ type: 'MOVE', uid: hu, to: { zone: c }, reason: 'CPUのゲームで' });
+      else if (c === 'field' && cpuLoc && inst.banishAtEnd) {
+        // ＰＳＹフレームギアの効果で相手のフィールドに特殊召喚されたカード：こちらから見た同じ場所へ
+        const to = ownZone(cpuLoc);
+        if (to)
+          out.push(
+            { type: 'MOVE', uid: hu, to, faceUp: true, position: inst.position, reason: '効果で特殊召喚' },
+            { type: 'BANISH_AT_END', uid: hu },
+          );
+      }
     } else if (c === 'field' && inst.faceUp !== human.cards[hu].faceUp) {
       out.push({ type: 'MOVE', uid: hu, to: hLoc, faceUp: inst.faceUp, position: human.cards[hu].position });
     }
@@ -334,7 +353,7 @@ export function syncAction(cpu: GameState): Action {
       defId: inst.defId,
       zone,
       index,
-      faceUp: zone === 'ohand' ? false : inst.faceUp,
+      faceUp: zone === 'ohand' || zone === 'odeck' ? false : inst.faceUp,
       position: inst.position,
       equipTo: inst.equippedTo ?? undefined,
       mods: {
@@ -356,5 +375,7 @@ export function syncAction(cpu: GameState): Action {
   cpu.gy.forEach((u) => add(u, 'ogy'));
   cpu.banished.forEach((u) => add(u, 'obanished'));
   cpu.hand.forEach((u) => add(u, 'ohand'));
+  // デッキも写す（見せない。ＰＳＹフレームギアがデッキのドライバーを特殊召喚するため）
+  cpu.deck.forEach((u) => add(u, 'odeck'));
   return { type: 'OPP_SYNC', cards, lp: cpu.lp };
 }

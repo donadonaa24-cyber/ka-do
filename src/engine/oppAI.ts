@@ -109,6 +109,79 @@ const monsterAbility = (
   resolve: negate(mode, card),
 });
 
+const PSY_DRIVER = 'ＰＳＹフレーム・ドライバー';
+/** 相手の手札・デッキ・墓地の「ＰＳＹフレーム・ドライバー」 */
+const oppDriver = (s: GameState, ctx: Ctx) =>
+  findOpp(s, ctx, [...(s.opp?.hand ?? []), ...(s.opp?.deck ?? []), ...(s.opp?.gy ?? [])], PSY_DRIVER);
+
+/**
+ * ＰＳＹフレームギア（γ・δ）：手札のこのカードと手札・デッキ・墓地の「ＰＳＹフレーム・ドライバー」を特殊召喚し、
+ * その発動を無効にし破壊する。特殊召喚したモンスターはエンドフェイズに除外される。
+ * 練習（相手のデッキが無い）ではドライバーはデッキにあるものとして置く
+ */
+function psyGear(
+  id: string,
+  card: string,
+  label: string,
+  when: (s: GameState, ctx: Ctx, link: ChainLink) => boolean,
+): Ability {
+  return {
+    id,
+    card,
+    label,
+    speed: 2,
+    find: (s, ctx, link) => {
+      const uid = inHand(s, ctx, card);
+      if (!uid || oppMonsters(s).length || !when(s, ctx, link)) return null;
+      if (s.opp?.deck && !oppDriver(s, ctx)) return null;
+      if (s.opp!.mz.filter((u) => !u).length < 2) return null;
+      return { uid, cost: [] };
+    },
+    resolve: (s, ctx, link) => {
+      const o = s.opp!;
+      const free = o.mz.flatMap((u, i) => (u ? [] : [i]));
+      const out: Action[] = [];
+      if (findLocation(s, link.uid)?.zone === 'ohand' && free.length >= 2) {
+        const driver = oppDriver(s, ctx);
+        const driverId = Object.values(ctx.db).find((d) => d.name === PSY_DRIVER)?.id;
+        out.push(
+          {
+            type: 'MOVE',
+            uid: link.uid,
+            to: { zone: 'omz', index: free[0] },
+            faceUp: true,
+            position: 'atk',
+            reason: '自身の効果で特殊召喚',
+          },
+          { type: 'BANISH_AT_END', uid: link.uid },
+        );
+        if (driver)
+          out.push(
+            {
+              type: 'MOVE',
+              uid: driver,
+              to: { zone: 'omz', index: free[1] },
+              faceUp: true,
+              position: 'atk',
+              reason: `${card}の効果で特殊召喚`,
+            },
+            { type: 'BANISH_AT_END', uid: driver },
+          );
+        else if (!o.deck && driverId)
+          out.push({
+            type: 'OPP_PLACE',
+            defId: driverId,
+            to: { zone: 'omz', index: free[1] },
+            faceUp: true,
+            position: 'atk',
+            banishAtEnd: true,
+          });
+      }
+      return [...out, ...negate('destroy', card)(s, ctx, link)];
+    },
+  };
+}
+
 /** 手札誘発・相手ターンに使える罠など（CPUが使う・CPU戦でプレイヤーが使う） */
 const HAND_TRAP_ABILITIES: Ability[] = [
   monsterAbility(
@@ -272,31 +345,21 @@ const HAND_TRAP_ABILITIES: Ability[] = [
         ? [{ type: 'MOVE', uid: link.target, to: { zone: 'gy' }, reason: '効果で破壊' }]
         : [],
   },
-  {
-    id: 'psy-gamma',
-    card: 'ＰＳＹフレームギア・γ',
-    label: '① モンスター効果の発動を無効にし破壊（自分フィールドにモンスターがいない時）',
-    speed: 2,
-    find: (s, ctx, link) => {
-      const uid = inHand(s, ctx, 'ＰＳＹフレームギア・γ');
-      if (!uid || oppMonsters(s).length || def(s, ctx, link.uid).kind !== 'monster') return null;
-      return { uid, cost: [discard(uid)] };
-    },
-    resolve: negate('destroy', 'ＰＳＹフレームギア・γ'),
-  },
-  {
-    id: 'psy-delta',
-    card: 'ＰＳＹフレームギア・δ',
-    label: '① 魔法カードの発動を無効にし破壊（自分フィールドにモンスターがいない時）',
-    speed: 2,
-    find: (s, ctx, link) => {
-      const uid = inHand(s, ctx, 'ＰＳＹフレームギア・δ');
+  psyGear(
+    'psy-gamma',
+    'ＰＳＹフレームギア・γ',
+    '① ドライバーと特殊召喚し、モンスター効果の発動を無効にし破壊（自分フィールドにモンスターがいない時）',
+    (s, ctx, link) => def(s, ctx, link.uid).kind === 'monster',
+  ),
+  psyGear(
+    'psy-delta',
+    'ＰＳＹフレームギア・δ',
+    '① ドライバーと特殊召喚し、魔法カードの発動を無効にし破壊（自分フィールドにモンスターがいない時）',
+    (s, ctx, link) => {
       const { d, eff } = linkInfo(s, ctx, link);
-      if (!uid || oppMonsters(s).length || d.kind !== 'spell' || !eff?.isCardActivation) return null;
-      return { uid, cost: [discard(uid)] };
+      return d.kind === 'spell' && !!eff?.isCardActivation;
     },
-    resolve: negate('destroy', 'ＰＳＹフレームギア・δ'),
-  },
+  ),
 ];
 
 /** 手札誘発として扱うカード（ドラグーンのコストで残す） */

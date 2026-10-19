@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyHandTrap,
+  autoDrive,
   describeCpuStep,
   handTrapOptions,
   reverseSync,
   specialSummonsBetween,
   syncAction,
 } from '../engine/cpu';
-import { startEffect } from '../engine/effectRunner';
+import { startEffect, startResolve } from '../engine/effectRunner';
 import { type Action, applyAction, createGame, type Ctx } from '../engine/game';
 import { routeFromGuide } from '../engine/guide';
 import type { GameState } from '../engine/types';
@@ -191,5 +192,74 @@ describe('CPU戦（プレイヤーが先攻・盤面の妨害で止める）', (
     cpu = mirror(cpu, human);
     const again = handTrapOptions(cpu, human, cctx, route.steps[1].action, []).map((o) => o.name);
     expect(again).not.toContain('フルール・ド・バロネス');
+  });
+});
+
+describe('CPUのＰＳＹフレームギア（プレイヤーが先攻）', () => {
+  it('γとデッキのドライバーを特殊召喚して止め、エンドフェイズに除外される。CPUのゲームにも戻る', () => {
+    const deck = BUILTIN_DECKS.find((d) => d.name === '禁止制限前トゥーン')!;
+    let cpu = createGame(deck, cctx, 9, ['38814750'], 5);
+    const guide = BLUE_GUIDES[0];
+    let human = createGame(BLUE_EYES_DECK, ctx, guide.seed, guide.fixedHand);
+    human = act(human, syncAction(cpu));
+    expect(human.opp!.deck!.length).toBe(cpu.deck.length);
+    // プレイヤーのモンスター効果の発動に、CPUのγが自動でチェーンする
+    const step = routeFromGuide(
+      createGame(BLUE_EYES_DECK, ctx, guide.seed, guide.fixedHand),
+      ctx,
+      guide,
+      TOON_EVALUATOR,
+    )!.steps[0];
+    const st = describeCpuStep(human, ctx, step.action);
+    expect(st.kind).toBe('activate');
+    const r = startEffect(human, ctx, st.uid!, st.effect!, undefined, 'auto');
+    expect(r.kind).toBe('done');
+    human = act(human, (r as { action: Action }).action);
+    expect(human.chain.map((l) => l.opp ?? '自分')).toEqual(['自分', 'psy-gamma']);
+    // チェーンを解決：γとドライバーが相手のフィールドに出て、こちらの効果は無効
+    for (let i = 0; human.chain.length && i < 5; i++) {
+      const a = autoDrive(startResolve(human, ctx), ctx, new Set());
+      expect(a).toBeTruthy();
+      human = act(human, a!);
+    }
+    const oppField = human.opp!.mz.filter((u): u is string => !!u).map((u) => name(human, u));
+    expect(oppField.sort()).toEqual(['ＰＳＹフレーム・ドライバー', 'ＰＳＹフレームギア・γ'].sort());
+    expect(human.log.some((l) => l.text.includes('無効'))).toBe(true);
+    // CPUのゲームにも戻る（デッキのドライバーがフィールドへ）
+    for (const a of reverseSync(human, cpu)) cpu = cact(cpu, a);
+    expect(
+      cpu.mz
+        .filter((u): u is string => !!u)
+        .map((u) => name(cpu, u))
+        .sort(),
+    ).toEqual(oppField.sort());
+    expect(cpu.deck.some((u) => name(cpu, u) === 'ＰＳＹフレーム・ドライバー')).toBe(false);
+    // こちらのエンドフェイズに除外される
+    human = act(human, { type: 'END_TURN', toOpponent: true });
+    expect(human.opp!.mz.filter(Boolean)).toEqual([]);
+    expect(human.opp!.banished.map((u) => name(human, u)).sort()).toEqual(oppField.sort());
+    for (const a of reverseSync(human, cpu)) cpu = cact(cpu, a);
+    expect(cpu.mz.filter(Boolean)).toEqual([]);
+    expect(cpu.banished.map((u) => name(cpu, u)).sort()).toEqual(oppField.sort());
+  });
+
+  it('練習（相手のデッキが無い）でも、γはドライバーと一緒に出る', () => {
+    const guide = BLUE_GUIDES[0];
+    let human = createGame(BLUE_EYES_DECK, ctx, guide.seed, guide.fixedHand);
+    const gamma = Object.values(CARD_DB).find((d) => d.name === 'ＰＳＹフレームギア・γ')!.id;
+    human = act(human, { type: 'OPP_PLACE', defId: gamma, to: { zone: 'ohand' }, faceUp: false });
+    const step = routeFromGuide(
+      createGame(BLUE_EYES_DECK, ctx, guide.seed, guide.fixedHand),
+      ctx,
+      guide,
+      TOON_EVALUATOR,
+    )!.steps[0];
+    const st = describeCpuStep(human, ctx, step.action);
+    const r = startEffect(human, ctx, st.uid!, st.effect!, undefined, 'auto');
+    human = act(human, (r as { action: Action }).action);
+    for (let i = 0; human.chain.length && i < 5; i++)
+      human = act(human, autoDrive(startResolve(human, ctx), ctx, new Set())!);
+    const oppField = human.opp!.mz.filter((u): u is string => !!u).map((u) => name(human, u));
+    expect(oppField.sort()).toEqual(['ＰＳＹフレーム・ドライバー', 'ＰＳＹフレームギア・γ'].sort());
   });
 });

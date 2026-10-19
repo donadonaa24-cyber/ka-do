@@ -78,7 +78,7 @@ export function isExtraDeckCard(def: CardDef): boolean {
 
 export type PileZone = 'deck' | 'hand' | 'extra' | 'gy' | 'banished';
 export type FieldZone = 'mz' | 'emz' | 'stz' | 'fz';
-export type ZoneName = PileZone | FieldZone | 'omz' | 'oemz' | 'ostz' | 'ofz' | OppPile;
+export type ZoneName = PileZone | FieldZone | 'omz' | 'oemz' | 'ostz' | 'ofz' | OppPile | 'odeck';
 
 export type Location =
   | { zone: PileZone }
@@ -91,7 +91,8 @@ export type Location =
   | { zone: 'oemz'; index: number } // 相手が使っているEXモンスターゾーン（自分から見て 0(左) / 1(右)）
   | { zone: 'ostz'; index: number } // 相手の魔法＆罠ゾーン
   | { zone: 'ofz' }
-  | { zone: OppPile };
+  | { zone: OppPile }
+  | { zone: 'odeck' }; // CPU戦：CPUのデッキ（見せない）
 
 export type OppPile = 'ogy' | 'obanished' | 'ohand';
 
@@ -106,6 +107,8 @@ export interface OppBoard {
   banished: string[];
   /** 手札に戻ったカード */
   hand: string[];
+  /** CPU戦：CPUのデッキ（写したもの。練習では無い） */
+  deck?: string[];
 }
 
 export type BattlePosition = 'atk' | 'def';
@@ -171,6 +174,8 @@ export interface CardInstance {
   properlySummoned: boolean;
   /** エンドフェイズに破壊される（青眼の精霊龍③で出したモンスターなど） */
   destroyAtEnd: boolean;
+  /** エンドフェイズに除外される（ＰＳＹフレームギアの効果で特殊召喚したモンスター） */
+  banishAtEnd?: boolean;
   /** 相手のカード（練習用に手で置いたもの） */
   opp?: boolean;
   /** 相手のカードが使った「表側で存在する限り1度だけ」の効果 */

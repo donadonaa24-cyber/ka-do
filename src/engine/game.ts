@@ -107,13 +107,15 @@ export type Action =
   | { type: 'BANISH_UNTIL_DAMAGE_END'; uid: string }
   /** 効果処理の区切り（タイミングを逃す判定用） */
   | { type: 'TIMING' }
+  /** このモンスターはエンドフェイズに除外される */
+  | { type: 'BANISH_AT_END'; uid: string }
   /** CPU戦：CPUの盤面（フィールド・墓地・除外・手札）を相手の盤面に写す */
   | {
       type: 'OPP_SYNC';
       cards: {
         key: string;
         defId: string;
-        zone: 'omz' | 'oemz' | 'ostz' | 'ofz' | 'ogy' | 'obanished' | 'ohand';
+        zone: 'omz' | 'oemz' | 'ostz' | 'ofz' | 'ogy' | 'obanished' | 'ohand' | 'odeck';
         index?: number;
         faceUp: boolean;
         position: BattlePosition;
@@ -173,6 +175,8 @@ export type Action =
         | { zone: 'ohand' };
       faceUp: boolean;
       position?: BattlePosition;
+      /** エンドフェイズに除外される（ＰＳＹフレームギアの効果で特殊召喚） */
+      banishAtEnd?: boolean;
     }
   /** 練習用：相手のカードを取り除く */
   | { type: 'OPP_REMOVE'; uid: string }
@@ -710,6 +714,7 @@ export function findLocation(state: GameState, uid: string): Location | null {
     if (o.gy.includes(uid)) return { zone: 'ogy' };
     if (o.banished.includes(uid)) return { zone: 'obanished' };
     if (o.hand.includes(uid)) return { zone: 'ohand' };
+    if (o.deck?.includes(uid)) return { zone: 'odeck' };
   }
   return null;
 }
@@ -753,6 +758,7 @@ export const ZONE_LABEL: Record<Location['zone'], string> = {
   ogy: '相手の墓地',
   obanished: '相手の除外',
   ohand: '相手の手札',
+  odeck: '相手のデッキ',
 };
 
 function locLabel(loc: Location): string {
@@ -807,6 +813,11 @@ function detach(state: GameState, uid: string) {
       o[key] = o[key].filter((u) => u !== uid);
       break;
     }
+    case 'odeck': {
+      const o = oppOf(state);
+      o.deck = (o.deck ?? []).filter((u) => u !== uid);
+      break;
+    }
     default:
       state[loc.zone] = state[loc.zone].filter((u) => u !== uid);
   }
@@ -833,6 +844,7 @@ function resetInstance(inst: CardInstance) {
   delete inst.equipAtk;
   delete inst.equipDef;
   inst.destroyAtEnd = false;
+  delete inst.banishAtEnd;
   delete inst.oppSpent;
 }
 
@@ -901,6 +913,7 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   if (inst.opp) {
     if (dest.zone === 'gy') dest = { zone: 'ogy' };
     else if (dest.zone === 'banished') dest = { zone: 'obanished' };
+    else if (dest.zone === 'deck' && state.opp?.deck) dest = { zone: 'odeck' };
     else if (dest.zone === 'hand' || dest.zone === 'deck' || dest.zone === 'extra') dest = { zone: 'ohand' };
   }
   const pendulumToExtra = def.pendulumScale !== undefined && isOnField(from) && to.zone === 'gy';
@@ -980,6 +993,12 @@ function placeRaw(state: GameState, uid: string, to: Location, opts: PlaceOpts) 
       inst.faceUp = true;
       oppOf(state).hand.push(uid);
       break;
+    case 'odeck': {
+      const o = oppOf(state);
+      inst.faceUp = false;
+      o.deck = [...(o.deck ?? []), uid];
+      break;
+    }
   }
 }
 
@@ -1522,6 +1541,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'TIMING':
       state.timingGroup = (state.timingGroup ?? 0) + 1;
       return;
+    case 'BANISH_AT_END':
+      if (state.cards[action.uid]) state.cards[action.uid].banishAtEnd = true;
+      return;
     case 'OPP_SYNC': {
       const o = oppOf(state);
       const byKey = new Map<string, string>();
@@ -1543,6 +1565,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       o.gy = o.gy.filter((u) => !synced.has(u));
       o.banished = o.banished.filter((u) => !synced.has(u));
       o.hand = o.hand.filter((u) => !synced.has(u));
+      if (action.cards.some((c) => c.zone === 'odeck')) o.deck = (o.deck ?? []).filter((u) => !synced.has(u));
       for (const c of action.cards) {
         let uid = byKey.get(c.key);
         if (!uid) {
@@ -1559,6 +1582,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         else if (c.zone === 'ofz') o.fz = uid;
         else if (c.zone === 'ogy') o.gy.push(uid);
         else if (c.zone === 'obanished') o.banished.push(uid);
+        else if (c.zone === 'odeck') (o.deck ??= []).push(uid);
         else o.hand.push(uid);
         inst.faceUp = c.faceUp;
         inst.position = c.position;
@@ -1604,6 +1628,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const inst = state.cards[uid];
       inst.entryId = state.nextUid++;
       inst.enteredTurn = state.turn;
+      if (action.banishAtEnd) inst.banishAtEnd = true;
       const what = action.faceUp ? name(state, ctx, uid) : `裏側の${name(state, ctx, uid)}`;
       log(state, `（練習）相手の${locLabel(action.to).replace('相手の', '')}に${what}を置いた`, 'info');
       return;
@@ -1760,12 +1785,18 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
   }
 }
 
-/** エンドフェイズ：「エンドフェイズに破壊される」モンスターを破壊する */
+/** エンドフェイズ：「エンドフェイズに破壊される」モンスターを破壊する・「エンドフェイズに除外される」モンスターを除外する */
 function destroyAtEndPhase(state: GameState, ctx: Ctx) {
   for (const u of fieldMonsters(state)) {
     if (!state.cards[u].destroyAtEnd) continue;
     moveCard(state, ctx, u, { zone: 'gy' }, { reason: '効果で破壊' });
     log(state, `${getDef(state, ctx, u).name}はエンドフェイズに破壊された`, 'move');
+  }
+  const opp = state.opp ? oppMonsterSlots(state.opp) : [];
+  for (const u of [...fieldMonsters(state), ...opp]) {
+    if (!u || !state.cards[u].banishAtEnd) continue;
+    moveCard(state, ctx, u, { zone: 'banished' }, { reason: 'エンドフェイズに除外' });
+    log(state, `${getDef(state, ctx, u).name}はエンドフェイズに除外された`, 'move');
   }
 }
 
