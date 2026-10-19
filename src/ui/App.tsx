@@ -2021,7 +2021,7 @@ export function App() {
               setShowSetup(true);
             }}
             onGuide={startGuide}
-            onCpuDuel={(humanDeck, cpuDeck) => {
+            onCpuDuel={(humanDeck, cpuDeck, naviOn) => {
               const seed = randomSeed();
               newGame(
                 {
@@ -2033,7 +2033,7 @@ export function App() {
                   // 1ターン目はCPU（先攻）。こちらは相手ターンとして見る
                   actions: [{ type: 'END_TURN', toOpponent: true }],
                 },
-                false,
+                naviOn,
               );
               cpu.start(cpuDeck, randomSeed(), `${humanDeck}:${seed}`);
             }}

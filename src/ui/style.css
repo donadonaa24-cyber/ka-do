@@ -2338,3 +2338,63 @@ button.danger {
   text-align: center;
   opacity: 0.7;
 }
+
+/* メニュー：1つずつ選んで進む */
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.step-dots {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.step-dots li {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.step-dots li.done {
+  color: var(--text);
+}
+.step-dots li.now {
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 700;
+}
+.step-summary {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.choice-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px;
+  border-radius: 12px;
+}
+.choice-option span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.choice-option.on {
+  border-color: var(--gold);
+  background: rgba(242, 193, 78, 0.12);
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}
