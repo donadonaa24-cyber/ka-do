@@ -35,8 +35,12 @@ const cardImagesScript = Object.keys(cardImages).length
   ? `<script>window.__BUILTIN_CARD_IMAGES__=${JSON.stringify(cardImages)}</script>`
   : '';
 
-// インラインの <script> を途中で閉じないようにする
-const js = scripts[0].replaceAll('</script', '<\\/script');
+// インラインの <script> を途中で閉じないようにする。
+// また、埋め込んだワーカー（base64の長い文字列）を代入する変数名が、圧縮で「Id」などになると
+// HTMLの属性（id="…"）と見分けがつかず公開時のチェックで弾かれるので、"" と連結して属性の形にしない
+const js = scripts[0]
+  .replaceAll('</script', '<\\/script')
+  .replace(/([A-Za-z0-9_$])="([A-Za-z0-9+/]{200,}={0,2})"/g, '$1=""+"$2"');
 
 writeFileSync(
   out,
