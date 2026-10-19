@@ -1609,7 +1609,9 @@ export function App() {
             <div className="cpu-banner">
               {cpu.duel.cpuDone
                 ? `CPU戦：あなたのターン（${cpu.duel.humanFirst ? '先攻2ターン目' : '後攻'}）。CPUの盤面の妨害・手札誘発に注意`
-                : 'CPU戦：あなたの先攻。盤面を作ったらエンドフェイズで「相手ターンへ」→ CPU（後攻）のターン'}
+                : `CPU戦：あなたの先攻。CPUは手札誘発で止めてきます。盤面を作ったらエンドフェイズで「相手ターンへ」${
+                    cpu.duel.cpuNote ? `。${cpu.duel.cpuNote}` : ''
+                  }`}
             </div>
           )}
           <div className="board-wrap">

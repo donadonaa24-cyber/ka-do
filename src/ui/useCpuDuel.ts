@@ -10,7 +10,7 @@ import {
   specialSummonsBetween,
   syncAction,
 } from '../engine/cpu';
-import { type Action, applyAction, createGame, type Ctx, replay } from '../engine/game';
+import { type Action, applyAction, createGame, type Ctx, getDef, replay } from '../engine/game';
 import type { RouteStep } from '../engine/solver';
 import type { DeckList, GameState } from '../engine/types';
 import SolverWorker from './solver.worker?worker&inline';
@@ -45,6 +45,8 @@ export interface CpuDuel {
   humanFirst: boolean;
   /** CPUのターンが終わった */
   cpuDone: boolean;
+  /** プレイヤーが先攻のターンにCPUがしたこと（増殖するＧなど） */
+  cpuNote: string;
 }
 
 const STEP_MS = 900;
@@ -59,6 +61,13 @@ interface Saved {
   cpuDone?: boolean;
   /** CPUのゲームに写したプレイヤーのカードの目印（変わったら写し直す） */
   humanSig?: string;
+  /** プレイヤーが先攻：CPUの手札を相手の手札として写した */
+  mirrored?: boolean;
+  /** プレイヤーが先攻のターンにCPUが使った増殖するＧなど（名前）と、特殊召喚1回あたりのドロー数 */
+  cpuUsed?: string[];
+  cpuDrawPer?: number;
+  /** プレイヤーのターン中にCPUがしたこと */
+  cpuNote?: string;
   stage: CpuStage;
   plan: RouteStep[];
   planIndex: number;
@@ -114,6 +123,10 @@ export function useCpuDuel(opts: {
   const [banishAtEnd, setBanishAtEnd] = useState<string[]>(saved?.banishAtEnd ?? []);
   const [cpuDone, setCpuDone] = useState(saved?.cpuDone ?? false);
   const [humanSig, setHumanSig] = useState(saved?.humanSig ?? '');
+  const [mirrored, setMirrored] = useState(saved?.mirrored ?? false);
+  const [cpuUsed, setCpuUsed] = useState<string[]>(saved?.cpuUsed ?? []);
+  const [cpuDrawPer, setCpuDrawPer] = useState(saved?.cpuDrawPer ?? 0);
+  const [cpuNote, setCpuNote] = useState(saved?.cpuNote ?? '');
   const workerRef = useRef<Worker | null>(null);
 
   // 進むたびに保存する（CPU戦をやめたら消す）
@@ -134,21 +147,42 @@ export function useCpuDuel(opts: {
           banishAtEnd,
           cpuDone,
           humanSig,
+          mirrored,
+          cpuUsed,
+          cpuDrawPer,
+          cpuNote,
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
       }
     } catch {
       // 保存できない環境では何もしない
     }
-  }, [owner, duel, stage, plan, planIndex, drawPer, used, last, humanTurnStart, banishAtEnd, cpuDone, humanSig]);
+  }, [
+    owner,
+    duel,
+    stage,
+    plan,
+    planIndex,
+    drawPer,
+    used,
+    last,
+    humanTurnStart,
+    banishAtEnd,
+    cpuDone,
+    humanSig,
+    mirrored,
+    cpuUsed,
+    cpuDrawPer,
+    cpuNote,
+  ]);
 
   const cpuState = useMemo(() => {
     if (!duel) return null;
     const deck = decks.find((d) => d.name === duel.cpuDeckName);
     if (!deck) return null;
     try {
-      // CPUが後攻なら6枚（ドローフェイズ）から
-      const init = createGame(deck, ctx, duel.seed, duel.fixedHand ?? [], duel.humanFirst ? 6 : 5);
+      // CPUが後攻でも初手は5枚（プレイヤーのターンを「CPUのゲームの1ターン目」とし、CPUのターンの初めにドロー）
+      const init = createGame(deck, ctx, duel.seed, duel.fixedHand ?? []);
       return replay(init, duel.actions, ctx);
     } catch {
       return null;
@@ -165,6 +199,10 @@ export function useCpuDuel(opts: {
     setStage(humanFirst ? 'human' : 'thinking');
     setCpuDone(false);
     setHumanSig('');
+    setMirrored(false);
+    setCpuUsed([]);
+    setCpuDrawPer(0);
+    setCpuNote('');
     setPlan([]);
     setPlanIndex(0);
     setPrompt(null);
@@ -304,13 +342,83 @@ export function useCpuDuel(opts: {
   // プレイヤーが先攻：プレイヤーがターンを終えたら、プレイヤーの盤面を写してCPUのターンを始める
   useEffect(() => {
     if (!duel?.humanFirst || cpuDone || stage !== 'human' || !human.opponentTurn || !cpuState || paused) return;
-    const actions: Action[] = [syncAction(human)];
-    if (cpuState.phase === 'DP') actions.push({ type: 'NEXT_PHASE', to: 'M1' });
+    // プレイヤーのカードを写し、CPUのターン（ドローフェイズで1枚ドロー）→ メインフェイズ1
+    const actions: Action[] = [
+      syncAction(human),
+      { type: 'END_TURN', startOwnTurn: true },
+      { type: 'NEXT_PHASE', to: 'M1' },
+    ];
     if (applyCpu(actions, 'CPUのターン（後攻）が始まった')) {
       setHumanSig(humanSignature(human));
       setStage('thinking');
     }
   }, [duel?.humanFirst, cpuDone, stage, human, cpuState, paused, applyCpu]);
+
+  // プレイヤーが先攻のターン：CPUの手札を相手の手札として写す（手札誘発は相手のAIが自動でチェーンしてくる）
+  const firstTurn = !!duel?.humanFirst && !cpuDone && stage === 'human' && !human.opponentTurn && !paused;
+  useEffect(() => {
+    if (!firstTurn || mirrored || !cpuState) return;
+    dispatchHuman(syncAction(cpuState));
+    setMirrored(true);
+  }, [firstTurn, mirrored, cpuState, dispatchHuman]);
+
+  // プレイヤーが先攻のターン：CPUが使った手札誘発（相手の盤面で墓地へ送られたカード）をCPUのゲームに戻し、
+  // 増殖するＧ・ドロール＆ロックバードを使う
+  const prevHuman = useRef(human);
+  useEffect(() => {
+    const prev = prevHuman.current;
+    prevHuman.current = human;
+    if (!firstTurn || !mirrored || !cpuState) return;
+    const back = reverseSync(human, cpuState);
+    if (back.length) {
+      applyCpu(back);
+      return;
+    }
+    const nameOf = (u: string) => getDef(cpuState, ctx, u).name;
+    const oppCopy = (u: string) => Object.values(human.cards).find((c) => c.opp && c.syncKey === u)?.uid;
+    // 増殖するＧ・マルチャミー・フワロス：プレイヤーが効果を発動し始めたら使う
+    const g = cpuState.hand.find(
+      (u) => ['増殖するＧ', 'マルチャミー・フワロス'].includes(nameOf(u)) && !cpuUsed.includes(nameOf(u)),
+    );
+    if (g && human.chain.some((l) => !l.opp) && oppCopy(g)) {
+      dispatchHuman({ type: 'MOVE', uid: oppCopy(g)!, to: { zone: 'gy' }, reason: `CPUが${nameOf(g)}を発動` });
+      setCpuUsed((x) => [...x, nameOf(g)]);
+      setCpuDrawPer((n) => n + 1);
+      setCpuNote(`CPUは${nameOf(g)}を発動した（あなたが特殊召喚するたびにCPUが1枚ドロー）`);
+      return;
+    }
+    const ss = specialSummonsBetween(prev, human);
+    if (ss && cpuDrawPer) {
+      applyCpu([{ type: 'DRAW', count: ss * cpuDrawPer }]);
+      setCpuNote(
+        `CPUは増殖するＧなどの効果で${ss * cpuDrawPer}枚ドローした（CPUの手札${cpuState.hand.length + ss * cpuDrawPer}枚）`,
+      );
+      return;
+    }
+    // ドロール＆ロックバード：プレイヤーがドロー以外でデッキから手札に加えた後に使う
+    const droll = cpuState.hand.find(
+      (u) => nameOf(u) === 'ドロール＆ロックバード' && !cpuUsed.includes('ドロール＆ロックバード'),
+    );
+    if (
+      droll &&
+      oppCopy(droll) &&
+      !human.chain.length &&
+      human.deckToHandTurn === human.turn &&
+      human.noDeckToHandTurn !== human.turn
+    ) {
+      dispatchHuman({
+        type: 'MOVE',
+        uid: oppCopy(droll)!,
+        to: { zone: 'gy' },
+        reason: 'CPUがドロール＆ロックバードを発動',
+      });
+      dispatchHuman({ type: 'NO_DECK_TO_HAND', by: 'CPUのドロール＆ロックバード' });
+      setCpuUsed((x) => [...x, 'ドロール＆ロックバード']);
+      setCpuNote('CPUはドロール＆ロックバードを発動した（このターン、デッキからカードを手札に加えられない）');
+    }
+    // 変わったプレイヤーの盤面にだけ反応する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [human, firstTurn, mirrored]);
 
   // CPUのターンの後のプレイヤーのターンが終わったら、CPU戦はおしまい
   useEffect(() => {
@@ -365,6 +473,7 @@ export function useCpuDuel(opts: {
         recent,
         humanFirst: !!duel.humanFirst,
         cpuDone,
+        cpuNote,
       }
     : null;
   return { duel: value, start, stop };

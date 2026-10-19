@@ -28,7 +28,11 @@ export type SummonMethod = 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
 export type Action =
   | { type: 'NEXT_PHASE'; to?: Phase }
   /** toOpponent：相手ターン（妨害の練習）に進む。相手ターン中なら自分のターンに戻る */
-  | { type: 'END_TURN'; toOpponent?: boolean }
+  /**
+   * ターンを終える。startOwnTurn：相手のターンが終わって自分のターンになる
+   * （CPU戦で後攻のCPU：先攻のプレイヤーのターンを「CPUのゲームの1ターン目」として扱うので、手札の枚数制限などは行わない）
+   */
+  | { type: 'END_TURN'; toOpponent?: boolean; startOwnTurn?: boolean }
   | { type: 'DRAW'; count?: number }
   | {
       type: 'NORMAL_SUMMON';
@@ -1117,13 +1121,13 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'END_TURN': {
       if (state.battle) fail('戦闘中です。ダメージステップ終了まで進めてください');
-      if (strict && state.hand.length > 6 && !state.opponentTurn) {
+      if (strict && state.hand.length > 6 && !state.opponentTurn && !action.startOwnTurn) {
         fail(`手札が${state.hand.length}枚です。エンドフェイズに6枚になるよう捨ててください`);
       }
       for (const u of [...state.stz, state.fz]) {
         if (u && state.cards[u].pendingResolve) fail(`${name(state, ctx, u)}の解決が終わっていません`);
       }
-      if (!state.opponentTurn) destroyAtEndPhase(state, ctx);
+      if (!state.opponentTurn && !action.startOwnTurn) destroyAtEndPhase(state, ctx);
       const toOpponent = !state.opponentTurn && !!action.toOpponent;
       state.turn += 1;
       state.opponentTurn = toOpponent;
