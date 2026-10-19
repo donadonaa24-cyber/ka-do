@@ -1740,7 +1740,16 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const what = `チェーン${state.chain.length + 1}（${ctx.db[link.defId]?.name ?? ''}）`;
       // チェーンの解決も「何かが起きた」として扱う（それより前の「〜した時」はタイミングを逃す）
       markEvent(state);
-      log(state, action.fizzled ? `${what}は不発になった` : `${what}の解決が終わった`, 'info');
+      // 無効にされた効果は「無効」、処理できなかった効果は「不発」と書き分ける
+      log(
+        state,
+        link.negated
+          ? `${what}は無効になり、処理されなかった`
+          : action.fizzled
+            ? `${what}は不発になった`
+            : `${what}の解決が終わった`,
+        'info',
+      );
       return;
     }
   }

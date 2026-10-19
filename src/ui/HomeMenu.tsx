@@ -153,6 +153,10 @@ export function HomeMenu(p: Props) {
           <button onClick={p.onEditDecks}>デッキ編集・作成</button>
           <button onClick={p.onImages}>カード画像の設定</button>
         </section>
+        <p className="note build-time">
+          ページの更新：
+          {new Date(__BUILD_TIME__).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' })}
+        </p>
       </div>
     </div>
   );

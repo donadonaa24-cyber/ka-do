@@ -36,6 +36,8 @@ export interface CpuDuel {
   /** 手札誘発を選ぶ（null は使わない） */
   choose: (option: HandTrapOption | null) => void;
   cpuState: GameState | null;
+  /** CPUのゲームで直前に起きたこと（ログ・こちらから見た言い方） */
+  recent: string[];
 }
 
 const STEP_MS = 900;
@@ -92,6 +94,7 @@ export function useCpuDuel(opts: {
   const [drawPer, setDrawPer] = useState(saved?.drawPer ?? 0);
   const [used, setUsed] = useState<string[]>(saved?.used ?? []);
   const [last, setLast] = useState(saved?.last ?? '');
+  const [recent, setRecent] = useState<string[]>([]);
   const [humanTurnStart, setHumanTurnStart] = useState<number | null>(saved?.humanTurnStart ?? null);
   const [banishAtEnd, setBanishAtEnd] = useState<string[]>(saved?.banishAtEnd ?? []);
   const workerRef = useRef<Worker | null>(null);
@@ -173,6 +176,15 @@ export function useCpuDuel(opts: {
       setDuel({ ...duel, actions: [...duel.actions, ...actions] });
       dispatchHuman(syncAction(s));
       if (text) setLast(text);
+      // CPUのゲームのログを、こちらから見た言い方にして見せる（手札誘発を置いた・墓地へ送った内部の処理は省く）
+      setRecent(
+        s.log
+          .slice(cpuState.log.length)
+          .map((l) => l.text)
+          .filter((t) => !t.startsWith('（練習）') && !t.includes('相手の手札から相手の墓地へ'))
+          .map((t) => t.replace(/相手の/g, 'あなたの'))
+          .slice(-8),
+      );
       return s;
     },
     [duel, cpuState, ctx, drawPer, dispatchHuman, onError],
@@ -294,7 +306,7 @@ export function useCpuDuel(opts: {
   const active = !!duel;
   const cpuTurn = active && (stage === 'thinking' || stage === 'acting' || stage === 'prompt');
   const value: CpuDuel | null = duel
-    ? { cpuDeckName: duel.cpuDeckName, stage, prompt, last, cpuTurn, choose, cpuState }
+    ? { cpuDeckName: duel.cpuDeckName, stage, prompt, last, cpuTurn, choose, cpuState, recent }
     : null;
   return { duel: value, start, stop };
 }

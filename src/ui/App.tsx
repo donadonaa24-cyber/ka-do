@@ -1313,6 +1313,16 @@ export function App() {
       </div>
       {cpuDuel.stage === 'thinking' && <div className="ap-hint">CPUが展開ルートを考えています…</div>}
       {cpuDuel.last && cpuDuel.stage !== 'over' && <div className="ap-hint">直前：{cpuDuel.last}</div>}
+      {cpuDuel.recent.length > 0 && cpuDuel.stage !== 'over' && (
+        <details className="cpu-log">
+          <summary>CPUのゲームで起きたこと</summary>
+          <ul>
+            {cpuDuel.recent.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+        </details>
+      )}
       {cpuDuel.prompt && (
         <>
           <div className="cpu-announce">CPU：{cpuDuel.prompt.step.text}</div>
