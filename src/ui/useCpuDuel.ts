@@ -53,6 +53,8 @@ interface Saved {
   used: string[];
   last: string;
   humanTurnStart: number | null;
+  /** エンドフェイズに除外する自分のモンスター（ＰＳＹフレームギア） */
+  banishAtEnd?: string[];
 }
 
 function loadSaved(sessionKey: string): Saved | null {
@@ -91,6 +93,7 @@ export function useCpuDuel(opts: {
   const [used, setUsed] = useState<string[]>(saved?.used ?? []);
   const [last, setLast] = useState(saved?.last ?? '');
   const [humanTurnStart, setHumanTurnStart] = useState<number | null>(saved?.humanTurnStart ?? null);
+  const [banishAtEnd, setBanishAtEnd] = useState<string[]>(saved?.banishAtEnd ?? []);
   const workerRef = useRef<Worker | null>(null);
 
   // 進むたびに保存する（CPU戦をやめたら消す）
@@ -108,13 +111,14 @@ export function useCpuDuel(opts: {
           used,
           last,
           humanTurnStart,
+          banishAtEnd,
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
       }
     } catch {
       // 保存できない環境では何もしない
     }
-  }, [owner, duel, stage, plan, planIndex, drawPer, used, last, humanTurnStart]);
+  }, [owner, duel, stage, plan, planIndex, drawPer, used, last, humanTurnStart, banishAtEnd]);
 
   const cpuState = useMemo(() => {
     if (!duel) return null;
@@ -141,6 +145,7 @@ export function useCpuDuel(opts: {
     setUsed([]);
     setLast('');
     setHumanTurnStart(null);
+    setBanishAtEnd([]);
   }, []);
 
   const stop = useCallback(() => {
@@ -175,10 +180,20 @@ export function useCpuDuel(opts: {
 
   const endCpuTurn = useCallback(() => {
     if (cpuState) dispatchHuman(syncAction(cpuState));
+    // ＰＳＹフレームギアの効果で特殊召喚したモンスターはエンドフェイズに除外される
+    for (const u of banishAtEnd)
+      if (human.mz.includes(u))
+        dispatchHuman({
+          type: 'MOVE',
+          uid: u,
+          to: { zone: 'banished' },
+          reason: 'エンドフェイズに除外（ＰＳＹフレームギア）',
+        });
+    setBanishAtEnd([]);
     dispatchHuman({ type: 'END_TURN' });
     setLast('CPUはターンを終了した');
     setStage('human');
-  }, [cpuState, dispatchHuman]);
+  }, [cpuState, dispatchHuman, banishAtEnd, human.mz]);
 
   // ルートを考える（初回・止められた後）
   useEffect(() => {
@@ -254,13 +269,14 @@ export function useCpuDuel(opts: {
         setStage('acting');
         return;
       }
-      const res = applyHandTrap(cpuState, ctx, action, option, human.cards[option.uid].defId);
+      const res = applyHandTrap(cpuState, ctx, action, option, human);
       if (!res) {
         onError(`${option.name}を使えませんでした`);
         setStage('acting');
         return;
       }
       res.humanActions.forEach((a) => dispatchHuman(a));
+      if (res.banishAtEnd) setBanishAtEnd((b) => [...b, ...res.banishAtEnd!]);
       setUsed((u) => [...u, option.name]);
       if (option.kind === 'draw') {
         setDrawPer((n) => n + 1);

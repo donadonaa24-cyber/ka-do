@@ -116,6 +116,15 @@ const DRAW_TRAPS: Record<string, string> = {
   'マルチャミー・フワロス': '相手がデッキ・EXから特殊召喚するたびに1枚ドロー（自分フィールドにカードが無い時）',
 };
 
+const PSY_GEARS = new Set(['ＰＳＹフレームギア・γ', 'ＰＳＹフレームギア・δ']);
+
+/** ＰＳＹフレームギアと一緒に特殊召喚する、手札・デッキ・墓地の「ＰＳＹフレーム・ドライバー」 */
+function psyDriver(human: GameState, ctx: Ctx): string | undefined {
+  return [...human.hand, ...human.deck, ...human.gy].find(
+    (u) => getDef(human, ctx, u).name === 'ＰＳＹフレーム・ドライバー',
+  );
+}
+
 /** CPUのこの操作に対して、プレイヤーが使える手札誘発 */
 export function handTrapOptions(
   cpu: GameState,
@@ -128,6 +137,7 @@ export function handTrapOptions(
   const out: HandTrapOption[] = [];
   const seen = new Set<string>();
   const humanField = [...human.mz, ...human.emz, ...human.stz, human.fz].some(Boolean);
+  const humanMonsters = [...human.mz, ...human.emz].some(Boolean);
   const pushed = step.kind === 'activate' ? pushCpuActivation(cpu, ctx, step, new Set(actionUids(action))) : null;
   for (const uid of human.hand) {
     const name = getDef(human, ctx, uid).name;
@@ -143,6 +153,10 @@ export function handTrapOptions(
         out.push({ uid, name, label: 'このターン、お互いにデッキからカードを手札に加えられなくする', kind: 'droll' });
       continue;
     }
+    // ＰＳＹフレームギア：自分フィールドにモンスターがいなく、ドライバーを一緒に特殊召喚できる時だけ
+    if (PSY_GEARS.has(name) && (humanMonsters || !psyDriver(human, ctx))) continue;
+    // 無限泡影：自分フィールドにカードが無い時だけ手札から発動できる
+    if (name === '無限泡影' && humanField) continue;
     const ability = handTrapAbility(name);
     if (!ability || !pushed) continue;
     const placed = applyAction(
@@ -162,6 +176,8 @@ export interface HandTrapResult {
   humanActions: Action[];
   /** CPUの効果が止まった（ルートを探し直す） */
   replan: boolean;
+  /** エンドフェイズに除外する、プレイヤーのモンスター（ＰＳＹフレームギアの効果で特殊召喚したもの） */
+  banishAtEnd?: string[];
 }
 
 export function applyHandTrap(
@@ -169,11 +185,40 @@ export function applyHandTrap(
   ctx: Ctx,
   action: Action,
   option: HandTrapOption,
-  humanDefId: string,
+  human: GameState,
 ): HandTrapResult | null {
-  const humanActions: Action[] = [
+  const humanDefId = human.cards[option.uid].defId;
+  let humanActions: Action[] = [
     { type: 'MOVE', uid: option.uid, to: { zone: 'gy' }, reason: `${option.name}を発動（CPUの効果に対して）` },
   ];
+  let banishAtEnd: string[] | undefined;
+  // ＰＳＹフレームギア：手札のこのカードとドライバーを特殊召喚（エンドフェイズに除外される）
+  if (PSY_GEARS.has(option.name)) {
+    const driver = psyDriver(human, ctx);
+    const free = human.mz.flatMap((u, i) => (u ? [] : [i]));
+    if (!driver || free.length < 2) return null;
+    const fromDeck = human.deck.includes(driver);
+    humanActions = [
+      {
+        type: 'MOVE',
+        uid: option.uid,
+        to: { zone: 'mz', index: free[0] },
+        faceUp: true,
+        position: 'atk',
+        reason: '自身の効果で特殊召喚',
+      },
+      {
+        type: 'MOVE',
+        uid: driver,
+        to: { zone: 'mz', index: free[1] },
+        faceUp: true,
+        position: 'atk',
+        reason: `${option.name}の効果で特殊召喚`,
+      },
+      ...(fromDeck ? [{ type: 'SHUFFLE_DECK' } as Action] : []),
+    ];
+    banishAtEnd = [option.uid, driver];
+  }
   if (option.kind === 'draw') return { cpuActions: [], humanActions, replan: false };
   if (option.kind === 'droll')
     return { cpuActions: [{ type: 'NO_DECK_TO_HAND', by: option.name }], humanActions, replan: true };
@@ -197,7 +242,7 @@ export function applyHandTrap(
     const a = autoDrive(startResolve(s, ctx), ctx, prefer) ?? fizzleTop(s, ctx);
     if (!a || !apply(a)) break;
   }
-  return { cpuActions, humanActions, replan: true };
+  return { cpuActions, humanActions, replan: true, banishAtEnd };
 }
 
 /** この操作で新しく特殊召喚されたモンスターの数（増殖するＧのドロー） */
