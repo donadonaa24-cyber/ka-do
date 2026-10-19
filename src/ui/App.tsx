@@ -358,6 +358,8 @@ export function App() {
   });
   pvpLocalRef.current = pvpOn ? pvpHook.onLocal : null;
   const pvp = pvpHook.pvp;
+  /** 先攻の1ターン目（バトルフェイズが無い） */
+  const firstTurn = state.turn === 1 && !state.opponentTurn && (session.handSize ?? 5) === 5;
   const pvpWaiting = !!pvp && pvp.waitingOpp;
   // CPUのターン中・CPUの盤面を写した直後は、1手戻すと盤面がずれるので戻せない
   const lastAction = session.actions[session.actions.length - 1];
@@ -1917,9 +1919,28 @@ export function App() {
                 <button className="primary" onClick={() => dispatch({ type: 'END_TURN', toOpponent: true })}>
                   相手ターンへ
                 </button>
+              ) : state.phase === 'DP' || state.phase === 'SP' ? (
+                <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE', to: 'M1' })}>
+                  メインフェイズへ
+                </button>
+              ) : state.phase === 'M1' && firstTurn ? (
+                // 先攻1ターン目はバトルフェイズが無いので、そのままエンドフェイズへ
+                <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE', to: 'EP' })}>
+                  エンドフェイズへ
+                </button>
+              ) : state.phase === 'M1' || state.phase === 'BP' ? (
+                <>
+                  <button
+                    className="primary"
+                    onClick={() => dispatch({ type: 'NEXT_PHASE', to: state.phase === 'M1' ? 'BP' : 'M2' })}
+                  >
+                    {state.phase === 'M1' ? 'バトルへ' : 'メイン2へ'}
+                  </button>
+                  <button onClick={() => dispatch({ type: 'NEXT_PHASE', to: 'EP' })}>エンドへ</button>
+                </>
               ) : (
-                <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
-                  次のフェイズ
+                <button className="primary" onClick={() => dispatch({ type: 'NEXT_PHASE', to: 'EP' })}>
+                  エンドフェイズへ
                 </button>
               )}
               <button
@@ -1938,7 +1959,7 @@ export function App() {
               </button>
               <button onClick={() => setModal('routes')}>ルート</button>
               <button className="menu-btn" onClick={() => setModal('menu')} aria-label="メニュー">
-                ≡ メニュー
+                ≡<span className="menu-label"> メニュー</span>
               </button>
             </div>
           </header>

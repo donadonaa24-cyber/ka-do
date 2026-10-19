@@ -3011,3 +3011,14 @@ button.danger {
   --card-h: 80px;
   flex: none;
 }
+
+/* とても狭い画面：上部のボタンが収まるよう、メニューは「≡」だけにする */
+@media (max-width: 400px) {
+  .menu-label {
+    display: none;
+  }
+  .hud-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
