@@ -1471,7 +1471,7 @@ button.danger {
 .app.with-opp {
   --card-w: max(
     26px,
-    min(calc((min(100vw, 780px) - 24px) / 7 - 7px), calc((var(--vh) - var(--reserve)) / 5 / 1.43 - 7px), 80px)
+    min(calc((min(100vw, 780px) - 24px) / 7 - 7px), calc((var(--vh) - var(--reserve)) / 5.5 / 1.43 - 7px), 80px)
   );
 }
 .board.with-opp {
@@ -2465,7 +2465,7 @@ button.danger {
   .app.with-opp {
     --card-w: max(
       26px,
-      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 5 / 1.43 - 7px), 90px)
+      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 5.5 / 1.43 - 7px), 90px)
     );
   }
   .board {
@@ -2477,4 +2477,419 @@ button.danger {
   .board .card.def-pos {
     transform: rotate(90deg);
   }
+}
+
+/* ===== デュエルフィールド（マット） ===== */
+.board {
+  padding: 8px;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(80, 140, 255, 0.12), transparent 70%),
+    repeating-linear-gradient(60deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(-60deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 22px),
+    linear-gradient(180deg, #0f1c2e, #0a1220);
+  box-shadow:
+    0 0 0 1px rgba(120, 170, 255, 0.2),
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    inset 0 0 40px rgba(60, 120, 255, 0.08);
+}
+.zone {
+  border-style: solid;
+  border-color: rgba(140, 170, 220, 0.22);
+  background: rgba(10, 20, 40, 0.35);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
+}
+.zone.mz {
+  border-color: rgba(255, 170, 90, 0.4);
+  background: radial-gradient(circle, rgba(255, 150, 70, 0.1), rgba(10, 20, 40, 0.35) 70%);
+}
+.zone.stz {
+  border-color: rgba(60, 210, 180, 0.38);
+  background: radial-gradient(circle, rgba(40, 200, 170, 0.1), rgba(10, 20, 40, 0.35) 70%);
+}
+.zone.emz {
+  border-color: rgba(170, 130, 255, 0.55);
+  background: radial-gradient(circle, rgba(150, 110, 255, 0.14), rgba(10, 20, 40, 0.35) 70%);
+}
+.zone.fz {
+  border-color: rgba(90, 200, 120, 0.5);
+  background: radial-gradient(circle, rgba(80, 200, 110, 0.1), rgba(10, 20, 40, 0.35) 70%);
+}
+.zone.pile {
+  border-color: rgba(200, 205, 225, 0.25);
+  background: rgba(0, 0, 0, 0.28);
+}
+.zone.opp-zone {
+  border-color: rgba(255, 110, 110, 0.38);
+}
+.zone.mz.linked {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 10px rgba(79, 140, 255, 0.45);
+}
+.zone.blank {
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+
+/* 相手の手札：裏向きのカードを重ねて並べる */
+.opp-hand {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  height: calc(var(--card-h) * 0.5);
+  overflow: hidden;
+  cursor: pointer;
+}
+.opp-hand-card.card {
+  width: calc(var(--card-w) * 0.72);
+  height: calc(var(--card-h) * 0.72);
+  margin: calc(var(--card-h) * -0.3) calc(var(--card-w) * -0.1) 0;
+  transform: rotate(180deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.opp-hand .pile-count {
+  bottom: 0;
+}
+
+/* ===== コイントス・サイコロ ===== */
+.chance-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.chance-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  perspective: 700px;
+}
+.chance-result {
+  min-height: 44px;
+  font-size: 34px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow:
+    0 0 12px rgba(242, 193, 78, 0.9),
+    0 2px 4px #000;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.25s,
+    transform 0.25s;
+}
+.chance-result.show {
+  opacity: 1;
+  transform: scale(1);
+}
+/* コイン：上から落ちながら回転し、表か裏で止まる */
+.coin-drop {
+  animation: coin-drop 1.5s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+@keyframes coin-drop {
+  0% {
+    transform: translateY(-180px) scale(0.7);
+  }
+  70% {
+    transform: translateY(0) scale(1.1);
+  }
+  85% {
+    transform: translateY(-14px) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+.coin {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  transform-style: preserve-3d;
+  animation: coin-spin 1.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes coin-spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(var(--end));
+  }
+}
+.coin-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46px;
+  font-weight: 800;
+  color: #6b4a08;
+  backface-visibility: hidden;
+  background: radial-gradient(circle at 35% 30%, #fff6c8, #f2c14e 45%, #b8860b 80%, #7a5506);
+  box-shadow:
+    inset 0 0 0 6px rgba(122, 85, 6, 0.6),
+    inset 0 0 0 10px rgba(255, 240, 180, 0.5),
+    0 6px 18px rgba(0, 0, 0, 0.6);
+}
+.coin-face.tails {
+  transform: rotateY(180deg);
+  background: radial-gradient(circle at 35% 30%, #ffffff, #d9dde6 45%, #9aa1ad 80%, #5d636d);
+  color: #3c4250;
+}
+/* サイコロ：左から転がってきて、出た目が正面で止まる */
+.dice-roll {
+  animation: dice-roll 1.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes dice-roll {
+  0% {
+    transform: translate(-240px, -120px);
+  }
+  35% {
+    transform: translate(-90px, 0);
+  }
+  55% {
+    transform: translate(-30px, -36px);
+  }
+  75% {
+    transform: translate(0, 0);
+  }
+  88% {
+    transform: translate(6px, -8px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+.dice {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  transform-style: preserve-3d;
+  animation: dice-spin 1.5s cubic-bezier(0.15, 0.6, 0.3, 1) both;
+}
+@keyframes dice-spin {
+  from {
+    transform: rotateX(var(--sx)) rotateY(var(--sy));
+  }
+  to {
+    transform: rotateX(var(--ex)) rotateY(var(--ey));
+  }
+}
+.dice-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff, #e3e6ee);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.18);
+}
+.dice-face span {
+  display: block;
+}
+.dice-face .pip {
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #555, #111);
+}
+.dice-face .pip.red {
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle at 35% 35%, #ff6b6b, #a01010);
+}
+.dice-face.f1 {
+  transform: translateZ(45px);
+}
+.dice-face.f6 {
+  transform: rotateY(180deg) translateZ(45px);
+}
+.dice-face.f3 {
+  transform: rotateY(90deg) translateZ(45px);
+}
+.dice-face.f4 {
+  transform: rotateY(-90deg) translateZ(45px);
+}
+.dice-face.f2 {
+  transform: rotateX(90deg) translateZ(45px);
+}
+.dice-face.f5 {
+  transform: rotateX(-90deg) translateZ(45px);
+}
+
+/* ===== キラカード ===== */
+.detail-img-wrap {
+  position: relative;
+  width: 84px;
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: start;
+}
+.detail-img-wrap .detail-img {
+  display: block;
+  width: 100%;
+}
+.foil-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.foil-row button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.foil-row button.on {
+  border-color: var(--gold);
+  background: rgba(242, 193, 78, 0.18);
+}
+.foil-title {
+  color: var(--muted);
+}
+.foil {
+  isolation: isolate;
+}
+.foil-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  overflow: hidden;
+}
+/* ウルトラ：白金の光が斜めに走る */
+.foil-ultra .foil-fx {
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 236, 160, 0.75) 45%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 210, 90, 0.75) 55%,
+    transparent 65%
+  );
+  background-size: 300% 100%;
+  mix-blend-mode: screen;
+  animation: foil-sweep 2.6s ease-in-out infinite;
+}
+@keyframes foil-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+/* シークレット：虹色の細い斜線がゆらめく */
+.foil-secret .foil-fx {
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0) 0 2px, rgba(255, 255, 255, 0.45) 2px 3px),
+    linear-gradient(125deg, #ff5f6d, #ffc371, #f9f871, #5effa1, #47d1ff, #8f6bff, #ff5fd2, #ff5f6d);
+  background-size:
+    auto,
+    300% 300%;
+  mix-blend-mode: color-dodge;
+  opacity: 0.55;
+  animation: foil-drift 5s ease-in-out infinite alternate;
+}
+@keyframes foil-drift {
+  from {
+    background-position:
+      0 0,
+      0% 0%;
+  }
+  to {
+    background-position:
+      0 0,
+      100% 100%;
+  }
+}
+/* パラレル：全体に細かいホロの格子 */
+.foil-parallel .foil-fx {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 3px),
+    linear-gradient(160deg, rgba(120, 220, 255, 0.6), rgba(255, 140, 240, 0.6), rgba(255, 240, 140, 0.6));
+  background-size:
+    auto,
+    auto,
+    200% 200%;
+  mix-blend-mode: overlay;
+  opacity: 0.8;
+  animation: foil-drift3 4s ease-in-out infinite alternate;
+}
+@keyframes foil-drift3 {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0% 0%;
+  }
+  to {
+    background-position:
+      0 0,
+      0 0,
+      100% 100%;
+  }
+}
+/* プリズマティック：虹色がぐるぐる回る */
+.foil-prismatic .foil-fx::before {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(#ff5f6d, #ffc371, #f9f871, #5effa1, #47d1ff, #8f6bff, #ff5fd2, #ff5f6d);
+  mix-blend-mode: color-dodge;
+  opacity: 0.5;
+  animation: foil-spin 6s linear infinite;
+}
+@keyframes foil-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* スターライト：星がきらめき、うっすら虹色 */
+.foil-starlight .foil-fx {
+  background:
+    radial-gradient(circle, #fff 0 1px, transparent 2px) 0 0 / 17px 19px,
+    radial-gradient(circle, #fff 0 1px, transparent 2px) 8px 9px / 23px 21px,
+    linear-gradient(135deg, rgba(120, 200, 255, 0.35), rgba(255, 150, 230, 0.35), rgba(255, 240, 150, 0.35));
+  mix-blend-mode: screen;
+  animation: foil-twinkle 1.6s ease-in-out infinite alternate;
+}
+@keyframes foil-twinkle {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 0.95;
+  }
+}
+/* ゴールド：金色に染まり、光が走る */
+.foil-gold .foil-fx {
+  background:
+    linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.8) 50%, transparent 60%),
+    linear-gradient(135deg, rgba(255, 215, 90, 0.55), rgba(184, 134, 11, 0.45), rgba(255, 236, 160, 0.55));
+  background-size:
+    300% 100%,
+    100% 100%;
+  mix-blend-mode: hard-light;
+  animation: foil-sweep 3.2s ease-in-out infinite;
+}
+.card.foil {
+  box-shadow: 0 0 6px rgba(255, 230, 160, 0.45);
+}
+.motion-off .foil-fx,
+.motion-off .foil-fx::before {
+  animation: none;
 }

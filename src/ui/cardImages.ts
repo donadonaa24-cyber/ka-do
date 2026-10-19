@@ -90,3 +90,33 @@ export function matchCard(fileName: string): string | null {
     .find((c) => key.includes(normalizeName(c.name)));
   return partial?.id ?? null;
 }
+
+/** キラカードの光り方（カードごとに選ぶ。ブラウザの中にだけ保存） */
+export type FoilStyle = 'ultra' | 'secret' | 'parallel' | 'prismatic' | 'starlight' | 'gold';
+export const FOIL_STYLES: { id: FoilStyle; label: string }[] = [
+  { id: 'ultra', label: 'ウルトラ（光が走る）' },
+  { id: 'secret', label: 'シークレット（虹の斜線）' },
+  { id: 'parallel', label: 'パラレル（細かいホロ）' },
+  { id: 'prismatic', label: 'プリズマティック（虹が回る）' },
+  { id: 'starlight', label: 'スターライト（星がきらめく）' },
+  { id: 'gold', label: 'ゴールド（金色に輝く）' },
+];
+export type CardFoils = Record<string, FoilStyle>;
+export const CardFoilContext = createContext<CardFoils>({});
+const FOIL_KEY = 'ygo-solo:foil';
+
+export function loadFoils(): CardFoils {
+  try {
+    return (JSON.parse(localStorage.getItem(FOIL_KEY) ?? '{}') as CardFoils) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveFoils(foils: CardFoils) {
+  try {
+    localStorage.setItem(FOIL_KEY, JSON.stringify(foils));
+  } catch {
+    // 保存できなくても今の画面では使える
+  }
+}

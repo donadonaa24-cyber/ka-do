@@ -377,5 +377,5 @@ export function syncAction(cpu: GameState): Action {
   cpu.hand.forEach((u) => add(u, 'ohand'));
   // デッキも写す（見せない。ＰＳＹフレームギアがデッキのドライバーを特殊召喚するため）
   cpu.deck.forEach((u) => add(u, 'odeck'));
-  return { type: 'OPP_SYNC', cards, lp: cpu.lp };
+  return { type: 'OPP_SYNC', cards, lp: cpu.lp, extra: cpu.extra.length };
 }

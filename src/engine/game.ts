@@ -109,6 +109,10 @@ export type Action =
   | { type: 'TIMING' }
   /** このモンスターはエンドフェイズに除外される */
   | { type: 'BANISH_AT_END'; uid: string }
+  /** コイントス（結果は操作を行った時に決めて記録する） */
+  | { type: 'COIN'; result: 'heads' | 'tails'; by?: string }
+  /** サイコロを振る（1〜6） */
+  | { type: 'DICE'; result: number; by?: string }
   /** 通信対戦：チェーンの一番上に相手が応答した（妨害を使わなかった） */
   | { type: 'OPP_PASS' }
   /** 通信対戦：相手のゲームで受けたダメージ・払ったLPを反映する */
@@ -129,6 +133,8 @@ export type Action =
         >;
       }[];
       lp?: number;
+      /** 相手のEXデッキの枚数 */
+      extra?: number;
     }
   /** このターン、そのカードの効果を無効にする */
   | { type: 'NEGATE_CARD'; uid: string; by: string }
@@ -1552,6 +1558,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'TIMING':
       state.timingGroup = (state.timingGroup ?? 0) + 1;
       return;
+    case 'COIN':
+      log(state, `${action.by ? `${action.by}：` : ''}コイントス → ${action.result === 'heads' ? '表' : '裏'}`, 'info');
+      return;
+    case 'DICE':
+      log(state, `${action.by ? `${action.by}：` : ''}サイコロ → ${action.result}`, 'info');
+      return;
     case 'OPP_PASS': {
       const top = state.chain[state.chain.length - 1];
       if (top) top.oppPassed = true;
@@ -1618,6 +1630,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         inst.equippedTo = c.equipTo ? (byKey.get(c.equipTo) ?? null) : null;
       }
       if (action.lp !== undefined) state.opponentLp = action.lp;
+      if (action.extra !== undefined) o.extraCount = action.extra;
       return;
     }
     case 'NEGATE_CARD': {

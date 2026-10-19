@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import { MARKER_ARROW } from '../engine/rules';
-import { CardImageContext } from './cardImages';
+import { CardFoilContext, CardImageContext } from './cardImages';
 import type { CardDef, CardInstance } from '../engine/types';
 
 export function frameClass(def: CardDef): string {
@@ -72,6 +72,9 @@ export function CardView({
 }: Props) {
   const image = useContext(CardImageContext)[def.id];
   const faceDown = inst ? !inst.faceUp : false;
+  // キラカード（表向きの時だけ光る）
+  const foil = useContext(CardFoilContext)[def.id];
+  const foilFx = foil && !faceDown ? <span className="foil-fx" aria-hidden /> : null;
   const isDef = inst?.position === 'def';
   const cls = [
     'card',
@@ -83,6 +86,7 @@ export function CardView({
     inst?.pendingResolve ? 'resolving' : '',
     small ? 'small' : '',
     image ? 'has-img' : '',
+    foil && !faceDown ? `foil foil-${foil}` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -103,6 +107,7 @@ export function CardView({
         role="img"
         aria-label={def.name}
       >
+        {foilFx}
         {inst && inst.overlay.length > 0 && <div className="card-overlay">素材{inst.overlay.length}</div>}
         {faceDown && <div className="card-tag">裏側</div>}
         {stats && !faceDown && <StatBadge def={def} stats={stats} />}
@@ -117,6 +122,7 @@ export function CardView({
       onPointerDown={onPointerDown}
       title={`${def.name}\n${def.text}`}
     >
+      {foilFx}
       <div className="card-name">{def.name}</div>
       <div className="card-stat">{statLine(def)}</div>
       {def.tuner && <div className="card-tag">チューナー</div>}

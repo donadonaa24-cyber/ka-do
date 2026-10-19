@@ -147,6 +147,17 @@ export function Board({
       </div>
     );
   };
+  /** 相手のデッキ・EXデッキ（CPU戦・通信対戦では枚数を出す。練習では枚数は分からない） */
+  const oppStack = (count: number | undefined, label: string) => (
+    <div className="zone pile opp-zone">
+      <div className={`card ${count === 0 ? 'empty-pile' : 'f-back'}`} />
+      <span className="pile-count">
+        {label} {count ?? '-'}
+      </span>
+    </div>
+  );
+  /** 相手の手札（裏向きで枚数分並べる） */
+  const oppHand = opp?.hand ?? [];
   // EXモンスターゾーンは共有：相手が使っていれば相手のカードを出す
   const emzSlot = (i: number) =>
     opp?.emz?.[i]
@@ -159,15 +170,27 @@ export function Board({
     <div className={`board ${showOpp ? 'with-opp' : ''}`}>
       {showOpp && (
         <>
-          {/* 相手の魔法＆罠ゾーン */}
-          {oppPile('ohand', '相手手札')}
+          {/* 相手の手札（裏向き） */}
+          <div
+            className="opp-hand"
+            data-pile="ohand"
+            onClick={() => onOppPileClick?.('ohand')}
+            aria-label={`相手の手札 ${oppHand.length}枚`}
+          >
+            {oppHand.slice(0, 10).map((u) => (
+              <div key={u} className="opp-hand-card card f-back" data-uid={u} />
+            ))}
+            <span className="pile-count">相手手札 {oppHand.length}</span>
+          </div>
+          {/* 相手の魔法＆罠ゾーン（相手から見て左右反転：相手のデッキはこちらから見て左、EXデッキは右） */}
+          {oppStack(opp?.deck?.length, '相手デッキ')}
           {mirrored.map((i) => (
             <div key={`ostz${i}`} className="zone-wrap">
-              {oppSlot({ zone: 'ostz', index: i }, opp?.stz[i] ?? null, '相手魔罠')}
+              {oppSlot({ zone: 'ostz', index: i }, opp?.stz[i] ?? null, '相手魔罠', 'stz')}
             </div>
           ))}
-          {oppPile('obanished', '相手除外')}
-          {/* 相手のメインモンスターゾーン */}
+          {oppStack(opp?.extraCount, '相手EX')}
+          {/* 相手のメインモンスターゾーン（相手の墓地は左、フィールドゾーンは右） */}
           {oppPile('ogy', '相手墓地')}
           {mirrored.map((i) => (
             <div key={`omz${i}`} className="zone-wrap">
@@ -177,8 +200,8 @@ export function Board({
           {oppSlot({ zone: 'ofz' }, opp?.fz ?? null, '相手F', 'fz')}
         </>
       )}
-      {/* 1段目: EXモンスターゾーン */}
-      <div className="zone blank" />
+      {/* EXモンスターゾーンの段：両端は除外（相手の除外は左、自分の除外は右） */}
+      {showOpp ? oppPile('obanished', '相手除外') : <div className="zone blank" />}
       <div className="zone blank" />
       {emzSlot(0)}
       <div className="zone blank" />
@@ -186,7 +209,7 @@ export function Board({
       <div className="zone blank" />
       {pile('banished', '除外')}
 
-      {/* 2段目: メインモンスターゾーン */}
+      {/* メインモンスターゾーン */}
       {slot({ zone: 'fz' }, state.fz, 'フィールド', 'fz')}
       {state.mz.map((uid, i) => (
         <div key={`mz${i}`} className="zone-wrap">
@@ -195,7 +218,7 @@ export function Board({
       ))}
       {pile('gy', '墓地')}
 
-      {/* 3段目: 魔法＆罠ゾーン */}
+      {/* 魔法＆罠ゾーン */}
       {pile('extra', 'EX')}
       {state.stz.map((uid, i) => (
         <div key={`stz${i}`} className="zone-wrap">

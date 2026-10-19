@@ -109,6 +109,8 @@ export interface OppBoard {
   hand: string[];
   /** CPU戦：CPUのデッキ（写したもの。練習では無い） */
   deck?: string[];
+  /** CPU戦・通信対戦：相手のEXデッキの枚数（練習では無い） */
+  extraCount?: number;
 }
 
 export type BattlePosition = 'atk' | 'def';
