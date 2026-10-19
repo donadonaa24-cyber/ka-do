@@ -257,6 +257,8 @@ export function App() {
   const [handRef, handHeight] = useElementHeight<HTMLElement>();
   /** ナビの帯の高さ（盤面のカードの大きさを決めるのに使う） */
   const [coachRef, coachHeight] = useElementHeight<HTMLDivElement>();
+  /** 上部バーの高さ（広い画面では、残りの高さいっぱいに盤面を大きくする） */
+  const [hudRef, hudHeight] = useElementHeight<HTMLElement>();
   const routeSearch = useRouteSearch(useCallback((m: string) => setError(m), []));
   const [dropMenu, setDropMenu] = useState<{ x: number; y: number; title: string; options: Btn[] } | null>(null);
   /** ドラッグで決まった出し先。次に始める操作で1回だけ使う */
@@ -1821,11 +1823,12 @@ export function App() {
               '--hand-w': `${handCardWidth(winWidth, winHeight)}px`,
               '--hand-h': `${handHeight}px`,
               '--coach-h': `${coachHeight}px`,
+              '--hud-h': `${hudHeight}px`,
             } as React.CSSProperties
           }
           onClickCapture={onClickCapture}
         >
-          <header className="hud">
+          <header className="hud" ref={hudRef}>
             <div className="hud-status">
               <span className="deck-chip-wrap">
                 <button

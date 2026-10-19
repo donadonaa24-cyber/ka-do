@@ -2455,18 +2455,18 @@ button.danger {
 /* ===== 広い画面（PCなど）：モンスター・魔法＆罠ゾーンを正方形にする ===== */
 /* 守備表示のカードを縮めずに横向きで置ける。両端は山札の列（縦長のまま） */
 @media (min-width: 700px) {
-  :root,
+  /* 盤面に使える高さ：画面の高さから上部バー・ナビの帯・手札（実際の高さ）と余白を引いたもの */
   .app {
-    --card-w: max(
-      30px,
-      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 3 / 1.43 - 9px), 104px)
+    --board-h: calc(
+      var(--vh) - var(--hud-h, 56px) - var(--hand-h, 180px) - var(--coach-h, 0px) - 32px -
+        env(safe-area-inset-bottom, 0px)
     );
+    /* 横：山札2列＋正方形のゾーン5列、縦：3段（ゾーン＋隙間・マットの余白）の小さい方 */
+    --card-w: max(30px, min(calc((100vw - 90px) / 9.15), calc((var(--board-h) - 40px) / 4.29), 170px));
   }
+  /* 相手の盤面がある時：5段＋相手の手札 */
   .app.with-opp {
-    --card-w: max(
-      26px,
-      min(calc((min(100vw, 1100px) - 80px) / 9.15), calc((var(--vh) - var(--reserve)) / 5.5 / 1.43 - 7px), 90px)
-    );
+    --card-w: max(26px, min(calc((100vw - 90px) / 9.15), calc((var(--board-h) - 60px) / 7.865), 150px));
   }
   .board {
     grid-template-columns:
