@@ -7,10 +7,11 @@ import {
   findLocation,
   isMonsterZone,
   makeEnv,
+  missedTiming,
 } from './game';
 import { oppResponse, resolveOppLink } from './oppAI';
 import type { EffectDef, Env, Step } from './scripts';
-import type { GameState, Location } from './types';
+import type { CardDef, GameState, Location } from './types';
 
 /** 実行中の効果処理。途中の盤面（temp）を見ながら1ステップずつ選ばせる */
 export interface Running {
@@ -89,6 +90,24 @@ export function effectAvailable(state: GameState, uid: string, effect: EffectDef
   return true;
 }
 
+/** カードテキストの、その効果（①②…）の部分 */
+function effectText(def: CardDef, effect: EffectDef): string {
+  const n = effect.label.match(/^[①-⑳]/)?.[0];
+  if (!n) return '';
+  const i = def.text.indexOf(`${n}：`);
+  if (i < 0) return '';
+  const rest = def.text.slice(i + 2);
+  const j = rest.search(/[①-⑳]：/);
+  return j < 0 ? rest : rest.slice(0, j);
+}
+
+/** 「このカードが召喚した時に発動できる」：召喚の直後でないとタイミングを逃す任意効果 */
+export function isTokiTrigger(def: CardDef, effect: EffectDef): boolean {
+  if (!effect.onSummon || effect.applied) return false;
+  const t = effectText(def, effect);
+  return /時に発動できる/.test(t) && !/場合に発動できる/.test(t);
+}
+
 /** 効果のスペルスピード */
 export function effectSpeed(state: GameState, ctx: Ctx, uid: string, effect: EffectDef): number {
   if (effect.speed) return effect.speed;
@@ -132,7 +151,13 @@ export function effectUsedUp(state: GameState, ctx: Ctx, uid: string, effect: Ef
 }
 
 /** 今のチェーンに続けて発動できる効果（スペルスピード2以上・使用回数が残っている） */
-export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): { uid: string; effect: EffectDef }[] {
+export function chainableEffects(
+  state: GameState,
+  ctx: Ctx,
+  minSpeed: number,
+  /** 戦闘中の各段階で発動できる効果（誘発効果・ダメージステップの効果も含める） */
+  inBattle = false,
+): { uid: string; effect: EffectDef }[] {
   const out: { uid: string; effect: EffectDef }[] = [];
   const env = makeEnv(state, ctx, '');
   const uids = [...state.hand, ...state.mz, ...state.emz, ...state.stz, state.fz, ...state.gy].filter(
@@ -142,7 +167,8 @@ export function chainableEffects(state: GameState, ctx: Ctx, minSpeed: number): 
     for (const effect of ctx.scripts?.[env.def(uid).id]?.effects ?? []) {
       if (effect.opponentOnly || !effectAvailable(state, uid, effect)) continue;
       const speed = effectSpeed(state, ctx, uid, effect);
-      if (speed < 2 || speed < minSpeed) continue;
+      const battleTrigger = inBattle && (effect.trigger || effect.damageStep);
+      if (!battleTrigger && (speed < 2 || speed < minSpeed)) continue;
       const key = effectKey(state, uid, effect);
       if (key && effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit) continue;
       if (nameLimitReached(state, effect)) continue;
@@ -190,6 +216,24 @@ export function startEffect(
     !effect.onSummon
   )
     return { kind: 'error', error: 'この効果は相手ターンには発動できません' };
+  // 戦闘中：起動効果は発動できず、ダメージステップ中に発動できる効果は限られる
+  if (ctx.options.strict && state.battle) {
+    const speed = effectSpeed(state, ctx, uid, effect);
+    if (speed < 2 && !effect.trigger && !effect.onSummon && !effect.damageStep)
+      return { kind: 'error', error: '戦闘中は起動効果を発動できません' };
+    if (state.battle.step !== 'battle' && !effect.damageStep && speed < 3)
+      return {
+        kind: 'error',
+        error:
+          'ダメージステップ中に発動できるのは、攻撃力・守備力を変える効果やダメージ計算時の効果、カウンター罠だけです',
+      };
+  }
+  // 「召喚した時に発動できる」任意効果は、召喚の後に別の何かが起きるとタイミングを逃す
+  if (ctx.options.strict && isTokiTrigger(env.def(uid), effect) && missedTiming(state, uid))
+    return {
+      kind: 'error',
+      error: 'タイミングを逃しました（「〜した時に発動できる」効果は、その直後にしか発動できません）',
+    };
   const cond = effect.condition?.(env);
   if (cond) return { kind: 'error', error: cond };
   const key = effectKey(state, uid, effect);
@@ -373,8 +417,10 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push, ...(opp ?? [])] } };
 }
 
-function applyAll(run: Running, ctx: Ctx, actions: Action[]): Running | string {
+function applyAll(run: Running, ctx: Ctx, input: Action[]): Running | string {
   let temp = run.temp;
+  // 処理の区切り（同じ区切りの中で起きたことは同時に起きたものとして扱う）
+  const actions: Action[] = input.length ? [{ type: 'TIMING' }, ...input] : input;
   for (const a of actions) {
     const r = applyAction(temp, a, ctx);
     if (!r.ok) return r.error;

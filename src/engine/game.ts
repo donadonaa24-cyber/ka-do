@@ -4,6 +4,7 @@ import { type CardFilter, hasToonWorld, isToonMonster, matchesFilter } from './f
 import type { CardScript, Env } from './scripts';
 import type {
   Attribute,
+  Battle,
   BattlePosition,
   CardDef,
   CardInstance,
@@ -94,8 +95,14 @@ export type Action =
   | { type: 'CHANGE_POSITION'; uid: string }
   /** 攻撃宣言。target は攻撃する相手のモンスター（無ければ直接攻撃） */
   | { type: 'ATTACK'; uid: string; target?: string }
-  /** このターン、自分のモンスターは直接攻撃できない */
-  | { type: 'NO_DIRECT_ATTACK'; source: string }
+  /** このターン（nextTurn なら次のターンの終了時まで）、自分のモンスターは直接攻撃できない */
+  | { type: 'NO_DIRECT_ATTACK'; source: string; nextTurn?: boolean }
+  /** 戦闘を次の段階へ進める */
+  | { type: 'BATTLE_STEP' }
+  /** 自分のモンスターをダメージステップ終了時まで除外する（ブルーアイズ・トゥーン・アルティメットドラゴン③） */
+  | { type: 'BANISH_UNTIL_DAMAGE_END'; uid: string }
+  /** 効果処理の区切り（タイミングを逃す判定用） */
+  | { type: 'TIMING' }
   | { type: 'SHUFFLE_DECK' }
   | { type: 'ATTACH'; uid: string; target: string }
   | { type: 'DETACH'; target: string; uid: string }
@@ -301,6 +308,7 @@ function markSummoned(state: GameState, uid: string, type: SummonType = 'special
   inst.summonedEntry = inst.entryId;
   inst.summonedTurn = state.turn;
   inst.summonType = type;
+  markEvent(state, uid);
   if (type !== 'normal' && type !== 'special') inst.properlySummoned = true;
 }
 
@@ -346,7 +354,7 @@ export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: n
   if (d.kind !== 'monster' || !inst) return {};
   let atk = inst.atkSet ?? d.atk;
   let def = d.def;
-  if (!isMonsterZone(findLocation(state, uid))) return { atk, def };
+  if (!isAnyMonsterZone(findLocation(state, uid))) return { atk, def };
   let da = (inst.atkMod ?? 0) + (inst.turnAtkMod ?? 0);
   let dd = (inst.defMod ?? 0) + (inst.turnDefMod ?? 0);
   for (const u of state.stz) {
@@ -361,59 +369,66 @@ export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: n
   return { atk, def };
 }
 
+/** 相手フィールドを含むモンスターゾーンか */
+function isAnyMonsterZone(loc: Location | null): boolean {
+  return !!loc && ['mz', 'emz', 'omz', 'oemz'].includes(loc.zone);
+}
+
+/** 攻撃される側（byOpp なら自分、そうでなければ相手）のモンスター */
+function defenderMonsters(state: GameState, byOpp: boolean): string[] {
+  if (byOpp) return fieldMonsters(state);
+  return state.opp ? oppMonsterSlots(state.opp).filter((u): u is string => !!u) : [];
+}
+
 /**
  * 相手フィールドにモンスターがいても直接攻撃できるか。
- * トゥーン：自分フィールドに「トゥーン・ワールド」があり、相手フィールドにトゥーンモンスターがいない場合
+ * トゥーン：自分フィールドに「トゥーン・ワールド」があり、相手フィールドにトゥーンモンスターがいない場合。
+ * ブルーアイズ・トゥーン・アルティメットドラゴン①：自分のトゥーンモンスターは直接攻撃できる
  */
 export function canAttackDirectly(state: GameState, ctx: Ctx, uid: string): boolean {
   const d = getDef(state, ctx, uid);
+  const env = makeEnv(state, ctx, uid);
+  if (
+    env.isToon(uid) &&
+    fieldMonsters(state).some(
+      (u) => state.cards[u].faceUp && getDef(state, ctx, u).name === 'ブルーアイズ・トゥーン・アルティメットドラゴン',
+    )
+  )
+    return true;
   if (!d.toon || !/直接攻撃できる/.test(d.text)) return false;
-  if (!makeEnv(state, ctx, uid).toonWorld) return false;
+  if (!env.toonWorld) return false;
   const oppMons = state.opp ? oppMonsterSlots(state.opp) : [];
   return !oppMons.some((u) => u && state.cards[u].faceUp && getDef(state, ctx, u).toon);
 }
 
-/** モンスターに攻撃した時のダメージ計算（破壊と戦闘ダメージ） */
-function battle(state: GameState, ctx: Ctx, attacker: string, target: string) {
-  const t = state.cards[target];
-  const an = name(state, ctx, attacker);
-  const tn = name(state, ctx, target);
-  const a = currentStats(state, ctx, attacker).atk ?? 0;
-  if (!t.faceUp) {
-    t.faceUp = true;
-    log(state, `裏側守備表示の${tn}を表にした`, 'move');
-  }
-  const ts = currentStats(state, ctx, target);
-  const vsAtk = t.position === 'atk';
-  const d = (vsAtk ? ts.atk : ts.def) ?? 0;
-  log(state, `${an}（攻撃力${a}）で${tn}（${vsAtk ? '攻撃力' : '守備力'}${d}）に攻撃`, 'activate');
-  const destroy = (u: string) => {
-    const n = name(state, ctx, u);
-    moveCard(state, ctx, u, { zone: 'gy' }, { reason: '戦闘で破壊' });
-    log(state, `${n}は戦闘で破壊された`, 'move');
-  };
-  const damageOpp = (n: number) => {
+/** 「このカードは戦闘では破壊されない」 */
+function battleIndestructible(state: GameState, ctx: Ctx, uid: string): boolean {
+  return /このカードは戦闘(・効果)?では破壊されない/.test(getDef(state, ctx, uid).text);
+}
+
+function endBattle(state: GameState, why: string) {
+  state.battle = null;
+  log(state, why, 'info');
+}
+
+/** 攻撃宣言をし直せるように、攻撃回数を戻す（巻き戻しで攻撃をやめた場合は攻撃していない扱い） */
+function refundAttack(state: GameState, uid: string) {
+  const inst = state.cards[uid];
+  if (inst && inst.attackedTurn === state.turn && inst.attackCount > 0) inst.attackCount -= 1;
+}
+
+function damage(state: GameState, toOpp: boolean, n: number) {
+  if (n <= 0) return;
+  if (toOpp) {
     state.opponentLp = Math.max(0, state.opponentLp - n);
     log(state, `相手に${n}の戦闘ダメージ（相手LP ${state.opponentLp}）`, 'info');
-  };
-  const damageSelf = (n: number) => {
+  } else {
     state.lp = Math.max(0, state.lp - n);
     log(state, `自分に${n}の戦闘ダメージ（LP ${state.lp}）`, 'warn');
-  };
-  if (vsAtk) {
-    if (a > d) {
-      destroy(target);
-      damageOpp(a - d);
-    } else if (a < d) {
-      destroy(attacker);
-      damageSelf(d - a);
-    } else if (a > 0) {
-      // 攻撃力が同じなら両方破壊（どちらも0なら破壊されない）
-      destroy(target);
-      destroy(attacker);
-    }
-  } else if (a > d) destroy(target);
-  else if (a < d) damageSelf(d - a);
+  }
+}
+
+function checkLp(state: GameState) {
   if (state.opponentLp === 0 && state.status === 'playing') {
     state.status = 'won';
     state.statusReason = '相手のLPを0にした';
@@ -422,6 +437,118 @@ function battle(state: GameState, ctx: Ctx, attacker: string, target: string) {
     state.status = 'lost';
     state.statusReason = 'LPが0になった';
     log(state, 'LPが0になりました（敗北）', 'warn');
+  }
+}
+
+/** ダメージ計算：戦闘ダメージを与え、破壊されるモンスターを決める（墓地へ送るのはダメージステップ終了時） */
+function damageCalc(state: GameState, ctx: Ctx, b: Battle) {
+  const an = name(state, ctx, b.attacker);
+  const a = currentStats(state, ctx, b.attacker).atk ?? 0;
+  // 攻撃したモンスターのコントローラーの相手がダメージを受ける
+  const attackerIsOpp = !!state.cards[b.attacker].opp;
+  if (!b.target) {
+    log(state, `ダメージ計算：${an}の直接攻撃（攻撃力${a}）`, 'activate');
+    damage(state, !attackerIsOpp, a);
+    return;
+  }
+  const t = state.cards[b.target];
+  const tn = name(state, ctx, b.target);
+  const ts = currentStats(state, ctx, b.target);
+  const vsAtk = t.position === 'atk';
+  const d = (vsAtk ? ts.atk : ts.def) ?? 0;
+  log(state, `ダメージ計算：${an}（攻撃力${a}）→ ${tn}（${vsAtk ? '攻撃力' : '守備力'}${d}）`, 'activate');
+  const destroyed: string[] = [];
+  const destroy = (u: string) => {
+    if (battleIndestructible(state, ctx, u)) {
+      log(state, `${name(state, ctx, u)}は戦闘では破壊されない`, 'info');
+      return;
+    }
+    destroyed.push(u);
+    log(state, `${name(state, ctx, u)}の戦闘での破壊が確定（ダメージステップ終了時に墓地へ）`, 'info');
+  };
+  if (vsAtk) {
+    if (a > d) {
+      destroy(b.target);
+      damage(state, attackerIsOpp ? false : true, a - d);
+    } else if (a < d) {
+      destroy(b.attacker);
+      damage(state, attackerIsOpp ? true : false, d - a);
+    } else if (a > 0) {
+      // 攻撃力が同じなら両方破壊（どちらも0なら破壊されない）
+      destroy(b.target);
+      destroy(b.attacker);
+    }
+  } else if (a > d) destroy(b.target);
+  else if (a < d) damage(state, attackerIsOpp ? true : false, d - a);
+  b.destroyed = destroyed;
+  b.targetSurvived = !destroyed.includes(b.target);
+}
+
+/** 戦闘を次の段階へ進める（攻撃宣言 → ダメージステップ開始時 → ダメージ計算時 → ダメージ計算後 → 終了） */
+function battleStep(state: GameState, ctx: Ctx) {
+  const b = state.battle;
+  if (!b) fail('戦闘中ではありません');
+  const here = (u: string) => isAnyMonsterZone(findLocation(state, u)) && state.cards[u].faceUp;
+  switch (b.step) {
+    case 'battle': {
+      if (!here(b.attacker)) return endBattle(state, '攻撃したモンスターがフィールドを離れたため、戦闘は行われない');
+      // 巻き戻し：攻撃対象がいなくなった・攻撃される側のモンスターの数が変わった
+      const now = defenderMonsters(state, b.byOpp).length;
+      if ((b.target && !isAnyMonsterZone(findLocation(state, b.target))) || now !== b.defenders) {
+        refundAttack(state, b.attacker);
+        return endBattle(
+          state,
+          `巻き戻し：相手のモンスターの数が変わったため、${name(state, ctx, b.attacker)}は攻撃対象を選び直すか、攻撃をやめられます`,
+        );
+      }
+      b.step = 'damage';
+      log(state, 'ダメージステップ開始', 'info');
+      if (b.target && !state.cards[b.target].faceUp) {
+        state.cards[b.target].faceUp = true;
+        log(state, `裏側守備表示の${name(state, ctx, b.target)}を表にした`, 'move');
+      }
+      return;
+    }
+    case 'damage': {
+      if (!here(b.attacker) || (b.target && !isAnyMonsterZone(findLocation(state, b.target)))) {
+        b.step = 'end';
+        b.targetSurvived = false;
+        log(state, 'ダメージステップ中に戦闘を行うモンスターがいなくなったため、ダメージ計算は行われない', 'info');
+        return;
+      }
+      b.step = 'calc';
+      log(state, 'ダメージ計算時', 'info');
+      return;
+    }
+    case 'calc': {
+      if (here(b.attacker) && (!b.target || isAnyMonsterZone(findLocation(state, b.target)))) damageCalc(state, ctx, b);
+      else log(state, '戦闘を行うモンスターがいなくなったため、ダメージ計算は行われない', 'info');
+      b.step = 'end';
+      checkLp(state);
+      return;
+    }
+    case 'end': {
+      for (const u of b.destroyed ?? []) {
+        if (!isAnyMonsterZone(findLocation(state, u))) continue;
+        const n = name(state, ctx, u);
+        moveCard(state, ctx, u, { zone: 'gy' }, { reason: '戦闘で破壊' });
+        log(state, `${n}は戦闘で破壊され墓地へ送られた`, 'move');
+      }
+      for (const r of b.returnAtEnd ?? []) {
+        if (findLocation(state, r.uid)?.zone !== 'banished') continue;
+        const index = state.mz[r.index] ? state.mz.indexOf(null) : r.index;
+        if (index < 0) {
+          moveCard(state, ctx, r.uid, { zone: 'gy' });
+          log(state, `${name(state, ctx, r.uid)}を戻すモンスターゾーンが無いため墓地へ`, 'move');
+          continue;
+        }
+        moveCard(state, ctx, r.uid, { zone: 'mz', index }, { faceUp: true, position: 'atk' });
+        log(state, `${name(state, ctx, r.uid)}がフィールドに戻った（ダメージステップ終了時）`, 'move');
+      }
+      endBattle(state, 'ダメージステップ終了');
+      checkLp(state);
+      return;
+    }
   }
 }
 
@@ -663,6 +790,20 @@ interface PlaceOpts {
   reason?: string;
   /** 装備カードとして、このモンスターに装備する */
   equipTo?: string;
+  /** タイミングを逃す判定で「何かが起きた」と数えない移動 */
+  noEvent?: boolean;
+}
+
+/** タイミングを逃す判定：今の処理のまとまりで何かが起きた（uid はそのカードに起きた） */
+function markEvent(state: GameState, uid?: string) {
+  state.lastEventGroup = state.timingGroup ?? 0;
+  if (uid && state.cards[uid]) state.cards[uid].eventGroup = state.lastEventGroup;
+}
+
+/** そのカードに起きたことの後に、別の何かが起きたか（「〜した時」の任意効果はタイミングを逃す） */
+export function missedTiming(state: GameState, uid: string): boolean {
+  const g = state.cards[uid]?.eventGroup;
+  return g !== undefined && g !== (state.lastEventGroup ?? 0);
 }
 
 /**
@@ -677,6 +818,7 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   const def = getDef(state, ctx, uid);
   const from = findLocation(state, uid);
   const leavingField = isOnField(from) && !isOnField(to);
+  if (!opts.noEvent) markEvent(state, uid);
 
   if (from && isMonsterZone(from) && !isMonsterZone(to)) {
     for (const mat of [...inst.overlay]) {
@@ -846,6 +988,8 @@ export function applyAction(prev: GameState, action: Action, ctx: Ctx): ActionRe
     if (state.status !== 'playing' && ctx.options.strict && action.type !== 'MOVE') {
       fail('デュエルは終了しています');
     }
+    // 1つの操作（効果なら処理の区切りごと）が、タイミングを逃す判定の「処理のまとまり」
+    state.timingGroup = (state.timingGroup ?? 0) + 1;
     reduce(state, action, ctx);
     if (state.lp <= 0 && state.status === 'playing') {
       state.status = 'lost';
@@ -887,6 +1031,7 @@ const BLOCKED_DURING_CHAIN = new Set<Action['type']>([
   'SET_SPELL_TRAP',
   'CHANGE_POSITION',
   'ATTACK',
+  'BATTLE_STEP',
 ]);
 
 function reduce(state: GameState, action: Action, ctx: Ctx): void {
@@ -900,7 +1045,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
   }
   switch (action.type) {
     case 'NEXT_PHASE': {
-      if (state.opponentTurn) return reduce(state, { type: 'END_TURN' }, ctx);
+      if (state.battle) fail('戦闘中です。ダメージステップ終了まで進めてください');
+      // 相手ターン（練習）：メインフェイズ1 → バトルフェイズ → メインフェイズ2 → エンドフェイズ → 自分のターン
+      if (state.opponentTurn && state.phase === 'EP') return reduce(state, { type: 'END_TURN' }, ctx);
       const cur = PHASE_ORDER.indexOf(state.phase);
       let next: Phase | undefined = action.to ?? PHASE_ORDER[cur + 1];
       if (!next) return reduce(state, { type: 'END_TURN' }, ctx);
@@ -910,11 +1057,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (next === 'M2' && state.phase !== 'BP') next = 'EP';
       state.phase = next;
       log(state, `${PHASE_LABEL[next]}へ移行`, 'info');
-      if (next === 'EP') destroyAtEndPhase(state, ctx);
+      if (next === 'EP' && !state.opponentTurn) destroyAtEndPhase(state, ctx);
       return;
     }
     case 'END_TURN': {
-      if (strict && state.hand.length > 6) {
+      if (state.battle) fail('戦闘中です。ダメージステップ終了まで進めてください');
+      if (strict && state.hand.length > 6 && !state.opponentTurn) {
         fail(`手札が${state.hand.length}枚です。エンドフェイズに6枚になるよう捨ててください`);
       }
       for (const u of [...state.stz, state.fz]) {
@@ -1076,7 +1224,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const inst = state.cards[action.uid];
       if (!inst.pendingResolve) fail('解決待ちのカードではありません');
       inst.pendingResolve = false;
-      moveCard(state, ctx, action.uid, { zone: 'gy' });
+      // 発動した魔法・罠が処理後に墓地へ送られるのは、タイミングを逃す原因にならない
+      moveCard(state, ctx, action.uid, { zone: 'gy' }, { noEvent: true });
       log(state, `${name(state, ctx, action.uid)}の効果処理完了 → 墓地へ`, 'move');
       return;
     }
@@ -1147,27 +1296,38 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return;
     }
     case 'ATTACK': {
-      if (strict && state.opponentTurn) fail('相手ターンには攻撃できません');
       const inst = state.cards[action.uid];
       const def = getDef(state, ctx, action.uid);
+      const byOpp = !!inst.opp;
+      if (state.battle) fail('戦闘中です。ダメージステップ終了まで進めてください');
       if (strict) {
+        if (byOpp && !state.opponentTurn) fail('相手のモンスターは相手ターンにだけ攻撃できます');
+        if (!byOpp && state.opponentTurn) fail('相手ターンには攻撃できません');
         if (state.phase !== 'BP') fail('攻撃はバトルフェイズに行います');
         if (state.turn === 1) fail('先攻1ターン目は攻撃できません');
         if (!inst.faceUp || inst.position !== 'atk') fail('表側攻撃表示のモンスターのみ攻撃できます');
-        const maxAttacks = Math.max(def.attacksPerBattle ?? 1, inst.doubleAttackTurn === state.turn ? 2 : 1);
+        const maxAttacks = byOpp
+          ? 1
+          : Math.max(def.attacksPerBattle ?? 1, inst.doubleAttackTurn === state.turn ? 2 : 1);
         if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks)
           fail('このモンスターは既に攻撃しています');
-        if (def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn)
+        if (!byOpp && def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn)
           fail(`${def.name}は召喚・特殊召喚したターンには攻撃できません`);
       }
-      if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
-      const oppMons = state.opp ? oppMonsterSlots(state.opp).filter((u): u is string => !!u) : [];
+      if (!isAnyMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
+      const defenders = defenderMonsters(state, byOpp);
       if (action.target) {
-        if (!oppMons.includes(action.target)) fail('相手フィールドのモンスターではありません');
+        if (!defenders.includes(action.target))
+          fail(byOpp ? '自分フィールドのモンスターではありません' : '相手フィールドのモンスターではありません');
       } else if (strict) {
-        if (state.noDirectAttackTurn === state.turn) fail('このターン、自分のモンスターは直接攻撃できません');
-        if (oppMons.length && !canAttackDirectly(state, ctx, action.uid))
-          fail('相手フィールドにモンスターがいるため直接攻撃できません（攻撃するモンスターを選んでください）');
+        if (!byOpp && state.noDirectAttackUntil !== undefined && state.turn <= state.noDirectAttackUntil)
+          fail('このターン、自分のモンスターは直接攻撃できません');
+        if (defenders.length && (byOpp || !canAttackDirectly(state, ctx, action.uid)))
+          fail(
+            byOpp
+              ? '自分フィールドにモンスターがいるため直接攻撃できません'
+              : '相手フィールドにモンスターがいるため直接攻撃できません（攻撃するモンスターを選んでください）',
+          );
       }
       inst.attackCount = inst.attackedTurn === state.turn ? inst.attackCount + 1 : 1;
       inst.attackedTurn = state.turn;
@@ -1175,23 +1335,43 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         state.lp -= def.attackCost;
         log(state, `攻撃宣言のコストとして${def.attackCost}LPを払った（LP ${state.lp}）`, 'info');
       }
-      if (action.target) {
-        battle(state, ctx, action.uid, action.target);
-        return;
-      }
-      const dmg = currentStats(state, ctx, action.uid).atk ?? 0;
-      state.opponentLp = Math.max(0, state.opponentLp - dmg);
-      log(state, `${def.name}で直接攻撃！ ${dmg}ダメージ（相手LP ${state.opponentLp}）`, 'activate');
-      if (state.opponentLp === 0 && state.status === 'playing') {
-        state.status = 'won';
-        state.statusReason = '相手のLPを0にした';
-        log(state, '相手のLPが0になりました（勝利）', 'info');
-      }
+      state.battle = {
+        attacker: action.uid,
+        target: action.target ?? null,
+        byOpp,
+        step: 'battle',
+        defenders: defenders.length,
+      };
+      const who = byOpp ? '相手の' : '';
+      log(
+        state,
+        action.target
+          ? `${who}${def.name}が${state.cards[action.target].faceUp ? name(state, ctx, action.target) : '裏側守備表示のモンスター'}に攻撃宣言`
+          : `${who}${def.name}が直接攻撃を宣言`,
+        'activate',
+      );
+      markEvent(state, action.uid);
+      return;
+    }
+    case 'BATTLE_STEP':
+      return battleStep(state, ctx);
+    case 'BANISH_UNTIL_DAMAGE_END': {
+      const b = state.battle;
+      const loc = findLocation(state, action.uid);
+      if (!b || !loc || loc.zone !== 'mz') fail('ダメージステップ中の自分のモンスターではありません');
+      const n = name(state, ctx, action.uid);
+      moveCard(state, ctx, action.uid, { zone: 'banished' }, { reason: '効果で除外' });
+      (b.returnAtEnd ??= []).push({ uid: action.uid, index: loc.index });
+      log(state, `${n}をダメージステップ終了時まで除外`, 'move');
       return;
     }
     case 'NO_DIRECT_ATTACK':
-      state.noDirectAttackTurn = state.turn;
-      log(state, `${action.source}の効果：このターン、自分のモンスターは直接攻撃できない`, 'info');
+      state.noDirectAttackUntil = Math.max(state.noDirectAttackUntil ?? 0, state.turn + (action.nextTurn ? 1 : 0));
+      log(
+        state,
+        `${action.source}の効果：${action.nextTurn ? '次のターンの終了時まで' : 'このターン'}、自分のモンスターは直接攻撃できない`,
+        'info',
+      );
       return;
     case 'SHUFFLE_DECK': {
       state.shuffleCount += 1;
@@ -1279,6 +1459,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       log(state, `${name(state, ctx, action.uid)}のカウンター：${state.cards[action.uid].counters}`, 'info');
       return;
     }
+    case 'TIMING':
+      state.timingGroup = (state.timingGroup ?? 0) + 1;
+      return;
     case 'FAIL':
       return fail(action.message);
     case 'OPP_PLACE': {
@@ -1437,6 +1620,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const link = state.chain.pop();
       if (!link) fail('解決するチェーンがありません');
       const what = `チェーン${state.chain.length + 1}（${ctx.db[link.defId]?.name ?? ''}）`;
+      // チェーンの解決も「何かが起きた」として扱う（それより前の「〜した時」はタイミングを逃す）
+      markEvent(state);
       log(state, action.fizzled ? `${what}は不発になった` : `${what}の解決が終わった`, 'info');
       return;
     }

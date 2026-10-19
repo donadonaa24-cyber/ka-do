@@ -1,4 +1,12 @@
-import type { Action, MonsterLocation } from '../engine/game';
+import {
+  type Action,
+  currentStats,
+  getDef,
+  missedTiming,
+  type MonsterLocation,
+  oppFieldCards,
+  oppMonsterSlots,
+} from '../engine/game';
 import { linkedZonesOf } from '../engine/rules';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
@@ -40,6 +48,26 @@ export const TOON_OVERRIDES: Record<string, Partial<CardDef>> = {
 };
 
 // ===== 部品 =====
+
+/**
+ * マインドフォースを発動できる時：相手フィールドの攻撃力が一番高いモンスターの攻撃宣言時／
+ * フィールドのカードを破壊するモンスター効果を相手が発動した時／自分ターンに相手が手札・フィールドのモンスター効果を発動した時
+ */
+function mindForceTiming(env: Env): string | null {
+  const s = env.state;
+  const b = s.battle;
+  if (b && b.byOpp && b.step === 'battle' && !missedTiming(s, b.attacker)) {
+    const atk = (u: string) => currentStats(s, env.ctx, u).atk ?? 0;
+    const mons = (s.opp ? oppMonsterSlots(s.opp) : []).filter((u): u is string => !!u && s.cards[u].faceUp);
+    if (mons.every((u) => atk(u) <= atk(b.attacker))) return null;
+  }
+  const top = s.chain[s.chain.length - 1];
+  if (top?.opp) {
+    const d = getDef(s, env.ctx, top.uid);
+    if (d.kind === 'monster' && (top.opp === 'abao' || !s.opponentTurn)) return null;
+  }
+  return '相手の一番攻撃力が高いモンスターの攻撃宣言時か、相手がモンスター効果を発動した時に発動できます';
+}
 
 const move = (
   uid: string,
@@ -137,6 +165,44 @@ const levelSum = (env: Env, uids: string[]) => uids.reduce((s, u) => s + (env.de
 // ===== カードごとの召喚条件・効果 =====
 
 export const TOON_SCRIPTS: Record<string, CardScript> = {
+  // 聖なる心のバリア －マインドフォース－
+  '66247039': {
+    effects: [
+      {
+        label: '発動：相手フィールドの表側表示カードを全て無効にし破壊（次のターン終了時まで直接攻撃できない）',
+        from: ['spelltrap'],
+        isCardActivation: true,
+        condition: mindForceTiming,
+        steps: [
+          {
+            op: 'do',
+            then: (env) => {
+              const targets = oppFieldCards(env.state).filter((u) => env.state.cards[u].faceUp);
+              // 破壊したカードの、フィールドで発動したモンスター効果は無効になる
+              const negate: Action[] = env.state.chain.flatMap((l, index) =>
+                l.opp && targets.includes(l.uid) && !l.negated
+                  ? [
+                      {
+                        type: 'CHAIN_NEGATE',
+                        index,
+                        mode: 'effect',
+                        by: '聖なる心のバリア －マインドフォース－',
+                      } as Action,
+                    ]
+                  : [],
+              );
+              return [
+                ...negate,
+                ...targets.map((u) => move(u, { zone: 'gy' }, '効果で破壊')),
+                { type: 'NO_DIRECT_ATTACK', source: '聖なる心のバリア －マインドフォース－', nextTurn: true },
+              ];
+            },
+          },
+        ],
+      },
+    ],
+  },
+
   // トゥーン・カオス・ソルジャー
   '28711704': {
     procedures: [
@@ -746,6 +812,31 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             { any: [{ archetype: 'トゥーン' }, { mentions: TW }] },
             ['gy'],
           ),
+        ],
+      },
+      {
+        label: '③ 自分のトゥーンが攻撃されるダメージ計算時：そのモンスターをダメージステップ終了時まで除外',
+        from: ['monster'],
+        trigger: true,
+        damageStep: true,
+        condition: (env) => {
+          const b = env.state.battle;
+          if (!b || !b.byOpp || b.step !== 'calc')
+            return '相手のモンスターが自分のトゥーンに攻撃するダメージ計算時に発動できます';
+          if (!b.target || !env.isToon(b.target)) return '攻撃されているのが自分のトゥーンモンスターではありません';
+          return env.state.effectUses[`BTUD③:${b.attacker}:${env.state.turn}`] ? 'この戦闘では使用済みです' : null;
+        },
+        steps: [
+          {
+            op: 'do',
+            then: (env) => {
+              const b = env.state.battle!;
+              return [
+                { type: 'ACTIVATE_EFFECT', uid: env.self, silent: true, key: `BTUD③:${b.attacker}:${env.state.turn}` },
+                { type: 'BANISH_UNTIL_DAMAGE_END', uid: b.target! },
+              ];
+            },
+          },
         ],
       },
     ],

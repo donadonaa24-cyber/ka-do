@@ -41,6 +41,12 @@ function act(s: GameState, a: Action): GameState {
   return r.state;
 }
 
+/** 攻撃宣言の後、ダメージステップ終了まで進める */
+const fight = (s: GameState) => {
+  while (s.battle) s = act(s, { type: 'BATTLE_STEP' });
+  return s;
+};
+
 /** 効果を発動し、choices の順にカード名（とゾーン・処理の種類）を選んで最後まで解決する。失敗したらエラー文を返す */
 function tryEffect(
   s: GameState,
@@ -381,7 +387,7 @@ describe('神を超えたしもべ－青眼の究極竜', () => {
     s = act(s, { type: 'END_TURN' });
     s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
     s = { ...s, opponentLp: 100000 }; // 2回の攻撃で勝ってしまうので、相手のLPを増やして回数だけ確かめる
-    for (let i = 0; i < 3; i++) s = act(s, { type: 'ATTACK', uid: servant });
+    for (let i = 0; i < 3; i++) s = fight(act(s, { type: 'ATTACK', uid: servant }));
     expect(applyAction(s, { type: 'ATTACK', uid: servant }, ctx)).toMatchObject({ ok: false });
   });
 });
@@ -592,7 +598,7 @@ describe('戦闘', () => {
     s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 0 }, faceUp: true });
     const target = s.opp!.mz[0]!;
     expect(applyAction(s, { type: 'ATTACK', uid: be }, ctx).ok).toBe(false);
-    s = act(s, { type: 'ATTACK', uid: be, target });
+    s = fight(act(s, { type: 'ATTACK', uid: be, target }));
     expect(s.opp!.gy).toContain(target);
     expect(s.opponentLp).toBe(8000 - 1000);
   });
@@ -600,7 +606,7 @@ describe('戦闘', () => {
   it('攻撃力が同じなら両方破壊、守備力の方が高ければ自分がダメージを受ける', () => {
     let { s, be } = ready();
     s = act(s, { type: 'OPP_PLACE', defId: '89631139', to: { zone: 'omz', index: 0 }, faceUp: true });
-    s = act(s, { type: 'ATTACK', uid: be, target: s.opp!.mz[0]! });
+    s = fight(act(s, { type: 'ATTACK', uid: be, target: s.opp!.mz[0]! }));
     expect(s.gy).toContain(be);
     expect(s.opp!.gy.length).toBe(1);
     expect(s.opponentLp).toBe(8000);
@@ -614,9 +620,80 @@ describe('戦闘', () => {
       position: 'def',
     });
     // 裏側守備表示（守備力2500）を表にして計算：3000 > 2500 で破壊、ダメージなし
-    t.s = act(t.s, { type: 'ATTACK', uid: t.be, target: t.s.opp!.mz[1]! });
+    t.s = fight(act(t.s, { type: 'ATTACK', uid: t.be, target: t.s.opp!.mz[1]! }));
     expect(t.s.opp!.gy.length).toBe(1);
     expect(t.s.opponentLp).toBe(8000);
     expect(t.s.lp).toBe(8000);
+  });
+});
+
+describe('戦闘の段階・巻き戻し・タイミングを逃す', () => {
+  it('攻撃宣言の後に攻撃対象がいなくなると巻き戻し（攻撃し直せる）', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['89631139']);
+    const be = find(s, 'hand', '青眼の白龍');
+    s = act(s, { type: 'MOVE', uid: be, to: mz(2) });
+    s = act(s, { type: 'END_TURN' });
+    s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 0 }, faceUp: true });
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 1 }, faceUp: true });
+    s = act(s, { type: 'ATTACK', uid: be, target: s.opp!.mz[0]! });
+    expect(s.battle?.step).toBe('battle');
+    // 戦闘中は次のフェイズへ進めない
+    expect(applyAction(s, { type: 'NEXT_PHASE' }, ctx).ok).toBe(false);
+    s = act(s, { type: 'OPP_REMOVE', uid: s.opp!.mz[0]! });
+    s = act(s, { type: 'BATTLE_STEP' });
+    expect(s.battle).toBeNull();
+    // 攻撃回数は戻っているので、残りのモンスターに攻撃し直せる
+    s = fight(act(s, { type: 'ATTACK', uid: be, target: s.opp!.mz[1]! }));
+    expect(s.opponentLp).toBe(8000 - 1000);
+  });
+
+  it('相手ターンに相手のモンスターが攻撃してくる。白き乙女は攻撃対象になった時に③を発動できる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697']);
+    const maiden = find(s, 'hand', '白き乙女');
+    s = act(s, { type: 'MOVE', uid: maiden, to: mz(1) });
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青眼の白龍'), to: { zone: 'gy' } });
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 2 }, faceUp: true });
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    s = act(s, { type: 'NEXT_PHASE' });
+    expect(s.phase).toBe('BP');
+    s = act(s, { type: 'ATTACK', uid: s.opp!.mz[2]!, target: maiden });
+    expect(s.battle?.byOpp).toBe(true);
+    const responses = chainableEffects(s, ctx, 0, true).map((c) => c.effect.label);
+    expect(responses.some((l) => l.startsWith('③ 対象になった時'))).toBe(true);
+    // 乙女③を使わずに進めると、攻撃力0の乙女（攻撃表示）は破壊され2000ダメージ
+    s = fight(s);
+    expect(s.gy).toContain(maiden);
+    expect(s.lp).toBe(8000 - 2000);
+  });
+
+  it('青眼の双爆裂龍：戦闘では破壊されず、破壊されなかった相手モンスターをダメージステップ終了時に除外できる', () => {
+    // サイドデッキの双爆裂龍をEXデッキに入れる
+    let s = createGame({ ...BLUE_EYES_DECK, extra: [...BLUE_EYES_DECK.extra, '2129638'] }, ctx, 1);
+    const twin = find(s, 'extra', '青眼の双爆裂龍');
+    s = act(s, { type: 'MOVE', uid: twin, to: mz(2) });
+    s = act(s, { type: 'END_TURN' });
+    s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
+    s = act(s, { type: 'OPP_PLACE', defId: '2129638', to: { zone: 'omz', index: 0 }, faceUp: true });
+    const opp = s.opp!.mz[0]!;
+    s = act(s, { type: 'ATTACK', uid: twin, target: opp });
+    for (let i = 0; i < 3; i++) s = act(s, { type: 'BATTLE_STEP' });
+    expect(s.battle?.step).toBe('end');
+    expect(s.battle?.destroyed).toEqual([]);
+    s = useEffect(s, twin, '③ 攻撃で相手モンスターが破壊されなかった');
+    expect(s.opp!.banished).toContain(opp);
+    s = fight(s);
+    expect(findLocation(s, twin)).toEqual(mz(2));
+  });
+
+  it('青き眼の賢士①（召喚した時）は、召喚の後に別の処理をするとタイミングを逃す', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['8240199', '17947697']);
+    const sage = find(s, 'hand', '青き眼の賢士');
+    s = act(s, { type: 'NORMAL_SUMMON', uid: sage, index: 0 });
+    const first = CARD_SCRIPTS['8240199'].effects!.find((e) => e.label.includes('① 召喚時'))!;
+    expect(startEffect(s, ctx, sage, first).kind).not.toBe('error');
+    s = act(s, { type: 'MOVE', uid: find(s, 'hand', '白き乙女'), to: { zone: 'gy' } });
+    const r = startEffect(s, ctx, sage, first);
+    expect(r.kind === 'error' && r.error).toMatch('タイミングを逃しました');
   });
 });

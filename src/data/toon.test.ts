@@ -192,6 +192,10 @@ describe('トゥーンデッキ', () => {
     s = act(s, { type: 'END_TURN' });
     s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
     s = act(s, { type: 'ATTACK', uid: be });
+    s = act(s, {
+      type: 'BATCH',
+      actions: [{ type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }],
+    });
     expect(s.lp).toBe(7500);
     expect(s.opponentLp).toBe(5000);
   });
@@ -348,5 +352,39 @@ describe('完全なる世界③（効果処理後まで除外）', () => {
     // ③（カード名の付かない1ターンに1度）は使える
     const third = CARD_SCRIPTS['45536531'].effects!.find((e) => e.label.startsWith('③'))!;
     expect(startEffect(s, ctx, rabbit, third).kind).toBe('running');
+  });
+});
+
+describe('相手の攻撃と戦闘中の効果', () => {
+  const setup = () => {
+    let s = createGame(TOON_DECK, ctx, 3, ['66247039', '21296502']);
+    const tbm = inHand(s, 'トゥーン・ブラック・マジシャン');
+    const btud = inZone(s, 'extra', 'ブルーアイズ・トゥーン・アルティメットドラゴン');
+    s = act(s, { type: 'MOVE', uid: tbm, to: { zone: 'mz', index: 1 } });
+    s = act(s, { type: 'MOVE', uid: btud, to: { zone: 'mz', index: 3 } });
+    s = act(s, { type: 'SET_SPELL_TRAP', uid: inHand(s, '聖なる心のバリア －マインドフォース－'), index: 0 });
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 2 }, faceUp: true });
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    s = act(s, { type: 'NEXT_PHASE' });
+    s = act(s, { type: 'ATTACK', uid: s.opp!.mz[2]!, target: tbm });
+    return { s, tbm };
+  };
+  const labels = (s: GameState) => chainableEffects(s, ctx, 0, true).map((c) => name(s, c.uid));
+
+  it('相手の一番攻撃力が高いモンスターの攻撃宣言時に、マインドフォースを発動できる', () => {
+    const { s } = setup();
+    expect(labels(s)).toContain('聖なる心のバリア －マインドフォース－');
+  });
+
+  it('BTUD③：攻撃されたトゥーンをダメージ計算時に除外し、ダメージステップ終了時に戻す', () => {
+    let { s, tbm } = setup();
+    s = act(s, { type: 'BATTLE_STEP' });
+    s = act(s, { type: 'BATTLE_STEP' });
+    expect(s.battle?.step).toBe('calc');
+    s = useEffect(s, s.mz[3]!, '③ 自分のトゥーンが攻撃される');
+    expect(s.banished).toContain(tbm);
+    while (s.battle) s = act(s, { type: 'BATTLE_STEP' });
+    expect(s.mz[1]).toBe(tbm);
+    expect(s.lp).toBe(8000);
   });
 });

@@ -21,7 +21,7 @@ import {
 import { randomSeed } from '../engine/rng';
 import { tributesRequired } from '../engine/rules';
 import type { BattlePosition, GameState, Location, OppPile, PileZone } from '../engine/types';
-import { isExtraDeckCard, PHASE_LABEL } from '../engine/types';
+import { BATTLE_STEP_LABEL, isExtraDeckCard, PHASE_LABEL } from '../engine/types';
 import { Board } from './Board';
 import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
@@ -452,6 +452,18 @@ export function App() {
     const inst = state.cards[uid];
     const onField = ['omz', 'oemz', 'ostz', 'ofz'].includes(loc.zone);
     const btns: Btn[] = [];
+    // 相手ターンのバトルフェイズ：相手のモンスターで攻撃する（練習）
+    if ((loc.zone === 'omz' || loc.zone === 'oemz') && state.opponentTurn && state.phase === 'BP' && !state.battle) {
+      const mine = [...state.mz, ...state.emz].filter((u): u is string => !!u);
+      for (const t of mine)
+        btns.push({
+          label: `相手の攻撃：${state.cards[t].faceUp ? def(t).name : '裏側のモンスター'}に攻撃`,
+          primary: true,
+          onClick: () => dispatch({ type: 'ATTACK', uid, target: t }),
+        });
+      if (!mine.length)
+        btns.push({ label: '相手の攻撃：直接攻撃', primary: true, onClick: () => dispatch({ type: 'ATTACK', uid }) });
+    }
     if (onField) {
       btns.push({ label: '破壊する（相手の墓地へ）', onClick: () => dispatch(move(uid, { zone: 'gy' }, '破壊')) });
       btns.push({ label: '除外する', onClick: () => dispatch(move(uid, { zone: 'banished' }, '除外')) });
@@ -626,7 +638,7 @@ export function App() {
       btns.push(effectBtn(uid));
       if (inst.faceUp) {
         btns.push({ label: '表示形式変更', onClick: () => dispatch({ type: 'CHANGE_POSITION', uid }) });
-        if (state.phase === 'BP') {
+        if (state.phase === 'BP' && !state.opponentTurn && !state.battle) {
           // 相手フィールドにモンスターがいれば、攻撃するモンスターを選ぶ（直接攻撃できるのはトゥーンなど）
           const targets = view.opp ? oppMonsterSlots(view.opp).filter((u): u is string => !!u) : [];
           for (const t of targets)
@@ -949,6 +961,9 @@ export function App() {
 
   const chain = state.chain ?? [];
   const chainResponses = chain.length ? chainableEffects(state, ctx, chain[chain.length - 1].speed) : [];
+  const battle = state.battle ?? null;
+  // 戦闘の今の段階で発動できる効果
+  const battleEffects = battle && !chain.length && !run && !pending ? chainableEffects(state, ctx, 0, true) : [];
   const chainOf = Object.fromEntries(chain.map((l, i) => [l.uid, i + 1]));
 
   // 「解決する」を押したら、チェーンが無くなるまで上から順に解決する（途中の選択は都度聞く）
@@ -1164,6 +1179,52 @@ export function App() {
       <div className="btn-row">
         <button className="primary" onClick={() => setResolvingChain(true)}>
           チェーンを解決する（C{chain.length}から）
+        </button>
+      </div>
+    </div>
+  ) : battle && state.cards[battle.attacker] ? (
+    <div className="action-panel battle-panel">
+      <div className="ap-title">
+        戦闘：{battle.byOpp ? '相手の' : ''}
+        {def(battle.attacker).name} →{' '}
+        {battle.target
+          ? state.cards[battle.target]?.faceUp === false
+            ? '裏側守備表示のモンスター'
+            : state.cards[battle.target]
+              ? def(battle.target).name
+              : '（いなくなった）'
+          : '直接攻撃'}
+      </div>
+      <ol className="battle-steps">
+        {(['battle', 'damage', 'calc', 'end'] as const).map((st) => (
+          <li key={st} className={st === battle.step ? 'now' : ''}>
+            {BATTLE_STEP_LABEL[st]}
+          </li>
+        ))}
+      </ol>
+      {battleEffects.length > 0 ? (
+        <>
+          <div className="ap-hint">この段階で発動できる効果</div>
+          <div className="btn-row">
+            {battleEffects.map((c) => (
+              <button key={`${c.uid}-${c.effect.label}`} onClick={() => runEffect(c.uid, c.effect)}>
+                {def(c.uid).name}：{c.effect.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="ap-hint">この段階で発動できる効果はありません。</div>
+      )}
+      <div className="btn-row">
+        <button className="primary" onClick={() => dispatch({ type: 'BATTLE_STEP' })}>
+          {battle.step === 'battle'
+            ? 'ダメージステップへ'
+            : battle.step === 'damage'
+              ? 'ダメージ計算へ'
+              : battle.step === 'calc'
+                ? 'ダメージ計算をする'
+                : 'ダメージステップを終える'}
         </button>
       </div>
     </div>

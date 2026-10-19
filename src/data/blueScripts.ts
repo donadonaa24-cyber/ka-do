@@ -1,4 +1,12 @@
-import { type Action, candidates, effectSummonError, type MonsterLocation, oppMonsterSlots } from '../engine/game';
+import {
+  type Action,
+  candidates,
+  effectSummonError,
+  missedTiming,
+  type MonsterLocation,
+  oppFieldCards,
+  oppMonsterSlots,
+} from '../engine/game';
 import type { CardFilter } from '../engine/filters';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { CardDef, Location } from '../engine/types';
@@ -152,7 +160,11 @@ const sentFromFieldThisTurn = (env: Env) => {
 const chainTopTargets = (env: Env) => {
   const top = env.state.chain[env.state.chain.length - 1];
   const effect = top ? env.ctx.scripts?.[top.defId]?.effects?.[top.effect] : undefined;
-  return effect?.targets ? null : 'フィールドのカードを対象にとる効果が発動していません';
+  if (effect?.targets) return null;
+  // 相手のモンスターの攻撃対象になった時（攻撃宣言の直後）
+  const b = env.state.battle;
+  if (b && b.step === 'battle' && b.target === env.self && !missedTiming(env.state, b.attacker)) return null;
+  return 'フィールドのカードを対象にとる効果が発動したか、攻撃対象になった時に発動できます';
 };
 
 // ===== 融合素材 =====
@@ -1666,6 +1678,35 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           m.length === 2 && m.every((u) => isBE(env, u)) ? null : '自分のモンスターゾーンの「青眼の白龍」2体が必要です',
       },
     ],
+    effects: [
+      {
+        label: '③ 攻撃で相手モンスターが破壊されなかったダメージステップ終了時：そのモンスターを除外',
+        from: ['monster'],
+        trigger: true,
+        damageStep: true,
+        condition: (env) => {
+          const b = env.state.battle;
+          if (!b || b.step !== 'end' || b.attacker !== env.self || !b.target || !b.targetSurvived)
+            return 'このカードの攻撃で相手モンスターが破壊されなかったダメージステップ終了時に発動できます';
+          if (!oppFieldCards(env.state).includes(b.target)) return '攻撃した相手モンスターがフィールドにいません';
+          const key = `青眼の双爆裂龍③:${b.target}:${env.state.cards[env.self].attackCount}`;
+          return env.state.effectUses[key] ? 'この戦闘では使用済みです' : null;
+        },
+        steps: [
+          {
+            op: 'do',
+            then: (env) => {
+              const b = env.state.battle!;
+              const key = `青眼の双爆裂龍③:${b.target}:${env.state.cards[env.self].attackCount}`;
+              return [
+                { type: 'ACTIVATE_EFFECT', uid: env.self, silent: true, key },
+                move(b.target!, { zone: 'banished' }, '効果で除外'),
+              ];
+            },
+          },
+        ],
+      },
+    ],
   },
 
   // ブルーアイズ・ジェット・ドラゴン
@@ -1690,7 +1731,32 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         },
         steps: [ssSelf('自身の効果')],
       },
-      logOnly('③ 戦闘を行うダメージステップ開始時、相手のカード1枚を手札に戻す（相手用）', ['monster']),
+      {
+        label: '③ 戦闘を行うダメージステップ開始時：相手フィールドのカード1枚を手札に戻す',
+        from: ['monster'],
+        key: 'ブルーアイズ・ジェット・ドラゴン③',
+        limit: 1,
+        trigger: true,
+        damageStep: true,
+        targets: true,
+        condition: (env) => {
+          const b = env.state.battle;
+          if (!b || b.step !== 'damage' || (b.attacker !== env.self && b.target !== env.self))
+            return 'このカードが戦闘を行うダメージステップ開始時に発動できます';
+          if (!beOnFieldOrGy(env)) return '自分のフィールドか墓地に「青眼の白龍」が必要です';
+          return oppFieldCards(env.state).length ? null : '相手フィールドにカードがありません';
+        },
+        steps: [
+          {
+            op: 'pick',
+            prompt: '手札に戻す相手フィールドのカード（対象）',
+            from: ['oppField'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toHand(u, '効果で手札に戻す')),
+          },
+        ],
+      },
     ],
   },
 

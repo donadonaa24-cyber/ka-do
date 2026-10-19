@@ -137,6 +137,8 @@ export interface CardInstance {
   entryId: number;
   /** 召喚・特殊召喚でフィールドに出た時の entryId（効果で除外されて戻っただけなら一致しない） */
   summonedEntry: number | null;
+  /** タイミングを逃す判定：このカードに最後に何かが起きた処理のまとまり */
+  eventGroup?: number;
   /** 最後に召喚・特殊召喚したターン（フィールドを離れても残る。「召喚した時に適用する」効果の判定用） */
   summonedTurn?: number;
   /** 召喚の種類（「S召喚したこのカード」などの判定用） */
@@ -209,6 +211,36 @@ export interface SummonGrant {
 
 export type Phase = 'DP' | 'SP' | 'M1' | 'BP' | 'M2' | 'EP';
 
+/**
+ * 戦闘の段階。battle：攻撃宣言後のバトルステップ／damage：ダメージステップ開始時〜ダメージ計算前／
+ * calc：ダメージ計算時／end：ダメージ計算後〜ダメージステップ終了時
+ */
+export type BattleStep = 'battle' | 'damage' | 'calc' | 'end';
+
+export const BATTLE_STEP_LABEL: Record<BattleStep, string> = {
+  battle: 'バトルステップ（攻撃宣言後）',
+  damage: 'ダメージステップ開始時（ダメージ計算前）',
+  calc: 'ダメージ計算時',
+  end: 'ダメージ計算後（ダメージステップ終了時へ）',
+};
+
+export interface Battle {
+  attacker: string;
+  /** 攻撃対象のモンスター（null は直接攻撃） */
+  target: string | null;
+  /** 相手（練習用）のモンスターの攻撃 */
+  byOpp: boolean;
+  step: BattleStep;
+  /** 攻撃宣言時の、攻撃される側のモンスターの数（変われば巻き戻し） */
+  defenders: number;
+  /** 戦闘で破壊が確定したモンスター（ダメージステップ終了時に墓地へ送る） */
+  destroyed?: string[];
+  /** ダメージステップ終了時まで除外したカードと、戻すゾーン */
+  returnAtEnd?: { uid: string; index: number }[];
+  /** 攻撃した相手モンスターが戦闘で破壊されなかった（青眼の双爆裂龍③） */
+  targetSurvived?: boolean;
+}
+
 export const PHASE_ORDER: Phase[] = ['DP', 'SP', 'M1', 'BP', 'M2', 'EP'];
 
 export const PHASE_LABEL: Record<Phase, string> = {
@@ -260,8 +292,13 @@ export interface GameState {
   chain: ChainLink[];
   /** このターンに魔法カードの効果が発動したか */
   spellActivatedThisTurn: boolean;
-  /** 自分のモンスターが直接攻撃できないターン（Ｓ：Ｐリトルナイト①など） */
-  noDirectAttackTurn?: number;
+  /** このターンまで、自分のモンスターは直接攻撃できない（Ｓ：Ｐリトルナイト①・マインドフォースなど） */
+  noDirectAttackUntil?: number;
+  /** 戦闘中（攻撃宣言からダメージステップ終了まで） */
+  battle?: Battle | null;
+  /** タイミングを逃す判定：処理のまとまりの番号と、最後に何かが起きたまとまり */
+  timingGroup?: number;
+  lastEventGroup?: number;
   /** ターン終了時までのEXデッキからの特殊召喚の制限（青眼龍轟臨・シンクロ・ランブルなど） */
   extraLocks: { source: string; filter: import('./filters').CardFilter }[];
   /** 相手ターン（相手は存在しないので、相手ターンに使える効果を練習するためのターン） */

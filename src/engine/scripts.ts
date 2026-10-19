@@ -116,6 +116,8 @@ export interface EffectDef {
   applied?: boolean;
   /** フィールドのカードを対象にとる効果（白き乙女③など「対象になった時」の効果をチェーンできる） */
   targets?: boolean;
+  /** ダメージステップ中にも発動できる（攻撃力・守備力を変える効果、ダメージ計算時の効果など） */
+  damageStep?: boolean;
   /** スペルスピード。省略時は速攻魔法・罠の発動なら2（カウンター罠は3）、それ以外は1 */
   speed?: 1 | 2 | 3;
   steps: Step[];

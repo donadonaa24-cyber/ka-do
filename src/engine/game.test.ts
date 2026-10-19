@@ -131,7 +131,14 @@ describe('フェイズとターン', () => {
     let s = createGame(TEST_DECK, ctx, 1, ['t-lv4-a']);
     const a = handOf(s, 't-lv4-a');
     s = run(s, { type: 'NORMAL_SUMMON', uid: a, index: 0 }, { type: 'END_TURN' }, { type: 'NEXT_PHASE', to: 'BP' });
-    s = run(s, { type: 'ATTACK', uid: a });
+    s = run(
+      s,
+      { type: 'ATTACK', uid: a },
+      {
+        type: 'BATCH',
+        actions: [{ type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }, { type: 'BATTLE_STEP' }],
+      },
+    );
     expect(s.opponentLp).toBe(8000 - 1800);
     expect(err(s, { type: 'ATTACK', uid: a })).toMatch('既に攻撃');
   });
