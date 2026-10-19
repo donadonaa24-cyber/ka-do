@@ -210,6 +210,16 @@ export function App() {
   const [showSetup, setShowSetup] = useState(false);
   /** 起動時のメニュー画面（デッキ選択・始め方） */
   const [home, setHome] = useState(true);
+  /** メニュー画面を開いた時に最初に出す画面 */
+  const [homeStep, setHomeStep] = useState<'top' | 'deck'>('top');
+  /** 左上のデッキ名を押した時の選択（デッキを選び直す・このデッキを編集） */
+  const [deckMenu, setDeckMenu] = useState(false);
+  /** デッキ編集を、今のデッキの編集から始める */
+  const [editCurrent, setEditCurrent] = useState(false);
+  const openHome = (step: 'top' | 'deck' = 'top') => {
+    setHomeStep(step);
+    setHome(true);
+  };
   /** 「初手を選んで始める」で選んだデッキ */
   const [setupDeck, setSetupDeck] = useState<string | null>(null);
   /** 初手を選ぶ画面の後に始めるCPU戦・ナビ・先攻後攻（メニューで選んだもの） */
@@ -1648,7 +1658,7 @@ export function App() {
             {state.status === 'won' ? '（勝利）' : state.status === 'lost' ? '（敗北）' : ''}
           </div>
           <div className="btn-row">
-            <button className="primary" onClick={() => setHome(true)}>
+            <button className="primary" onClick={() => openHome()}>
               メニューへ
             </button>
             <button onClick={() => cpu.stop()}>このまま一人回しを続ける</button>
@@ -1817,9 +1827,38 @@ export function App() {
         >
           <header className="hud">
             <div className="hud-status">
-              <button className="chip deck-chip" onClick={() => setHome(true)} aria-label="メニュー画面（デッキ選択）">
-                {deckLabel(deck.name)}
-              </button>
+              <span className="deck-chip-wrap">
+                <button
+                  className="chip deck-chip"
+                  onClick={() => setDeckMenu(!deckMenu)}
+                  aria-expanded={deckMenu}
+                  aria-label="デッキ（選び直す・編集）"
+                >
+                  {deckLabel(deck.name)} ▾
+                </button>
+                {deckMenu && <div className="deck-menu-backdrop" onClick={() => setDeckMenu(false)} />}
+                {deckMenu && (
+                  <div className="deck-menu" role="menu">
+                    <button
+                      onClick={() => {
+                        setDeckMenu(false);
+                        openHome('deck');
+                      }}
+                    >
+                      デッキを選び直す
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDeckMenu(false);
+                        setEditCurrent(true);
+                        setModal('decks');
+                      }}
+                    >
+                      このデッキを編集
+                    </button>
+                  </div>
+                )}
+              </span>
               <span className="chip">T{state.turn}</span>
               <span className={`chip phase ${state.opponentTurn ? 'opp' : ''}`}>
                 {state.opponentTurn ? '相手ターン' : PHASE_LABEL[state.phase]}
@@ -1878,8 +1917,8 @@ export function App() {
                 ナビ{navi ? 'ON' : ''}
               </button>
               <button onClick={() => setModal('routes')}>ルート</button>
-              <button onClick={() => setModal('menu')} aria-label="メニュー">
-                ≡
+              <button className="menu-btn" onClick={() => setModal('menu')} aria-label="メニュー">
+                ≡ メニュー
               </button>
             </div>
           </header>
@@ -2231,133 +2270,162 @@ export function App() {
                   <h2>メニュー</h2>
                   <button onClick={() => setModal(null)}>閉じる</button>
                 </div>
-                <div className="btn-grid">
-                  <button
-                    className="primary wide"
-                    onClick={() => {
-                      setModal(null);
-                      setHome(true);
-                    }}
-                  >
-                    メニュー画面（デッキ選択・新しいゲーム）
-                  </button>
-                  <button
-                    onClick={() => {
-                      setModal(null);
-                      setShowSetup(true);
-                    }}
-                  >
-                    新しいゲーム（手札を選ぶ）
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSession((s) => ({ ...s, actions: [] }));
-                      setModal(null);
-                    }}
-                    disabled={session.actions.length === 0}
-                  >
-                    同じ初手で最初から
-                  </button>
-                  {pvpOn && (
+                <section className="menu-sec">
+                  <h3>ゲーム</h3>
+                  <div className="btn-grid">
                     <button
+                      className="primary wide"
                       onClick={() => {
-                        pvpHook.stop();
                         setModal(null);
+                        openHome();
                       }}
                     >
-                      通信対戦をやめる
+                      メニュー画面へ（デッキ選択・新しいゲーム・CPU戦）
                     </button>
-                  )}
-                  <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
-                  <button
-                    onClick={() =>
-                      setSound(
-                        !sound.on
-                          ? { on: true, volume: 0.6 }
-                          : sound.volume > 0.7
-                            ? { on: true, volume: 0.35 }
-                            : sound.volume > 0.4
-                              ? { on: true, volume: 1 }
-                              : { on: false, volume: sound.volume },
-                      )
-                    }
-                  >
-                    効果音：
-                    {!sound.on ? 'オフ' : sound.volume > 0.7 ? '大' : sound.volume > 0.4 ? '中' : '小'}
-                  </button>
-                  <button
-                    onClick={() => setMotionMode(motionMode === 'on' ? 'auto' : motionMode === 'auto' ? 'off' : 'on')}
-                  >
-                    召喚・移動の演出：
-                    {motionMode === 'on' ? '常に出す' : motionMode === 'auto' ? '端末の設定に合わせる' : '出さない'}
-                  </button>
-                  <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
-                    俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
-                  </button>
-                  <div className="wide opp-presets">
-                    <div className="ore-head">相手の妨害（相手がトゥーンの最終盤面・チェーンして止めてくる）</div>
-                    <div className="btn-row">
-                      {OPP_PRESETS.map((p) => (
-                        <button
-                          key={p.id}
-                          title={p.description}
-                          onClick={() => {
-                            if (dispatch(oppPresetAction(state, p))) {
-                              setOppMode(true);
-                              setModal(null);
-                            }
-                          }}
-                        >
-                          {p.name}
-                        </button>
-                      ))}
+                    <button
+                      onClick={() => {
+                        setModal(null);
+                        setShowSetup(true);
+                      }}
+                    >
+                      新しいゲーム（手札を選ぶ）
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSession((s) => ({ ...s, actions: [] }));
+                        setModal(null);
+                      }}
+                      disabled={session.actions.length === 0}
+                    >
+                      同じ初手で最初から
+                    </button>
+                    {pvpOn && (
                       <button
                         onClick={() => {
-                          dispatch(oppPresetAction(state, null));
+                          pvpHook.stop();
                           setModal(null);
                         }}
                       >
-                        なし
+                        通信対戦をやめる
                       </button>
-                    </div>
-                    <p className="note">
-                      1妨害：バロネス／2：＋トゥーン・テラー／3：＋ア＝バオ・ア・クゥー／4：＋ゲオルギアス③（記事の最終盤面）。こちらが効果を発動すると、相手が妨害をチェーンしてきます。
-                    </p>
+                    )}
                   </div>
-                  <button className={oppMode ? 'on' : ''} aria-pressed={oppMode} onClick={() => setOppMode(!oppMode)}>
-                    相手の盤面を置く（練習）：{oppMode ? 'ON' : 'OFF'}
-                  </button>
-                  {!state.opponentTurn && (
+                </section>
+                <section className="menu-sec">
+                  <h3>デッキ・カード</h3>
+                  <div className="btn-grid">
                     <button
+                      className="primary wide"
                       onClick={() => {
-                        dispatch({ type: 'END_TURN', toOpponent: true });
-                        setModal(null);
+                        setEditCurrent(false);
+                        setModal('decks');
                       }}
                     >
-                      相手ターンへ（妨害の練習）
+                      デッキ編集・切り替え（現在：{deckLabel(deck.name)}）
                     </button>
-                  )}
-                  <button onClick={() => roll('coin')}>コイントス</button>
-                  <button onClick={() => roll('dice')}>サイコロを振る</button>
-                  <button onClick={() => dispatch({ type: 'DRAW' })}>1枚ドロー</button>
-                  <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
-                  <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>
-                  <button className="primary wide" onClick={() => setModal('decks')}>
-                    デッキ編集・切り替え（現在：{deck.name}）
-                  </button>
-                  <button className="wide" onClick={() => setModal('images')}>
-                    カード画像の設定
-                  </button>
-                  <label className="toggle wide">
-                    <input
-                      id="strict-toggle"
-                      type="checkbox"
-                      checked={session.strict}
-                      onChange={(e) => setSession((s) => ({ ...s, strict: e.target.checked }))}
-                    />
-                    ルールチェック
-                  </label>
-                </div>
+                    <button className="wide" onClick={() => setModal('images')}>
+                      カード画像の設定
+                    </button>
+                  </div>
+                </section>
+                <section className="menu-sec">
+                  <h3>盤面の操作</h3>
+                  <div className="btn-grid">
+                    <button onClick={() => dispatch({ type: 'DRAW' })}>1枚ドロー</button>
+                    <button onClick={() => dispatch({ type: 'SHUFFLE_DECK' })}>シャッフル</button>
+                    <button onClick={() => roll('coin')}>コイントス</button>
+                    <button onClick={() => roll('dice')}>サイコロを振る</button>
+                    <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>
+                    <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
+                  </div>
+                </section>
+                <section className="menu-sec">
+                  <h3>相手の妨害の練習</h3>
+                  <div className="btn-grid">
+                    <div className="wide opp-presets">
+                      <div className="ore-head">相手の妨害（相手がトゥーンの最終盤面・チェーンして止めてくる）</div>
+                      <div className="btn-row">
+                        {OPP_PRESETS.map((p) => (
+                          <button
+                            key={p.id}
+                            title={p.description}
+                            onClick={() => {
+                              if (dispatch(oppPresetAction(state, p))) {
+                                setOppMode(true);
+                                setModal(null);
+                              }
+                            }}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => {
+                            dispatch(oppPresetAction(state, null));
+                            setModal(null);
+                          }}
+                        >
+                          なし
+                        </button>
+                      </div>
+                      <p className="note">
+                        1妨害：バロネス／2：＋トゥーン・テラー／3：＋ア＝バオ・ア・クゥー／4：＋ゲオルギアス③（記事の最終盤面）。こちらが効果を発動すると、相手が妨害をチェーンしてきます。
+                      </p>
+                    </div>
+                    <button className={oppMode ? 'on' : ''} aria-pressed={oppMode} onClick={() => setOppMode(!oppMode)}>
+                      相手の盤面を自分で置く：{oppMode ? 'ON' : 'OFF'}
+                    </button>
+                    {!state.opponentTurn && (
+                      <button
+                        onClick={() => {
+                          dispatch({ type: 'END_TURN', toOpponent: true });
+                          setModal(null);
+                        }}
+                      >
+                        相手ターンへ（妨害の練習）
+                      </button>
+                    )}
+                  </div>
+                </section>
+                <section className="menu-sec">
+                  <h3>設定</h3>
+                  <div className="btn-grid">
+                    <button
+                      onClick={() =>
+                        setSound(
+                          !sound.on
+                            ? { on: true, volume: 0.6 }
+                            : sound.volume > 0.7
+                              ? { on: true, volume: 0.35 }
+                              : sound.volume > 0.4
+                                ? { on: true, volume: 1 }
+                                : { on: false, volume: sound.volume },
+                        )
+                      }
+                    >
+                      効果音：
+                      {!sound.on ? 'オフ' : sound.volume > 0.7 ? '大' : sound.volume > 0.4 ? '中' : '小'}
+                    </button>
+                    <button
+                      onClick={() => setMotionMode(motionMode === 'on' ? 'auto' : motionMode === 'auto' ? 'off' : 'on')}
+                    >
+                      召喚・移動の演出：
+                      {motionMode === 'on' ? '常に出す' : motionMode === 'auto' ? '端末の設定に合わせる' : '出さない'}
+                    </button>
+                    <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
+                      俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
+                    </button>
+                    <label className="toggle">
+                      <input
+                        id="strict-toggle"
+                        type="checkbox"
+                        checked={session.strict}
+                        onChange={(e) => setSession((s) => ({ ...s, strict: e.target.checked }))}
+                      />
+                      ルールチェック
+                    </label>
+                  </div>
+                </section>
                 {showToken && (
                   <TokenForm
                     onCreate={(t) => {
@@ -2478,9 +2546,13 @@ export function App() {
                 session.actions.length ? { deckName: deckLabel(deck.name), actions: session.actions.length } : null
               }
               guides={GUIDES}
+              initialStep={homeStep}
               onResume={() => setHome(false)}
               onStart={beginGame}
-              onEditDecks={() => setModal('decks')}
+              onEditDecks={() => {
+                setEditCurrent(false);
+                setModal('decks');
+              }}
               onImages={() => setModal('images')}
             />
           )}
@@ -2528,6 +2600,9 @@ export function App() {
                 decks={customDecks}
                 current={deck.name}
                 nameOf={deckLabel}
+                openCurrent={editCurrent}
+                foils={foils}
+                onFoil={setFoil}
                 onSave={(list) => {
                   if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
                   setCustomDecks(list);

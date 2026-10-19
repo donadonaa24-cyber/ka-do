@@ -24,6 +24,8 @@ interface Props {
   onStart: (c: StartConfig) => void;
   onEditDecks: () => void;
   onImages: () => void;
+  /** 最初に出す画面（デッキ選択から始める時は 'deck'） */
+  initialStep?: 'top' | 'deck';
 }
 
 /** メニューで選んだ始め方 */
@@ -66,7 +68,7 @@ const STEPS: { id: Step; label: string }[] = [
  * デッキ → 先攻・後攻とナビ → 始め方（初手・ルートガイド）→ 相手（CPUの有無・CPUのデッキ）の順に1つずつ選ぶ
  */
 export function HomeMenu(p: Props) {
-  const [step, setStep] = useState<Step>('top');
+  const [step, setStep] = useState<Step>(p.initialStep ?? 'top');
   const [deckName, setDeckName] = useState(p.current);
   const [handSize, setHandSize] = useState<5 | 6>(5);
   const [navi, setNavi] = useState(true);

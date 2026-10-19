@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BUILTIN_DECKS, CARD_DB, EDITABLE_CARDS } from '../data';
 import type { CardDef, DeckList } from '../engine/types';
 import { isExtraDeckCard } from '../engine/types';
+import { type CardFoils, FOIL_STYLES, type FoilStyle } from './cardImages';
 import { CardView, statLine } from './CardView';
 import { deckProblems, MAX_DECKS, newDeckId, type SavedDeck, uniqueName } from './deckStore';
 
@@ -14,6 +15,11 @@ interface Props {
   onClose: () => void;
   /** デッキの表示名（既製のデッキは名前を変えられる） */
   nameOf?: (name: string) => string;
+  /** 開いた時に、今遊んでいるデッキ（自分で作ったデッキ）の編集から始める */
+  openCurrent?: boolean;
+  /** カードの加工（キラ） */
+  foils?: CardFoils;
+  onFoil?: (id: string, style: FoilStyle | null) => void;
 }
 
 type Filter = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
@@ -41,8 +47,23 @@ function countOf(list: string[], id: string) {
   return list.filter((x) => x === id).length;
 }
 
-export function DeckEditor({ decks, current, onSave, onPlay, onClose, nameOf = (n) => n }: Props) {
-  const [editing, setEditing] = useState<SavedDeck | null>(null);
+export function DeckEditor({
+  decks,
+  current,
+  onSave,
+  onPlay,
+  onClose,
+  nameOf = (n) => n,
+  openCurrent = false,
+  foils = {},
+  onFoil,
+}: Props) {
+  const [editing, setEditing] = useState<SavedDeck | null>(() => {
+    const d = openCurrent ? decks.find((x) => x.name === current) : undefined;
+    return d ? { ...d } : null;
+  });
+  /** 加工の一覧を開いている */
+  const [foilOpen, setFoilOpen] = useState(false);
   /** 編集画面のタブ：メイン・EX・サイドの中身と、全カードからの追加 */
   const [tab, setTab] = useState<'main' | 'extra' | 'side' | 'add'>('main');
   const [filter, setFilter] = useState<Filter>('all');
@@ -50,6 +71,8 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose, nameOf = (
   /** タップして操作中のカード */
   const [focus, setFocus] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // 別のカードを開いたら加工の一覧は閉じる
+  useEffect(() => setFoilOpen(false), [focus]);
 
   const takenNames = (exceptId?: string) => [
     ...BUILTIN_DECKS.map((d) => d.name),
@@ -294,6 +317,32 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose, nameOf = (
           </>
         )}
       </div>
+      {onFoil && (
+        <>
+          <div className="deck-action-btns">
+            <button className={foilOpen ? 'on' : ''} aria-expanded={foilOpen} onClick={() => setFoilOpen(!foilOpen)}>
+              加工を変更
+              {foils[focus] ? `（${FOIL_STYLES.find((f) => f.id === foils[focus])?.short}）` : ''}
+            </button>
+          </div>
+          {foilOpen && (
+            <div className="foil-list" role="listbox" aria-label="加工">
+              {[{ id: null, label: 'なし' }, ...FOIL_STYLES].map((f) => (
+                <button
+                  key={f.id ?? 'none'}
+                  className={(foils[focus] ?? null) === f.id ? 'on' : ''}
+                  onClick={() => {
+                    onFoil(focus, f.id);
+                    setFoilOpen(false);
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       <p className="deck-action-text">{focusDef.text}</p>
     </div>
   );
