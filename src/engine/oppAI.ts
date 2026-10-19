@@ -1,4 +1,4 @@
-import { type Action, type Ctx, findLocation, getDef, oppFieldCards, oppMonsterSlots } from './game';
+import { type Action, type Ctx, findLocation, getDef, isNegated, oppFieldCards, oppMonsterSlots } from './game';
 import { effectText } from './scripts';
 import type { ChainLink, GameState } from './types';
 
@@ -102,7 +102,7 @@ const monsterAbility = (
   speed: 2,
   find: (s, ctx, link) => {
     const uid = findOpp(s, ctx, oppMonsters(s), card);
-    if (!uid || s.cards[uid].negatedTurn === s.turn || !when(s, ctx, link)) return null;
+    if (!uid || isNegated(s, uid) || !when(s, ctx, link)) return null;
     const k = key(s, ctx, link);
     return used(s, k) ? null : { uid, cost: [{ type: 'OPP_USE', uid, key: k }] };
   },

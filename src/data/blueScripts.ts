@@ -89,6 +89,30 @@ const logOnly = (label: string, from: EffectDef['from'], key?: string, cost: Ste
   speed: 2,
   steps: cost,
 });
+/**
+ * 召喚した時に発動できる、相手がいる時の効果。召喚したターンに、その召喚で1度だけ（1ターンに1度）使える。
+ * how：その召喚方法で出した時だけ（'special' は特殊召喚全般）
+ */
+const summonLogOnly = (
+  label: string,
+  key: string,
+  how: 'special' | 'synchro' | 'xyz',
+  steps: Step[] = [],
+): EffectDef => ({
+  label,
+  from: ['monster'],
+  key,
+  limit: 1,
+  opponentOnly: true,
+  onSummon: true,
+  trigger: true,
+  condition: (env) => {
+    const t = env.state.cards[env.self].summonType;
+    const ok = how === 'special' ? !!t && t !== 'normal' : t === how;
+    return ok ? null : `${{ special: '特殊', synchro: 'S', xyz: 'X' }[how]}召喚した時に発動する効果です`;
+  },
+  steps,
+});
 const trapLogOnly = (label: string): EffectDef => ({
   ...logOnly(label, ['hand', 'spelltrap']),
   isCardActivation: true,
@@ -1503,7 +1527,15 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
     materialCheck: (env, m) =>
       m.every((u) => env.def(u).race === 'ドラゴン族') ? null : 'ドラゴン族モンスターのみ素材にできます',
     effects: [
-      logOnly('① X召喚時：相手の表側カードの効果を無効（相手用）', ['monster']),
+      summonLogOnly('① X召喚時：相手フィールドの表側表示カードの効果を全て無効', '藍眼の銀龍①', 'xyz', [
+        {
+          op: 'do',
+          then: (env) =>
+            [...oppMonsters(env), ...oppSpellTraps(env)]
+              .filter((u) => env.state.cards[u].faceUp)
+              .map((u) => ({ type: 'NEGATE_CARD', uid: u, by: '藍眼の銀龍', untilLeave: true }) as Action),
+        },
+      ]),
       {
         label: '③ X素材を1つ取り除き、墓地・除外の通常モンスターを特殊召喚（攻撃力1000アップ）',
         from: ['monster'],
@@ -1536,13 +1568,17 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
 
   // ライトストーム・ドラゴン
   '10515412': {
-    effects: [logOnly('① 特殊召喚時：魔法・罠を破壊（相手用）', ['monster'], 'ライトストーム・ドラゴン①')],
+    effects: [summonLogOnly('① 特殊召喚時：魔法・罠を破壊（相手用）', 'ライトストーム・ドラゴン①', 'special')],
   },
 
   // 氷結界の龍胤 エクハジャール
   '65424481': {
     effects: [
-      logOnly('① S召喚時：手札1枚を捨てて相手のカード2枚を除外（相手用）', ['monster'], '氷結界の龍胤 エクハジャール①'),
+      summonLogOnly(
+        '① S召喚時：手札1枚を捨てて相手のカード2枚を除外（相手用）',
+        '氷結界の龍胤 エクハジャール①',
+        'synchro',
+      ),
       logOnly('② 相手の特殊召喚時：カード1枚を手札に戻す（相手用）', ['monster'], '氷結界の龍胤 エクハジャール②'),
     ],
   },

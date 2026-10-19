@@ -18,6 +18,7 @@ import {
   currentLevel,
   currentStats,
   findLocation,
+  isNegated,
   type MonsterLocation,
 } from '../engine/game';
 import type { GameState, Location } from '../engine/types';
@@ -749,4 +750,46 @@ describe('同時に発動条件を満たした誘発効果（バグ報告）', (
       expect(s.chain.map((l) => name(s, l.uid))).toEqual([first, second]);
     });
   }
+});
+
+describe('藍眼の銀龍①（バグ報告）', () => {
+  /** 青眼の白龍2体で藍眼の銀龍をX召喚し、相手フィールドにモンスターを置く */
+  const setup = () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 0);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 1);
+    s = act(s, {
+      type: 'PROCEDURE_SUMMON',
+      method: 'xyz',
+      uid: find(s, 'extra', '藍眼の銀龍'),
+      materials: [s.mz[0]!, s.mz[1]!],
+      to: mz(2),
+    });
+    const ultimate = Object.values(CARD_DB).find((d) => d.name === '究極竜魔導師')!.id;
+    s = act(s, { type: 'OPP_PLACE', defId: ultimate, to: { zone: 'omz', index: 0 }, faceUp: true });
+    return s;
+  };
+
+  it('X召喚したターンに1度だけ使え、相手の表側表示カードの効果を無効にする（次のターンも無効のまま）', () => {
+    let s = setup();
+    const azure = s.mz[2]!;
+    const target = s.opp!.mz[0]!;
+    s = useEffect(s, azure, '① X召喚時');
+    expect(isNegated(s, target)).toBe(true);
+    // 2回目は使えない
+    expect(tryEffect(s, azure, '① X召喚時')).toMatch(/1度|使用済み|このターン/);
+    // 次の自分のターン：もう使えない（召喚したターンではない）が、相手のカードは無効のまま
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    s = act(s, { type: 'END_TURN' });
+    expect(isNegated(s, target)).toBe(true);
+    expect(tryEffect(s, azure, '① X召喚時')).toMatch(/召喚/);
+  });
+
+  it('召喚したターンに使わなかった場合も、次のターンには使えない', () => {
+    let s = setup();
+    const azure = s.mz[2]!;
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    s = act(s, { type: 'END_TURN' });
+    expect(tryEffect(s, azure, '① X召喚時')).toMatch(/召喚/);
+  });
 });

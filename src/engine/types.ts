@@ -146,6 +146,8 @@ export interface CardInstance {
   syncKey?: string;
   /** 効果が無効になっているターン（エフェクト・ヴェーラー・無限泡影など） */
   negatedTurn?: number;
+  /** フィールドにいる限り効果が無効（無効にした時の entryId。移動すると entryId が変わって元に戻る） */
+  negatedEntry?: number;
   /** タイミングを逃す判定：このカードに最後に何かが起きた処理のまとまり */
   eventGroup?: number;
   /** 最後に召喚・特殊召喚したターン（フィールドを離れても残る。「召喚した時に適用する」効果の判定用） */

@@ -137,7 +137,8 @@ export type Action =
       extra?: number;
     }
   /** このターン、そのカードの効果を無効にする */
-  | { type: 'NEGATE_CARD'; uid: string; by: string }
+  /** 効果を無効にする（untilLeave：このターンだけでなく、フィールドにいる限り） */
+  | { type: 'NEGATE_CARD'; uid: string; by: string; untilLeave?: boolean }
   /** このターン、デッキからカードを手札に加えられない（ドロール＆ロックバード） */
   | { type: 'NO_DECK_TO_HAND'; by: string }
   | { type: 'SHUFFLE_DECK' }
@@ -702,6 +703,15 @@ export function oppFieldCards(state: GameState): string[] {
 /** 今のチェーンが、自分の誘発効果（と相手の妨害）だけでできている：同時に発動条件を満たした誘発効果を続けて積める */
 export function simultaneousTriggers(state: GameState): boolean {
   return state.chain.some((l) => l.trigger) && state.chain.every((l) => l.opp || l.trigger);
+}
+
+/** 効果が無効になっている（このターン、またはフィールドにいる限り） */
+export function isNegated(state: GameState, uid: string): boolean {
+  const inst = state.cards[uid];
+  return (
+    !!inst &&
+    (inst.negatedTurn === state.turn || (inst.negatedEntry !== undefined && inst.negatedEntry === inst.entryId))
+  );
 }
 
 export function oppMonsterSlots(o: OppBoard): (string | null)[] {
@@ -1637,7 +1647,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       const inst = state.cards[action.uid];
       if (!inst) return;
       inst.negatedTurn = state.turn;
-      log(state, `${action.by}の効果：${name(state, ctx, action.uid)}の効果はこのターン無効`, 'info');
+      if (action.untilLeave) inst.negatedEntry = inst.entryId;
+      log(
+        state,
+        `${action.by}の効果：${name(state, ctx, action.uid)}の効果は${action.untilLeave ? '' : 'このターン'}無効`,
+        'info',
+      );
       return;
     }
     case 'NO_DECK_TO_HAND':

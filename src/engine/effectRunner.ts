@@ -7,6 +7,7 @@ import {
   findLocation,
   isMonsterZone,
   makeEnv,
+  isNegated,
   missedTiming,
   simultaneousTriggers,
 } from './game';
@@ -230,7 +231,7 @@ export function startEffect(
       };
   }
   // 効果を無効にされたカード（エフェクト・ヴェーラー・無限泡影など）は、このターン効果を発動できない
-  if (ctx.options.strict && state.cards[uid]?.negatedTurn === state.turn && isMonsterZone(findLocation(state, uid)))
+  if (ctx.options.strict && isNegated(state, uid) && isMonsterZone(findLocation(state, uid)))
     return { kind: 'error', error: 'このカードの効果はこのターン無効になっています' };
   // 「召喚した時に発動できる」任意効果は、召喚の後に別の何かが起きるとタイミングを逃す
   if (ctx.options.strict && isTokiTrigger(env.def(uid), effect) && missedTiming(state, uid))
