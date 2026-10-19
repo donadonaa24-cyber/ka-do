@@ -260,6 +260,8 @@ export interface GameState {
   chain: ChainLink[];
   /** このターンに魔法カードの効果が発動したか */
   spellActivatedThisTurn: boolean;
+  /** 自分のモンスターが直接攻撃できないターン（Ｓ：Ｐリトルナイト①など） */
+  noDirectAttackTurn?: number;
   /** ターン終了時までのEXデッキからの特殊召喚の制限（青眼龍轟臨・シンクロ・ランブルなど） */
   extraLocks: { source: string; filter: import('./filters').CardFilter }[];
   /** 相手ターン（相手は存在しないので、相手ターンに使える効果を練習するためのターン） */

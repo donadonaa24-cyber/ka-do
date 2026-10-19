@@ -1115,7 +1115,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             from: ['field', 'gy'],
             min: 1,
             max: 1,
-            then: (_, p) => p.map((u) => banish(u)),
+            then: (_, p) => [...p.map((u) => banish(u)), { type: 'NO_DIRECT_ATTACK', source: 'Ｓ：Ｐリトルナイト' }],
           },
         ],
       },
@@ -1205,12 +1205,20 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
             op: 'pick',
             prompt: '装備するリンク先の表側表示モンスター',
             from: ['monsters'],
-            where: (env, u) => u !== env.self && env.state.cards[u].faceUp,
+            // このカードのリンク先（メインモンスターゾーン）の表側表示モンスター
+            where: (env, u) =>
+              u !== env.self &&
+              env.state.cards[u].faceUp &&
+              linkedZonesOf(env.state, env.self, env.def(env.self)).includes(env.state.mz.indexOf(u)),
             min: 1,
             max: 1,
             zone: 'stz',
+            // ②：装備したモンスターの攻撃力分アップ
             then: (env, p, z) =>
-              p.map((u) => move(u, z ?? firstEmptyStz(env), '装備カード扱い', { faceUp: true, equipTo: env.self })),
+              p.flatMap((u) => [
+                move(u, z ?? firstEmptyStz(env), '装備カード扱い', { faceUp: true, equipTo: env.self }),
+                { type: 'STAT_MOD', uid: u, equip: true, atk: env.def(u).atk ?? 0 } as Action,
+              ]),
           },
         ],
       },

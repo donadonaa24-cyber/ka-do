@@ -576,3 +576,47 @@ describe('攻撃力・守備力の変化とセットするカード', () => {
     expect(currentStats(s, ctx, be)).toEqual({ atk: 3000, def: 2500 });
   });
 });
+
+describe('戦闘', () => {
+  const ready = () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['89631139']);
+    const be = find(s, 'hand', '青眼の白龍');
+    s = act(s, { type: 'MOVE', uid: be, to: mz(2) });
+    s = act(s, { type: 'END_TURN' });
+    s = act(s, { type: 'NEXT_PHASE', to: 'BP' });
+    return { s, be };
+  };
+
+  it('相手モンスターがいれば直接攻撃できず、攻撃したモンスターとのダメージ計算をする', () => {
+    let { s, be } = ready();
+    s = act(s, { type: 'OPP_PLACE', defId: 'opp-monster', to: { zone: 'omz', index: 0 }, faceUp: true });
+    const target = s.opp!.mz[0]!;
+    expect(applyAction(s, { type: 'ATTACK', uid: be }, ctx).ok).toBe(false);
+    s = act(s, { type: 'ATTACK', uid: be, target });
+    expect(s.opp!.gy).toContain(target);
+    expect(s.opponentLp).toBe(8000 - 1000);
+  });
+
+  it('攻撃力が同じなら両方破壊、守備力の方が高ければ自分がダメージを受ける', () => {
+    let { s, be } = ready();
+    s = act(s, { type: 'OPP_PLACE', defId: '89631139', to: { zone: 'omz', index: 0 }, faceUp: true });
+    s = act(s, { type: 'ATTACK', uid: be, target: s.opp!.mz[0]! });
+    expect(s.gy).toContain(be);
+    expect(s.opp!.gy.length).toBe(1);
+    expect(s.opponentLp).toBe(8000);
+
+    let t = ready();
+    t.s = act(t.s, {
+      type: 'OPP_PLACE',
+      defId: '89631139',
+      to: { zone: 'omz', index: 1 },
+      faceUp: false,
+      position: 'def',
+    });
+    // 裏側守備表示（守備力2500）を表にして計算：3000 > 2500 で破壊、ダメージなし
+    t.s = act(t.s, { type: 'ATTACK', uid: t.be, target: t.s.opp!.mz[1]! });
+    expect(t.s.opp!.gy.length).toBe(1);
+    expect(t.s.opponentLp).toBe(8000);
+    expect(t.s.lp).toBe(8000);
+  });
+});

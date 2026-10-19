@@ -5,6 +5,7 @@ import { loadDecks, type SavedDeck, saveDecks } from './deckStore';
 import {
   type Action,
   applyAction,
+  canAttackDirectly,
   createGame,
   type Ctx,
   findLocation,
@@ -13,6 +14,7 @@ import {
   isOnField,
   makeEnv,
   type MonsterLocation,
+  oppMonsterSlots,
   type SummonMethod,
   ZONE_LABEL,
 } from '../engine/game';
@@ -624,8 +626,18 @@ export function App() {
       btns.push(effectBtn(uid));
       if (inst.faceUp) {
         btns.push({ label: '表示形式変更', onClick: () => dispatch({ type: 'CHANGE_POSITION', uid }) });
-        if (state.phase === 'BP')
-          btns.push({ label: '直接攻撃', primary: true, onClick: () => dispatch({ type: 'ATTACK', uid }) });
+        if (state.phase === 'BP') {
+          // 相手フィールドにモンスターがいれば、攻撃するモンスターを選ぶ（直接攻撃できるのはトゥーンなど）
+          const targets = view.opp ? oppMonsterSlots(view.opp).filter((u): u is string => !!u) : [];
+          for (const t of targets)
+            btns.push({
+              label: `攻撃：${state.cards[t].faceUp ? def(t).name : '裏側守備表示のモンスター'}`,
+              primary: true,
+              onClick: () => dispatch({ type: 'ATTACK', uid, target: t }),
+            });
+          if (!targets.length || canAttackDirectly(state, ctx, uid))
+            btns.push({ label: '直接攻撃', primary: true, onClick: () => dispatch({ type: 'ATTACK', uid }) });
+        }
       } else {
         btns.push({ label: '反転召喚', onClick: () => dispatch({ type: 'FLIP_SUMMON', uid }) });
         btns.push({

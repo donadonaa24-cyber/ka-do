@@ -92,7 +92,10 @@ export type Action =
       equipTo?: string;
     }
   | { type: 'CHANGE_POSITION'; uid: string }
-  | { type: 'ATTACK'; uid: string }
+  /** 攻撃宣言。target は攻撃する相手のモンスター（無ければ直接攻撃） */
+  | { type: 'ATTACK'; uid: string; target?: string }
+  /** このターン、自分のモンスターは直接攻撃できない */
+  | { type: 'NO_DIRECT_ATTACK'; source: string }
   | { type: 'SHUFFLE_DECK' }
   | { type: 'ATTACH'; uid: string; target: string }
   | { type: 'DETACH'; target: string; uid: string }
@@ -356,6 +359,70 @@ export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: n
   if (atk !== undefined) atk = Math.max(0, atk + da);
   if (def !== undefined && d.frame !== 'link') def = Math.max(0, def + dd);
   return { atk, def };
+}
+
+/**
+ * 相手フィールドにモンスターがいても直接攻撃できるか。
+ * トゥーン：自分フィールドに「トゥーン・ワールド」があり、相手フィールドにトゥーンモンスターがいない場合
+ */
+export function canAttackDirectly(state: GameState, ctx: Ctx, uid: string): boolean {
+  const d = getDef(state, ctx, uid);
+  if (!d.toon || !/直接攻撃できる/.test(d.text)) return false;
+  if (!makeEnv(state, ctx, uid).toonWorld) return false;
+  const oppMons = state.opp ? oppMonsterSlots(state.opp) : [];
+  return !oppMons.some((u) => u && state.cards[u].faceUp && getDef(state, ctx, u).toon);
+}
+
+/** モンスターに攻撃した時のダメージ計算（破壊と戦闘ダメージ） */
+function battle(state: GameState, ctx: Ctx, attacker: string, target: string) {
+  const t = state.cards[target];
+  const an = name(state, ctx, attacker);
+  const tn = name(state, ctx, target);
+  const a = currentStats(state, ctx, attacker).atk ?? 0;
+  if (!t.faceUp) {
+    t.faceUp = true;
+    log(state, `裏側守備表示の${tn}を表にした`, 'move');
+  }
+  const ts = currentStats(state, ctx, target);
+  const vsAtk = t.position === 'atk';
+  const d = (vsAtk ? ts.atk : ts.def) ?? 0;
+  log(state, `${an}（攻撃力${a}）で${tn}（${vsAtk ? '攻撃力' : '守備力'}${d}）に攻撃`, 'activate');
+  const destroy = (u: string) => {
+    const n = name(state, ctx, u);
+    moveCard(state, ctx, u, { zone: 'gy' }, { reason: '戦闘で破壊' });
+    log(state, `${n}は戦闘で破壊された`, 'move');
+  };
+  const damageOpp = (n: number) => {
+    state.opponentLp = Math.max(0, state.opponentLp - n);
+    log(state, `相手に${n}の戦闘ダメージ（相手LP ${state.opponentLp}）`, 'info');
+  };
+  const damageSelf = (n: number) => {
+    state.lp = Math.max(0, state.lp - n);
+    log(state, `自分に${n}の戦闘ダメージ（LP ${state.lp}）`, 'warn');
+  };
+  if (vsAtk) {
+    if (a > d) {
+      destroy(target);
+      damageOpp(a - d);
+    } else if (a < d) {
+      destroy(attacker);
+      damageSelf(d - a);
+    } else if (a > 0) {
+      // 攻撃力が同じなら両方破壊（どちらも0なら破壊されない）
+      destroy(target);
+      destroy(attacker);
+    }
+  } else if (a > d) destroy(target);
+  else if (a < d) damageSelf(d - a);
+  if (state.opponentLp === 0 && state.status === 'playing') {
+    state.status = 'won';
+    state.statusReason = '相手のLPを0にした';
+    log(state, '相手のLPが0になりました（勝利）', 'info');
+  } else if (state.lp === 0 && state.status === 'playing') {
+    state.status = 'lost';
+    state.statusReason = 'LPが0になった';
+    log(state, 'LPが0になりました（敗北）', 'warn');
+  }
 }
 
 export function currentLevel(state: GameState, ctx: Ctx, uid: string): number | undefined {
@@ -1039,7 +1106,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         checkMonsterZoneFree(state, ctx, to, [uid]);
       }
       if (to.zone === 'stz' && state.stz[to.index] && state.stz[to.index] !== uid) fail(`${locLabel(to)}は使用中です`);
-      if (to.zone === 'fz' && state.fz && state.fz !== uid) fail('フィールドゾーンは使用中です');
+      // 新しいフィールド魔法を置くと、それまでのフィールド魔法は墓地へ送られる
+      if (to.zone === 'fz' && state.fz && state.fz !== uid) {
+        const old = state.fz;
+        moveCard(state, ctx, old, { zone: 'gy' }, { reason: 'フィールド魔法の張り替え' });
+        log(state, `${name(state, ctx, old)}を墓地へ（フィールド魔法の張り替え）`, 'move');
+      }
       const dest = moveCard(state, ctx, uid, to, {
         faceUp: action.faceUp,
         position: action.position,
@@ -1089,11 +1161,23 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
           fail(`${def.name}は召喚・特殊召喚したターンには攻撃できません`);
       }
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
+      const oppMons = state.opp ? oppMonsterSlots(state.opp).filter((u): u is string => !!u) : [];
+      if (action.target) {
+        if (!oppMons.includes(action.target)) fail('相手フィールドのモンスターではありません');
+      } else if (strict) {
+        if (state.noDirectAttackTurn === state.turn) fail('このターン、自分のモンスターは直接攻撃できません');
+        if (oppMons.length && !canAttackDirectly(state, ctx, action.uid))
+          fail('相手フィールドにモンスターがいるため直接攻撃できません（攻撃するモンスターを選んでください）');
+      }
       inst.attackCount = inst.attackedTurn === state.turn ? inst.attackCount + 1 : 1;
       inst.attackedTurn = state.turn;
       if (def.attackCost) {
         state.lp -= def.attackCost;
         log(state, `攻撃宣言のコストとして${def.attackCost}LPを払った（LP ${state.lp}）`, 'info');
+      }
+      if (action.target) {
+        battle(state, ctx, action.uid, action.target);
+        return;
       }
       const dmg = currentStats(state, ctx, action.uid).atk ?? 0;
       state.opponentLp = Math.max(0, state.opponentLp - dmg);
@@ -1105,6 +1189,10 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       }
       return;
     }
+    case 'NO_DIRECT_ATTACK':
+      state.noDirectAttackTurn = state.turn;
+      log(state, `${action.source}の効果：このターン、自分のモンスターは直接攻撃できない`, 'info');
+      return;
     case 'SHUFFLE_DECK': {
       state.shuffleCount += 1;
       state.deck = shuffle(state.deck, mulberry32(state.seed + 7919 * state.shuffleCount));
