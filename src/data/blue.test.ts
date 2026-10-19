@@ -717,3 +717,36 @@ describe('エンシェント・フェアリー・ライフ・ドラゴン②', (
     expect(s.opponentLp).toBe(8000 - (3000 - 2000));
   });
 });
+
+describe('同時に発動条件を満たした誘発効果（バグ報告）', () => {
+  /** 墓地に白き乙女とカイバーマンがある状態で、「青眼の白龍」を特殊召喚する */
+  const setup = () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 3);
+    for (const n of ['白き乙女', '正義の伝説 カイバーマン'])
+      s = act(s, { type: 'MOVE', uid: find(s, 'deck', n), to: { zone: 'gy' } });
+    s = act(s, { type: 'SPECIAL_SUMMON', uid: find(s, 'deck', '青眼の白龍'), to: mz(0) });
+    return s;
+  };
+  const activate = (s: GameState, n: string, label: string) => {
+    const uid = find(s, 'gy', n);
+    const effect = CARD_SCRIPTS[s.cards[uid].defId].effects!.find((e) => e.label.startsWith(label))!;
+    const r = startEffect(s, ctx, uid, effect, undefined, 'auto');
+    if (r.kind !== 'done') throw new Error(r.kind === 'error' ? r.error : '選択が残っています');
+    return act(s, r.action);
+  };
+
+  for (const [first, firstLabel, second, secondLabel] of [
+    ['白き乙女', '②', '正義の伝説 カイバーマン', '②'],
+    ['正義の伝説 カイバーマン', '②', '白き乙女', '②'],
+  ]) {
+    it(`${first}②に${second}②をチェーンできる（スペルスピード1同士）`, () => {
+      let s = activate(setup(), first, firstLabel);
+      expect(s.chain).toHaveLength(1);
+      expect(s.chain[0].trigger).toBe(true);
+      const names = chainableEffects(s, ctx, s.chain[0].speed).map((c) => name(s, c.uid));
+      expect(names).toContain(second);
+      s = activate(s, second, secondLabel);
+      expect(s.chain.map((l) => name(s, l.uid))).toEqual([first, second]);
+    });
+  }
+});

@@ -198,6 +198,8 @@ export type Action =
       label: string;
       /** 相手AIの妨害 */
       opp?: string;
+      /** 誘発効果 */
+      trigger?: boolean;
       targetLink?: number;
       target?: string;
       /** 発動した場所 */
@@ -687,6 +689,11 @@ export function oppFieldCards(state: GameState): string[] {
 }
 
 /** 相手のモンスターゾーン（メイン＋使っているEXモンスターゾーン） */
+/** 今のチェーンが、自分の誘発効果（と相手の妨害）だけでできている：同時に発動条件を満たした誘発効果を続けて積める */
+export function simultaneousTriggers(state: GameState): boolean {
+  return state.chain.some((l) => l.trigger) && state.chain.every((l) => l.opp || l.trigger);
+}
+
 export function oppMonsterSlots(o: OppBoard): (string | null)[] {
   return [...o.mz, ...(o.emz ?? [])];
 }
@@ -1724,7 +1731,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'CHAIN_PUSH': {
       const top = state.chain[state.chain.length - 1];
-      if (strict && top && (action.speed < 2 || action.speed < top.speed)) {
+      // 同時に発動条件を満たした誘発効果どうしは、スペルスピード1でもチェーンを組める
+      const simultaneous = !!action.trigger && action.speed === 1 && simultaneousTriggers(state);
+      if (strict && top && !simultaneous && (action.speed < 2 || action.speed < top.speed)) {
         fail(`スペルスピード${action.speed}の効果はチェーンできません`);
       }
       state.chain.push({
@@ -1734,6 +1743,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         stepStart: action.stepStart,
         speed: action.speed,
         label: action.label,
+        ...(action.trigger ? { trigger: true } : {}),
         ...(action.opp ? { opp: action.opp, targetLink: action.targetLink, target: action.target } : {}),
         ...(action.from ? { from: action.from } : {}),
       });

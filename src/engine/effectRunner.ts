@@ -8,6 +8,7 @@ import {
   isMonsterZone,
   makeEnv,
   missedTiming,
+  simultaneousTriggers,
 } from './game';
 import { oppResponse, resolveOppLink } from './oppAI';
 import { type EffectDef, type Env, effectText, type Step } from './scripts';
@@ -92,6 +93,11 @@ export function effectAvailable(state: GameState, uid: string, effect: EffectDef
   return true;
 }
 
+/** 誘発効果（「〜した場合に発動できる」「召喚・特殊召喚した場合」など。発動しない効果は除く） */
+export function isTriggerEffect(effect: EffectDef): boolean {
+  return !effect.applied && (!!effect.trigger || !!effect.onSummon);
+}
+
 /** 「このカードが召喚した時に発動できる」：召喚の直後でないとタイミングを逃す任意効果 */
 export function isTokiTrigger(def: CardDef, effect: EffectDef): boolean {
   if (!effect.onSummon || effect.applied) return false;
@@ -152,6 +158,8 @@ export function chainableEffects(
 ): { uid: string; effect: EffectDef }[] {
   const out: { uid: string; effect: EffectDef }[] = [];
   const env = makeEnv(state, ctx, '');
+  // チェーンが誘発効果だけ：同時に発動条件を満たした他の誘発効果（スペルスピード1）も積める
+  const simultaneous = simultaneousTriggers(state);
   const uids = [...state.hand, ...state.mz, ...state.emz, ...state.stz, state.fz, ...state.gy].filter(
     (u): u is string => !!u,
   );
@@ -160,7 +168,8 @@ export function chainableEffects(
       if (effect.opponentOnly || !effectAvailable(state, uid, effect)) continue;
       const speed = effectSpeed(state, ctx, uid, effect);
       const battleTrigger = inBattle && (effect.trigger || effect.damageStep);
-      if (!battleTrigger && (speed < 2 || speed < minSpeed)) continue;
+      const simultaneousTrigger = simultaneous && speed === 1 && isTriggerEffect(effect);
+      if (!battleTrigger && !simultaneousTrigger && (speed < 2 || speed < minSpeed)) continue;
       const key = effectKey(state, uid, effect);
       if (key && effect.limit !== undefined && (state.effectUses[key] ?? 0) >= effect.limit) continue;
       if (nameLimitReached(state, effect)) continue;
@@ -397,6 +406,7 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   const def = makeEnv(run.temp, ctx, run.self).def(run.self);
   const index = ctx.scripts?.[def.id]?.effects?.indexOf(run.effect) ?? -1;
   if (index < 0) return null;
+  const trigger = speed === 1 && isTriggerEffect(run.effect);
   const push: Action = {
     type: 'CHAIN_PUSH',
     uid: run.self,
@@ -405,9 +415,17 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
     speed,
     label: run.effect.label,
     from: run.from,
+    ...(trigger ? { trigger: true } : {}),
   };
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
+  // 誘発効果：同時に発動条件を満たした他の誘発効果があれば、チェーンを組めるように止める
+  if (trigger)
+    responses.push(
+      ...chainableEffects(r.state, ctx, 2).filter(
+        (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
+      ),
+    );
   // 相手（練習用の相手AI）が妨害をチェーンしてくるか
   const opp = ctx.options.strict && ctx.options.oppAI !== false ? oppResponse(r.state, ctx) : null;
   if (run.chainMode === 'auto' && responses.length === 0 && !opp) return null;

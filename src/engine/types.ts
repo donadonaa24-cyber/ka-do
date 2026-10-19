@@ -195,6 +195,8 @@ export interface ChainLink {
   /** スペルスピード */
   speed: number;
   label: string;
+  /** 誘発効果（同時に発動条件を満たした誘発効果は、スペルスピード1でもチェーンを組める） */
+  trigger?: boolean;
   /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */
   opp?: string;
   /** 相手の妨害が対象にしたチェーン番号（0始まり）・カード */
