@@ -268,9 +268,9 @@ export function createGame(
     emz: [null, null],
     stz: [null, null, null, null, null],
     fz: null,
-    // 後攻は「2ターン目」として扱う（バトルフェイズを行える）
+    // 後攻は「2ターン目」のドローフェイズから始める（バトルフェイズを行える）
     turn: second ? 2 : 1,
-    phase: 'M1',
+    phase: second ? 'DP' : 'M1',
     lp: 8000,
     opponentLp: 8000,
     normalSummonUsed: false,
@@ -287,7 +287,8 @@ export function createGame(
     opp: emptyOpp(),
   };
   if (second) {
-    log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚＋ドロー1枚の6枚から始めます。`, 'info');
+    log(state, `デュエル開始（後攻・シード ${seed}）。初手5枚をドロー。`, 'info');
+    log(state, 'ターン2開始（ドローフェイズ）：1枚ドロー', 'info');
   } else {
     log(state, `デュエル開始（先攻・シード ${seed}）。初手5枚をドロー。`, 'info');
     log(state, '先攻1ターン目はドローフェイズにドローせず、バトルフェイズでは攻撃できません。', 'info');

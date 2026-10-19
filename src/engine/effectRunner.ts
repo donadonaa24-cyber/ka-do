@@ -409,7 +409,7 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
   // 相手（練習用の相手AI）が妨害をチェーンしてくるか
-  const opp = ctx.options.strict ? oppResponse(r.state, ctx) : null;
+  const opp = ctx.options.strict && ctx.options.oppAI !== false ? oppResponse(r.state, ctx) : null;
   if (run.chainMode === 'auto' && responses.length === 0 && !opp) return null;
   return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push, ...(opp ?? [])] } };
 }

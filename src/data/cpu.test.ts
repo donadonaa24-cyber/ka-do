@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applyHandTrap, describeCpuStep, handTrapOptions, specialSummonsBetween, syncAction } from '../engine/cpu';
+import {
+  applyHandTrap,
+  describeCpuStep,
+  handTrapOptions,
+  reverseSync,
+  specialSummonsBetween,
+  syncAction,
+} from '../engine/cpu';
 import { startEffect } from '../engine/effectRunner';
 import { type Action, applyAction, createGame, type Ctx } from '../engine/game';
 import { routeFromGuide } from '../engine/guide';
@@ -15,6 +22,15 @@ const act = (s: GameState, a: Action) => {
   if (!r.ok) throw new Error(r.error);
   return r.state;
 };
+// CPUのゲーム：プレイヤーの妨害は自動で使わない（使うかはプレイヤーが選ぶ）
+const cctx: Ctx = { ...ctx, options: { strict: true, oppAI: false } };
+const cact = (s: GameState, a: Action) => {
+  const r = applyAction(s, a, cctx);
+  if (!r.ok) throw new Error(r.error);
+  return r.state;
+};
+/** プレイヤーのカードをCPUのゲームに写す */
+const mirror = (cpu: GameState, human: GameState) => cact(cpu, syncAction(human));
 
 describe('CPU戦（CPUが先攻・プレイヤーが手札誘発）', () => {
   const guide = BLUE_GUIDES[0];
@@ -30,33 +46,34 @@ describe('CPU戦（CPUが先攻・プレイヤーが手札誘発）', () => {
   it('CPUのサーチ効果に灰流うららを使える。止められた効果は処理されない', () => {
     const { cpu, route, human } = setup();
     // 最初にデッキからサーチする効果の手番を探す
-    let s = cpu;
+    let s = mirror(cpu, human);
     let found = -1;
     for (const [i, st] of route.steps.entries()) {
-      const opts = handTrapOptions(s, human, ctx, st.action, []);
+      const opts = handTrapOptions(s, human, cctx, st.action, []);
       if (opts.some((o) => o.name === '灰流うらら')) {
         found = i;
         break;
       }
-      s = act(s, st.action);
+      s = cact(s, st.action);
     }
     expect(found).toBeGreaterThanOrEqual(0);
     const action = route.steps[found].action;
-    const step = describeCpuStep(s, ctx, action);
-    const opt = handTrapOptions(s, human, ctx, action, []).find((o) => o.name === '灰流うらら')!;
-    const res = applyHandTrap(s, ctx, action, opt, human)!;
+    const step = describeCpuStep(s, cctx, action);
+    const opt = handTrapOptions(s, human, cctx, action, []).find((o) => o.name === '灰流うらら')!;
+    expect(opt.from).toBe('hand');
+    const res = applyHandTrap(s, cctx, action, opt, human)!;
     expect(res.replan).toBe(true);
     let after = s;
-    for (const a of res.cpuActions) after = act(after, a);
+    for (const a of res.cpuActions) after = cact(after, a);
     expect(after.chain).toEqual([]);
     expect(after.log.some((l) => l.text.includes('灰流うらら') && l.text.includes('無効'))).toBe(true);
     // 予定ではサーチしたカードが、手札に増えていない
-    const planned = act(s, action);
+    const planned = cact(s, action);
     expect(after.hand.length).toBeLessThan(planned.hand.length);
     expect(step.kind).toBe('activate');
-    // プレイヤーの手札から灰流うららが墓地へ
+    // プレイヤーの手札から灰流うららが墓地へ（CPUのゲームで動いた分を戻す）
     let h = human;
-    for (const a of res.humanActions) h = act(h, a);
+    for (const a of [...res.humanActions, ...reverseSync(after, h, res.keep)]) h = act(h, a);
     expect(h.gy.map((u) => name(h, u))).toContain('灰流うらら');
   });
 
@@ -107,21 +124,23 @@ describe('ＰＳＹフレームギア（CPU戦）', () => {
     let human = createGame(deck, ctx, 5, ['38814750', '74203495']);
     human = act(human, { type: 'END_TURN', toOpponent: true });
     // 最初のモンスター効果（ディープアイズ①）にγ
+    cpu = mirror(cpu, human);
     const action = route.steps[0].action;
-    const opt = handTrapOptions(cpu, human, ctx, action, []).find((o) => o.name === 'ＰＳＹフレームギア・γ')!;
+    const opt = handTrapOptions(cpu, human, cctx, action, []).find((o) => o.name === 'ＰＳＹフレームギア・γ')!;
     expect(opt).toBeTruthy();
-    const res = applyHandTrap(cpu, ctx, action, opt, human)!;
-    for (const a of res.cpuActions) cpu = act(cpu, a);
+    const res = applyHandTrap(cpu, cctx, action, opt, human)!;
+    for (const a of res.cpuActions) cpu = cact(cpu, a);
     expect(cpu.log.some((l) => l.text.includes('ＰＳＹフレームギア・γの効果') && l.text.includes('無効'))).toBe(true);
-    for (const a of res.humanActions) human = act(human, a);
+    for (const a of [...res.humanActions, ...reverseSync(cpu, human, res.keep)]) human = act(human, a);
     const field = human.mz.filter((u): u is string => !!u).map((u) => name(human, u));
     expect(field.sort()).toEqual(['ＰＳＹフレーム・ドライバー', 'ＰＳＹフレームギア・γ'].sort());
     expect(res.banishAtEnd).toHaveLength(2);
     // 自分フィールドにモンスターがいるので、もうδは使えない
+    cpu = mirror(cpu, human);
     for (const st of route.steps.slice(1)) {
-      const names = handTrapOptions(cpu, human, ctx, st.action, ['ＰＳＹフレームギア・γ']).map((o) => o.name);
+      const names = handTrapOptions(cpu, human, cctx, st.action, ['ＰＳＹフレームギア・γ']).map((o) => o.name);
       expect(names).not.toContain('ＰＳＹフレームギア・δ');
-      const r = applyAction(cpu, st.action, ctx);
+      const r = applyAction(cpu, st.action, cctx);
       if (!r.ok) break;
       cpu = r.state;
     }
@@ -136,7 +155,41 @@ describe('ＰＳＹフレームギア（CPU戦）', () => {
     const driver = human.deck.find((u) => name(human, u) === 'ＰＳＹフレーム・ドライバー')!;
     human = act(human, { type: 'MOVE', uid: driver, to: { zone: 'banished' } });
     human = act(human, { type: 'END_TURN', toOpponent: true });
-    const names = handTrapOptions(cpu, human, ctx, route.steps[0].action, []).map((o) => o.name);
+    const names = handTrapOptions(mirror(cpu, human), human, cctx, route.steps[0].action, []).map((o) => o.name);
     expect(names).not.toContain('ＰＳＹフレームギア・γ');
+  });
+});
+
+describe('CPU戦（プレイヤーが先攻・盤面の妨害で止める）', () => {
+  it('先攻で作ったフルール・ド・バロネスで、後攻のCPUの効果を止められる。使ったバロネスの状態はこちらにも戻る', () => {
+    // プレイヤー：相手の盤面の練習用にバロネスを自分の場に置いた状態（先攻の盤面の代わり）
+    let human = createGame(TOON_DECK, ctx, 5);
+    const baronessId = Object.values(CARD_DB).find((d) => d.name === 'フルール・ド・バロネス')!.id;
+    human = act(human, { type: 'OPP_PLACE', defId: baronessId, to: { zone: 'omz', index: 0 }, faceUp: true });
+    // 自分の場のカードとして扱うため、相手の盤面から自分のモンスターゾーンへ（練習用の操作）
+    const b = human.opp!.mz[0]!;
+    human = act(human, { type: 'OPP_REMOVE', uid: b });
+    const own = human.deck[0];
+    human = act(human, { type: 'MOVE', uid: own, to: { zone: 'mz', index: 2 } });
+    human = { ...human, cards: { ...human.cards, [own]: { ...human.cards[own], defId: baronessId } } };
+    human = act(human, { type: 'END_TURN', toOpponent: true });
+    // CPU（後攻・6枚）
+    const guide = BLUE_GUIDES[0];
+    let cpu = createGame(BLUE_EYES_DECK, cctx, guide.seed, guide.fixedHand, 6);
+    cpu = cact(cpu, { type: 'NEXT_PHASE', to: 'M1' });
+    const route = routeFromGuide(cpu, ctx, guide, TOON_EVALUATOR)!;
+    cpu = mirror(cpu, human);
+    const action = route.steps[0].action;
+    const opt = handTrapOptions(cpu, human, cctx, action, []).find((o) => o.name === 'フルール・ド・バロネス')!;
+    expect(opt.from).toBe('field');
+    const res = applyHandTrap(cpu, cctx, action, opt, human)!;
+    for (const a of res.cpuActions) cpu = cact(cpu, a);
+    expect(cpu.log.some((l) => l.text.includes('フルール・ド・バロネスの効果') && l.text.includes('無効'))).toBe(true);
+    // バロネスはフィールドに残る（もう一度写しても使用済みのまま）
+    for (const a of reverseSync(cpu, human, res.keep)) human = act(human, a);
+    expect(human.mz[2]).toBe(own);
+    cpu = mirror(cpu, human);
+    const again = handTrapOptions(cpu, human, cctx, route.steps[1].action, []).map((o) => o.name);
+    expect(again).not.toContain('フルール・ド・バロネス');
   });
 });

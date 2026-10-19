@@ -7,7 +7,7 @@ import { routeFromGuide } from '../engine/guide';
 import { type Route, solveBest } from '../engine/solver';
 import type { GameState } from '../engine/types';
 
-const ctx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
+const baseCtx: Ctx = { db: CARD_DB, options: { strict: true }, scripts: CARD_SCRIPTS };
 
 /** 最終盤面（フィールドのカード）を表す文字列。同じ盤面に向かうルートか調べるため */
 function finalKey(s: GameState): string {
@@ -18,7 +18,9 @@ function finalKey(s: GameState): string {
     .join(',');
 }
 
-self.onmessage = (e: MessageEvent<{ state: GameState; deckName: string; maxNodes?: number }>) => {
+self.onmessage = (e: MessageEvent<{ state: GameState; deckName: string; maxNodes?: number; noOppAI?: boolean }>) => {
+  // CPU戦のCPUのルート：相手（プレイヤー）の妨害は自動で使わない前提で探す
+  const ctx: Ctx = e.data.noOppAI ? { ...baseCtx, options: { ...baseCtx.options, oppAI: false } } : baseCtx;
   const found = solveBest(e.data.state, ctx, TOON_EVALUATOR, {
     maxRoutes: 5,
     maxNodes: e.data.maxNodes,

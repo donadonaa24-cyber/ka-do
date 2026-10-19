@@ -11,13 +11,14 @@ import {
   zoneChoices,
 } from './effectRunner';
 import { actionUids } from './coach';
-import { type Action, applyAction, type Ctx, getDef } from './game';
-import { forceOppResponse, handTrapAbility } from './oppAI';
+import { type Action, applyAction, type Ctx, findLocation, getDef } from './game';
+import { forceOppResponse, oppAbilityChoices } from './oppAI';
 import type { EffectDef } from './scripts';
 import type { GameState, Location } from './types';
 
-// CPU戦：CPU（先攻）の展開に、プレイヤー（後攻）が手札誘発を使う。
+// CPU戦：CPUの展開に、プレイヤーが手札誘発や盤面の妨害を使う（CPUが先攻でも後攻でも）。
 // CPUのゲームでは CPU が「自分」、プレイヤーが「相手」（相手の盤面・相手のチェーン）として扱う。
+// プレイヤーのカードは syncAction で CPUのゲームの相手の盤面に写し、CPUのゲームで動いたら reverseSync で戻す。
 
 /** CPUがこれから行う操作の中身 */
 export interface CpuStep {
@@ -101,12 +102,14 @@ export function pushCpuActivation(
   return { action, state: r.state };
 }
 
-/** プレイヤーが使える手札誘発 */
+/** プレイヤーが使える手札誘発・盤面の妨害 */
 export interface HandTrapOption {
-  /** プレイヤーの手札のカード */
+  /** プレイヤーのカード（手札・フィールド） */
   uid: string;
   name: string;
   label: string;
+  /** 手札から・フィールドから */
+  from: 'hand' | 'field';
   kind: 'chain' | 'draw' | 'droll';
   abilityId?: string;
 }
@@ -125,7 +128,26 @@ function psyDriver(human: GameState, ctx: Ctx): string | undefined {
   );
 }
 
-/** CPUのこの操作に対して、プレイヤーが使える手札誘発 */
+/** プレイヤーの盤面・手札・墓地・除外が、CPUのゲームに写っているか（変わったら写し直す）の目印 */
+export function humanSignature(human: GameState): string {
+  const ids = (us: (string | null)[]) =>
+    us.map((u) => (u ? `${u}${human.cards[u]?.faceUp ? '+' : '-'}` : '_')).join(',');
+  return [
+    ids(human.mz),
+    ids(human.emz),
+    ids(human.stz),
+    ids([human.fz]),
+    ids(human.hand),
+    ids(human.gy),
+    ids(human.banished),
+    human.lp,
+  ].join('|');
+}
+
+/**
+ * CPUのこの操作に対して、プレイヤーが使える手札誘発・盤面の妨害。
+ * cpu にはプレイヤーのカードが相手の盤面として写っていること（syncAction(human)）
+ */
 export function handTrapOptions(
   cpu: GameState,
   human: GameState,
@@ -135,37 +157,50 @@ export function handTrapOptions(
 ): HandTrapOption[] {
   const step = describeCpuStep(cpu, ctx, action);
   const out: HandTrapOption[] = [];
-  const seen = new Set<string>();
   const humanField = [...human.mz, ...human.emz, ...human.stz, human.fz].some(Boolean);
   const humanMonsters = [...human.mz, ...human.emz].some(Boolean);
-  const pushed = step.kind === 'activate' ? pushCpuActivation(cpu, ctx, step, new Set(actionUids(action))) : null;
+  const seen = new Set<string>();
+  // 効果を止めない手札誘発（増殖するＧ・ドロール）
   for (const uid of human.hand) {
     const name = getDef(human, ctx, uid).name;
     if (seen.has(name) || usedNames.includes(name)) continue;
     seen.add(name);
     if (DRAW_TRAPS[name] && step.kind !== 'other') {
       if (name === 'マルチャミー・フワロス' && humanField) continue;
-      out.push({ uid, name, label: DRAW_TRAPS[name], kind: 'draw' });
-      continue;
-    }
-    if (name === 'ドロール＆ロックバード') {
-      if (cpu.deckToHandTurn === cpu.turn && cpu.noDeckToHandTurn !== cpu.turn)
-        out.push({ uid, name, label: 'このターン、お互いにデッキからカードを手札に加えられなくする', kind: 'droll' });
-      continue;
-    }
-    // ＰＳＹフレームギア：自分フィールドにモンスターがいなく、ドライバーを一緒に特殊召喚できる時だけ
+      out.push({ uid, name, label: DRAW_TRAPS[name], from: 'hand', kind: 'draw' });
+    } else if (
+      name === 'ドロール＆ロックバード' &&
+      cpu.deckToHandTurn === cpu.turn &&
+      cpu.noDeckToHandTurn !== cpu.turn
+    )
+      out.push({
+        uid,
+        name,
+        label: 'このターン、お互いにデッキからカードを手札に加えられなくする',
+        from: 'hand',
+        kind: 'droll',
+      });
+  }
+  // CPUの効果の発動にチェーンして止めるもの（手札誘発・フィールドの妨害）
+  const pushed = step.kind === 'activate' ? pushCpuActivation(cpu, ctx, step, new Set(actionUids(action))) : null;
+  if (!pushed) return out;
+  const chosen = new Set<string>();
+  for (const c of oppAbilityChoices(pushed.state, ctx)) {
+    const uid = pushed.state.cards[c.uid]?.syncKey;
+    if (!uid || !human.cards[uid]) continue;
+    const name = getDef(human, ctx, uid).name;
+    if (chosen.has(`${c.id}:${name}`)) continue;
+    chosen.add(`${c.id}:${name}`);
+    // ＰＳＹフレームギア：ドライバーを一緒に特殊召喚できる時だけ
     if (PSY_GEARS.has(name) && (humanMonsters || !psyDriver(human, ctx))) continue;
-    // 無限泡影：自分フィールドにカードが無い時だけ手札から発動できる
-    if (name === '無限泡影' && humanField) continue;
-    const ability = handTrapAbility(name);
-    if (!ability || !pushed) continue;
-    const placed = applyAction(
-      pushed.state,
-      { type: 'OPP_PLACE', defId: human.cards[uid].defId, to: { zone: 'ohand' }, faceUp: false },
-      ctx,
-    );
-    if (placed.ok && forceOppResponse(placed.state, ctx, ability.id))
-      out.push({ uid, name, label: ability.label, kind: 'chain', abilityId: ability.id });
+    out.push({
+      uid,
+      name,
+      label: c.label,
+      from: human.hand.includes(uid) ? 'hand' : 'field',
+      kind: 'chain',
+      abilityId: c.id,
+    });
   }
   return out;
 }
@@ -178,6 +213,8 @@ export interface HandTrapResult {
   replan: boolean;
   /** エンドフェイズに除外する、プレイヤーのモンスター（ＰＳＹフレームギアの効果で特殊召喚したもの） */
   banishAtEnd?: string[];
+  /** CPUのゲームでの動きをプレイヤーのゲームに戻さないカード（humanActions で動かすもの） */
+  keep: string[];
 }
 
 export function applyHandTrap(
@@ -187,11 +224,12 @@ export function applyHandTrap(
   option: HandTrapOption,
   human: GameState,
 ): HandTrapResult | null {
-  const humanDefId = human.cards[option.uid].defId;
-  let humanActions: Action[] = [
-    { type: 'MOVE', uid: option.uid, to: { zone: 'gy' }, reason: `${option.name}を発動（CPUの効果に対して）` },
-  ];
+  let humanActions: Action[] = [];
   let banishAtEnd: string[] | undefined;
+  if (option.kind !== 'chain')
+    humanActions = [
+      { type: 'MOVE', uid: option.uid, to: { zone: 'gy' }, reason: `${option.name}を発動（CPUの効果に対して）` },
+    ];
   // ＰＳＹフレームギア：手札のこのカードとドライバーを特殊召喚（エンドフェイズに除外される）
   if (PSY_GEARS.has(option.name)) {
     const driver = psyDriver(human, ctx);
@@ -219,9 +257,10 @@ export function applyHandTrap(
     ];
     banishAtEnd = [option.uid, driver];
   }
-  if (option.kind === 'draw') return { cpuActions: [], humanActions, replan: false };
+  const keep = humanActions.flatMap((a) => (a.type === 'MOVE' ? [a.uid] : []));
+  if (option.kind === 'draw') return { cpuActions: [], humanActions, replan: false, keep };
   if (option.kind === 'droll')
-    return { cpuActions: [{ type: 'NO_DECK_TO_HAND', by: option.name }], humanActions, replan: true };
+    return { cpuActions: [{ type: 'NO_DECK_TO_HAND', by: option.name }], humanActions, replan: true, keep };
   const prefer = new Set(actionUids(action));
   const pushed = pushCpuActivation(cpu, ctx, describeCpuStep(cpu, ctx, action), prefer);
   if (!pushed || !option.abilityId) return null;
@@ -234,7 +273,6 @@ export function applyHandTrap(
     cpuActions.push(a);
     return true;
   };
-  if (!apply({ type: 'OPP_PLACE', defId: humanDefId, to: { zone: 'ohand' }, faceUp: false })) return null;
   const resp = forceOppResponse(s, ctx, option.abilityId);
   if (!resp || !apply({ type: 'BATCH', label: `（あなた）${option.name}`, actions: resp })) return null;
   // チェーンを上から解決する（CPUの選択は予定のルートに沿って自動で行う）
@@ -242,7 +280,36 @@ export function applyHandTrap(
     const a = autoDrive(startResolve(s, ctx), ctx, prefer) ?? fizzleTop(s, ctx);
     if (!a || !apply(a)) break;
   }
-  return { cpuActions, humanActions, replan: true, banishAtEnd };
+  return { cpuActions, humanActions, replan: true, banishAtEnd, keep };
+}
+
+/**
+ * CPUのゲームで動いたプレイヤーのカード（破壊された・妨害に使った・表になったなど）を、
+ * プレイヤーのゲームにも反映する操作。keep のカードは反映しない
+ */
+export function reverseSync(cpu: GameState, human: GameState, keep: string[] = []): Action[] {
+  const cat = (zone: string | undefined) =>
+    !zone
+      ? null
+      : ['mz', 'emz', 'stz', 'fz', 'omz', 'oemz', 'ostz', 'ofz'].includes(zone)
+        ? 'field'
+        : zone.replace(/^o/, '');
+  const out: Action[] = [];
+  for (const [u, inst] of Object.entries(cpu.cards)) {
+    const hu = inst.syncKey;
+    if (!inst.opp || !hu || keep.includes(hu) || !human.cards[hu]) continue;
+    const cpuLoc = findLocation(cpu, u);
+    const hLoc = findLocation(human, hu);
+    const c = cat(cpuLoc?.zone);
+    if (!c || !hLoc) continue;
+    if (c !== cat(hLoc.zone)) {
+      if (c === 'gy' || c === 'banished' || c === 'hand')
+        out.push({ type: 'MOVE', uid: hu, to: { zone: c }, reason: 'CPUのゲームで' });
+    } else if (c === 'field' && inst.faceUp !== human.cards[hu].faceUp) {
+      out.push({ type: 'MOVE', uid: hu, to: hLoc, faceUp: inst.faceUp, position: human.cards[hu].position });
+    }
+  }
+  return out;
 }
 
 /** この操作で新しく特殊召喚されたモンスターの数（増殖するＧのドロー） */

@@ -328,4 +328,6 @@ export interface DeckList {
 export interface GameOptions {
   /** ルールチェックを行う（オフにすると自由移動のみ） */
   strict: boolean;
+  /** 相手の盤面の妨害を自動で使う（CPU戦のCPUのゲームでは、使うかはプレイヤーが選ぶので false） */
+  oppAI?: boolean;
 }

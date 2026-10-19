@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  applyHandTrap,
   type CpuStep,
   describeCpuStep,
   type HandTrapOption,
   handTrapOptions,
+  humanSignature,
+  reverseSync,
   specialSummonsBetween,
   syncAction,
-  applyHandTrap,
 } from '../engine/cpu';
 import { type Action, applyAction, createGame, type Ctx, replay } from '../engine/game';
 import type { RouteStep } from '../engine/solver';
 import type { DeckList, GameState } from '../engine/types';
 import SolverWorker from './solver.worker?worker&inline';
 
-// CPU戦：CPU（先攻）がナビと同じルート探索で展開し、プレイヤー（後攻）が手札誘発で止める練習。
+// CPU戦：CPUがナビと同じルート探索で展開し、プレイヤーが手札誘発・盤面の妨害で止める練習。
+// プレイヤーが後攻ならCPUのターンから、先攻ならプレイヤーが盤面を作ってターンを終えた後にCPUのターンが始まる。
 // 止められたらCPUは今の盤面から最適なルートを探し直して動き続ける。CPUのターンが終わると、
-// CPUの盤面（妨害・手札誘発）を相手にしてプレイヤーのターンを続ける。
+// CPUの盤面を相手にしてプレイヤーのターンを続ける。
 
 export type CpuStage = 'thinking' | 'acting' | 'prompt' | 'human' | 'over';
 
@@ -38,6 +41,10 @@ export interface CpuDuel {
   cpuState: GameState | null;
   /** CPUのゲームで直前に起きたこと（ログ・こちらから見た言い方） */
   recent: string[];
+  /** プレイヤーが先攻 */
+  humanFirst: boolean;
+  /** CPUのターンが終わった */
+  cpuDone: boolean;
 }
 
 const STEP_MS = 900;
@@ -47,7 +54,11 @@ const SAVE_KEY = 'ygo-solo:cpu-duel';
 interface Saved {
   /** どのゲーム（自分のデッキ・シード）のCPU戦か */
   sessionKey: string;
-  duel: { cpuDeckName: string; seed: number; actions: Action[]; fixedHand?: string[] };
+  duel: { cpuDeckName: string; seed: number; actions: Action[]; fixedHand?: string[]; humanFirst?: boolean };
+  /** CPUのターンが終わった */
+  cpuDone?: boolean;
+  /** CPUのゲームに写したプレイヤーのカードの目印（変わったら写し直す） */
+  humanSig?: string;
   stage: CpuStage;
   plan: RouteStep[];
   planIndex: number;
@@ -80,7 +91,11 @@ export function useCpuDuel(opts: {
   /** メニュー画面などを開いている間は止めておく */
   paused: boolean;
 }) {
-  const { ctx, decks, human, dispatchHuman, onError, sessionKey, paused } = opts;
+  const { decks, human, dispatchHuman, onError, sessionKey, paused } = opts;
+  // CPUのゲームでは、プレイヤーの妨害は自動で使わない（使うかはプレイヤーが選ぶ）
+  const ctx = useMemo(() => ({ ...opts.ctx, options: { ...opts.ctx.options, oppAI: false } }), [opts.ctx]);
+  const humanRef = useRef(human);
+  humanRef.current = human;
   // 保存した続き（聞いている途中だった手札誘発は、もう一度聞き直す）
   const [saved] = useState(() => loadSaved(sessionKey));
   const [owner, setOwner] = useState(saved?.sessionKey ?? '');
@@ -97,6 +112,8 @@ export function useCpuDuel(opts: {
   const [recent, setRecent] = useState<string[]>([]);
   const [humanTurnStart, setHumanTurnStart] = useState<number | null>(saved?.humanTurnStart ?? null);
   const [banishAtEnd, setBanishAtEnd] = useState<string[]>(saved?.banishAtEnd ?? []);
+  const [cpuDone, setCpuDone] = useState(saved?.cpuDone ?? false);
+  const [humanSig, setHumanSig] = useState(saved?.humanSig ?? '');
   const workerRef = useRef<Worker | null>(null);
 
   // 進むたびに保存する（CPU戦をやめたら消す）
@@ -115,20 +132,24 @@ export function useCpuDuel(opts: {
           last,
           humanTurnStart,
           banishAtEnd,
+          cpuDone,
+          humanSig,
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
       }
     } catch {
       // 保存できない環境では何もしない
     }
-  }, [owner, duel, stage, plan, planIndex, drawPer, used, last, humanTurnStart, banishAtEnd]);
+  }, [owner, duel, stage, plan, planIndex, drawPer, used, last, humanTurnStart, banishAtEnd, cpuDone, humanSig]);
 
   const cpuState = useMemo(() => {
     if (!duel) return null;
     const deck = decks.find((d) => d.name === duel.cpuDeckName);
     if (!deck) return null;
     try {
-      return replay(createGame(deck, ctx, duel.seed, duel.fixedHand ?? []), duel.actions, ctx);
+      // CPUが後攻なら6枚（ドローフェイズ）から
+      const init = createGame(deck, ctx, duel.seed, duel.fixedHand ?? [], duel.humanFirst ? 6 : 5);
+      return replay(init, duel.actions, ctx);
     } catch {
       return null;
     }
@@ -136,11 +157,14 @@ export function useCpuDuel(opts: {
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
-  const start = useCallback((cpuDeckName: string, seed: number, key: string) => {
+  /** humanFirst：プレイヤーが先攻（盤面を作ってターンを終えたらCPUのターン） */
+  const start = useCallback((cpuDeckName: string, seed: number, key: string, humanFirst: boolean) => {
     workerRef.current?.terminate();
     setOwner(key);
-    setDuel({ cpuDeckName, seed, actions: [] });
-    setStage('thinking');
+    setDuel({ cpuDeckName, seed, actions: [], humanFirst });
+    setStage(humanFirst ? 'human' : 'thinking');
+    setCpuDone(false);
+    setHumanSig('');
     setPlan([]);
     setPlanIndex(0);
     setPrompt(null);
@@ -159,7 +183,7 @@ export function useCpuDuel(opts: {
 
   /** CPUのゲームに操作を行い、相手の盤面として写す */
   const applyCpu = useCallback(
-    (actions: Action[], text?: string): GameState | null => {
+    (actions: Action[], text?: string, keep: string[] = []): GameState | null => {
       if (!duel || !cpuState) return null;
       let s = cpuState;
       for (const a of actions) {
@@ -175,6 +199,8 @@ export function useCpuDuel(opts: {
       }
       setDuel({ ...duel, actions: [...duel.actions, ...actions] });
       dispatchHuman(syncAction(s));
+      // CPUのゲームで動いたプレイヤーのカード（破壊された・妨害に使ったなど）をこちらにも反映する
+      reverseSync(s, humanRef.current, keep).forEach((a) => dispatchHuman(a));
       if (text) setLast(text);
       // CPUのゲームのログを、こちらから見た言い方にして見せる（手札誘発を置いた・墓地へ送った内部の処理は省く）
       setRecent(
@@ -191,7 +217,10 @@ export function useCpuDuel(opts: {
   );
 
   const endCpuTurn = useCallback(() => {
-    if (cpuState) dispatchHuman(syncAction(cpuState));
+    if (cpuState) {
+      dispatchHuman(syncAction(cpuState));
+      reverseSync(cpuState, humanRef.current).forEach((a) => dispatchHuman(a));
+    }
     // ＰＳＹフレームギアの効果で特殊召喚したモンスターはエンドフェイズに除外される
     for (const u of banishAtEnd)
       if (human.mz.includes(u))
@@ -204,6 +233,8 @@ export function useCpuDuel(opts: {
     setBanishAtEnd([]);
     dispatchHuman({ type: 'END_TURN' });
     setLast('CPUはターンを終了した');
+    setCpuDone(true);
+    setHumanTurnStart(null);
     setStage('human');
   }, [cpuState, dispatchHuman, banishAtEnd, human.mz]);
 
@@ -235,7 +266,7 @@ export function useCpuDuel(opts: {
       onError('CPUのルート探索でエラーが起きました');
       endCpuTurn();
     };
-    worker.postMessage({ state: cpuState, deckName: duel.cpuDeckName, maxNodes: 1500 });
+    worker.postMessage({ state: cpuState, deckName: duel.cpuDeckName, maxNodes: 1500, noOppAI: true });
     return () => worker.terminate();
     // 考え始めた盤面で探す
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -245,6 +276,12 @@ export function useCpuDuel(opts: {
   useEffect(() => {
     if (!duel || stage !== 'acting' || !cpuState || paused) return;
     const t = setTimeout(() => {
+      // プレイヤーのカードが変わっていたら、CPUのゲームに写し直す
+      const sig = humanSignature(human);
+      if (sig !== humanSig) {
+        if (applyCpu([syncAction(human)])) setHumanSig(sig);
+        return;
+      }
       if (planIndex >= plan.length) return endCpuTurn();
       const action = plan[planIndex].action;
       if (!applyAction(cpuState, action, ctx).ok) {
@@ -262,11 +299,22 @@ export function useCpuDuel(opts: {
       if (applyCpu([action], step.text)) setPlanIndex(planIndex + 1);
     }, STEP_MS);
     return () => clearTimeout(t);
-  }, [duel, stage, cpuState, plan, planIndex, human, ctx, used, applyCpu, endCpuTurn, paused]);
+  }, [duel, stage, cpuState, plan, planIndex, human, ctx, used, applyCpu, endCpuTurn, paused, humanSig]);
 
-  // プレイヤーのターンが終わったら、CPU戦はおしまい
+  // プレイヤーが先攻：プレイヤーがターンを終えたら、プレイヤーの盤面を写してCPUのターンを始める
   useEffect(() => {
-    if (!duel || stage !== 'human') return;
+    if (!duel?.humanFirst || cpuDone || stage !== 'human' || !human.opponentTurn || !cpuState || paused) return;
+    const actions: Action[] = [syncAction(human)];
+    if (cpuState.phase === 'DP') actions.push({ type: 'NEXT_PHASE', to: 'M1' });
+    if (applyCpu(actions, 'CPUのターン（後攻）が始まった')) {
+      setHumanSig(humanSignature(human));
+      setStage('thinking');
+    }
+  }, [duel?.humanFirst, cpuDone, stage, human, cpuState, paused, applyCpu]);
+
+  // CPUのターンの後のプレイヤーのターンが終わったら、CPU戦はおしまい
+  useEffect(() => {
+    if (!duel || stage !== 'human' || !cpuDone) return;
     if (humanTurnStart === null) setHumanTurnStart(human.turn);
     else if (human.turn > humanTurnStart || human.status !== 'playing') setStage('over');
   }, [duel, stage, human.turn, human.status, humanTurnStart]);
@@ -297,7 +345,7 @@ export function useCpuDuel(opts: {
         setStage('acting');
         return;
       }
-      applyCpu(res.cpuActions, `あなたの${option.name}で「${step.text}」を止めた`);
+      applyCpu(res.cpuActions, `あなたの${option.name}で「${step.text}」を止めた`, res.keep);
       setStage('thinking');
     },
     [prompt, cpuState, ctx, human, applyCpu, planIndex, dispatchHuman, onError],
@@ -306,7 +354,18 @@ export function useCpuDuel(opts: {
   const active = !!duel;
   const cpuTurn = active && (stage === 'thinking' || stage === 'acting' || stage === 'prompt');
   const value: CpuDuel | null = duel
-    ? { cpuDeckName: duel.cpuDeckName, stage, prompt, last, cpuTurn, choose, cpuState, recent }
+    ? {
+        cpuDeckName: duel.cpuDeckName,
+        stage,
+        prompt,
+        last,
+        cpuTurn,
+        choose,
+        cpuState,
+        recent,
+        humanFirst: !!duel.humanFirst,
+        cpuDone,
+      }
     : null;
   return { duel: value, start, stop };
 }

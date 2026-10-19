@@ -19,14 +19,22 @@ interface Props {
   resume: { deckName: string; actions: number } | null;
   guides: Guide[];
   onResume: () => void;
-  /** 初手をランダムに引いて始める。navi なら最適ルートの解説付き */
-  onRandom: (deckName: string, handSize: 5 | 6, navi: boolean) => void;
-  onPickHand: (deckName: string) => void;
-  onGuide: (g: Guide) => void;
-  /** CPU戦（CPUが先攻・こちらは後攻で手札誘発の練習）。navi なら自分のターンにナビを付ける */
-  onCpuDuel: (humanDeck: string, cpuDeck: string, navi: boolean) => void;
+  /** 選んだ内容で始める */
+  onStart: (c: StartConfig) => void;
   onEditDecks: () => void;
   onImages: () => void;
+}
+
+/** メニューで選んだ始め方 */
+export interface StartConfig {
+  deckName: string;
+  /** 5 なら先攻、6 なら後攻 */
+  handSize: 5 | 6;
+  navi: boolean;
+  /** ランダムな初手・初手を選ぶ・ルートガイド */
+  method: 'random' | 'pick' | { guide: Guide };
+  /** CPU戦のCPUのデッキ（null はCPUなし） */
+  cpuDeck: string | null;
 }
 
 /** デッキの中で多く入っているモンスター（デッキの顔として表示） */
@@ -42,17 +50,17 @@ function keyCards(deck: DeckList): string[] {
     .map(([n]) => n);
 }
 
-type Step = 'top' | 'deck' | 'turn' | 'opponent' | 'start';
+type Step = 'top' | 'deck' | 'turn' | 'method' | 'opponent';
 const STEPS: { id: Step; label: string }[] = [
   { id: 'deck', label: 'デッキ' },
   { id: 'turn', label: '先攻・後攻' },
+  { id: 'method', label: '始め方' },
   { id: 'opponent', label: '相手' },
-  { id: 'start', label: '始め方' },
 ];
 
 /**
  * 起動時に出すメニュー画面。続きから遊ぶか、新しく始める場合は
- * デッキ → 先攻・後攻とナビ → 相手（CPUの有無・CPUのデッキ）→ 始め方（初手・ルートガイド）の順に1つずつ選ぶ
+ * デッキ → 先攻・後攻とナビ → 始め方（初手・ルートガイド）→ 相手（CPUの有無・CPUのデッキ）の順に1つずつ選ぶ
  */
 export function HomeMenu(p: Props) {
   const [step, setStep] = useState<Step>('top');
@@ -61,6 +69,7 @@ export function HomeMenu(p: Props) {
   const [navi, setNavi] = useState(true);
   const [cpuOn, setCpuOn] = useState(false);
   const [cpuDeck, setCpuDeck] = useState(p.builtinNames[0]);
+  const [method, setMethod] = useState<StartConfig['method']>('random');
   /** 名前を変えている途中のデッキの新しい名前（null は変えていない） */
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -79,6 +88,7 @@ export function HomeMenu(p: Props) {
       aria-pressed={d.name === deck.name}
       onClick={() => {
         setDeckName(d.name);
+        setMethod('random');
         setRenaming(null);
         setConfirmDelete(false);
       }}
@@ -92,13 +102,14 @@ export function HomeMenu(p: Props) {
     </button>
   );
 
+  // ルートガイドは先攻（ガイドの初手から）
+  const guide = typeof method === 'object' ? method.guide : null;
   // 選んだ内容（次の画面の上に出す）
   const summary = [
     p.nameOf(deck.name),
-    cpuOn ? '後攻（CPUが先攻）' : handSize === 5 ? '先攻' : '後攻',
-    navi ? 'ナビあり' : 'ナビなし',
-    cpuOn ? `CPU：${p.nameOf(cpuDeck)}` : 'CPUなし',
-  ].slice(0, stepIndex + 1);
+    `${guide || handSize === 5 ? '先攻' : '後攻'}・${navi ? 'ナビあり' : 'ナビなし'}`,
+    guide ? `ルートガイド：${guide.name}` : method === 'pick' ? '初手を選ぶ' : 'ランダムな初手',
+  ];
 
   if (step === 'top')
     return (
@@ -237,17 +248,54 @@ export function HomeMenu(p: Props) {
           </section>
         )}
 
+        {step === 'method' && (
+          <section className="step-body">
+            <h2>始め方</h2>
+            <button className={`choice-option ${method === 'random' ? 'on' : ''}`} onClick={() => setMethod('random')}>
+              <strong>ランダムな初手</strong>
+              <span>デッキをシャッフルして初手を引きます。</span>
+            </button>
+            <button className={`choice-option ${method === 'pick' ? 'on' : ''}`} onClick={() => setMethod('pick')}>
+              <strong>初手を選ぶ</strong>
+              <span>次の画面で初手のカードを選びます（残りはランダム）。</span>
+            </button>
+            {guides.length > 0 && (
+              <>
+                <h3>ルートガイドで練習（記事のルートを初手から順に・先攻）</h3>
+                <div className="home-guides">
+                  {guides.map((g) => (
+                    <button
+                      key={g.id}
+                      className={`guide-tile ${guide?.id === g.id ? 'on' : ''}`}
+                      onClick={() => setMethod({ guide: g })}
+                    >
+                      <strong>{g.name}</strong>
+                      <span>{g.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
         {step === 'opponent' && (
           <section className="step-body">
             <h2>相手</h2>
             <button className={`choice-option ${!cpuOn ? 'on' : ''}`} onClick={() => setCpuOn(false)}>
               <strong>CPUなし（一人回し）</strong>
-              <span>自分の展開を練習します。相手の盤面（妨害）は後からメニューで置けます。</span>
+              <span>
+                自分の展開を練習します。{!guide && handSize === 6 ? '後攻は自分のドローフェイズから始まります。' : ''}
+                相手の盤面（妨害）は後からメニューで置けます。
+              </span>
             </button>
             <button className={`choice-option ${cpuOn ? 'on' : ''}`} onClick={() => setCpuOn(true)}>
-              <strong>CPUあり（後攻で手札誘発の練習）</strong>
+              <strong>CPUあり</strong>
               <span>
-                CPUが先攻で最適なルートで展開します。CPUが効果を使うたびに手札誘発を使うか聞きます。CPUのターンの後、CPUの盤面を相手にあなたのターンを続けます（先攻・後攻の選択に関わらず後攻）。
+                {guide || handSize === 5
+                  ? 'あなたが先攻で盤面を作り、ターンを終えるとCPUが後攻で動きます。CPUがまくり札を使うたびに、あなたの盤面の妨害や手札誘発を使うか聞きます。'
+                  : 'CPUが先攻で最適なルートで展開します。CPUが効果を使うたびに手札誘発を使うか聞きます。CPUのターンの後、CPUの盤面を相手にあなたのターンを続けます。'}
+                止められたCPUは今の盤面からルートを探し直します。
               </span>
             </button>
             {cpuOn && (
@@ -267,43 +315,24 @@ export function HomeMenu(p: Props) {
                 </div>
               </>
             )}
+            <button
+              className="primary wide resume"
+              onClick={() =>
+                p.onStart({
+                  deckName: deck.name,
+                  handSize: guide ? 5 : handSize,
+                  navi,
+                  method,
+                  cpuDeck: cpuOn ? cpuDeck : null,
+                })
+              }
+            >
+              {method === 'pick' ? '初手を選ぶ画面へ' : cpuOn ? 'CPU戦を始める' : '始める'}
+            </button>
           </section>
         )}
 
-        {step === 'start' && (
-          <section className="step-body">
-            <h2>始め方</h2>
-            {cpuOn ? (
-              <button className="primary wide resume" onClick={() => p.onCpuDuel(deck.name, cpuDeck, navi)}>
-                CPU戦を始める
-              </button>
-            ) : (
-              <>
-                <div className="btn-grid">
-                  <button className="primary wide" onClick={() => p.onRandom(deck.name, handSize, navi)}>
-                    ランダムな初手で始める
-                  </button>
-                  <button onClick={() => p.onPickHand(deck.name)}>初手を選んで始める</button>
-                </div>
-                {guides.length > 0 && (
-                  <>
-                    <h3>ルートガイドで練習（記事のルートを初手から順に）</h3>
-                    <div className="home-guides">
-                      {guides.map((g) => (
-                        <button key={g.id} className="guide-tile" onClick={() => p.onGuide(g)}>
-                          <strong>{g.name}</strong>
-                          <span>{g.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </section>
-        )}
-
-        {step !== 'start' && (
+        {step !== 'opponent' && (
           <button className="primary wide resume" onClick={next}>
             次へ
           </button>

@@ -27,7 +27,7 @@ import { Board } from './Board';
 import { CardText, CardView, statLine } from './CardView';
 import { loadCurrent, loadRoutes, type SavedRoute, saveCurrent, saveRoutes, type SessionData } from './session';
 import { SetupDialog } from './SetupDialog';
-import { HomeMenu } from './HomeMenu';
+import { HomeMenu, type StartConfig } from './HomeMenu';
 import { OppPlaceSheet } from './OppPlaceSheet';
 import { OPP_PRESETS, oppPresetAction } from '../data/oppPresets';
 import { oppWouldRespond } from '../engine/oppAI';
@@ -171,6 +171,8 @@ export function App() {
   const [home, setHome] = useState(true);
   /** 「初手を選んで始める」で選んだデッキ */
   const [setupDeck, setSetupDeck] = useState<string | null>(null);
+  /** 初手を選ぶ画面の後に始めるCPU戦・ナビ・先攻後攻（メニューで選んだもの） */
+  const [setupPlan, setSetupPlan] = useState<{ cpuDeck: string | null; navi: boolean; handSize: 5 | 6 } | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
@@ -928,6 +930,55 @@ export function App() {
     }
   };
 
+  /**
+   * ゲームを始める。CPU戦ならプレイヤーの先攻・後攻に合わせてCPUを動かす：
+   * 後攻ならCPUの先攻ターンから（こちらは相手ターンとして見る）、先攻なら自分のターンを終えた後にCPUのターン
+   */
+  const launch = (s: SessionData, naviOn: boolean, cpuDeck: string | null) => {
+    if (cpuDeck && s.handSize === 6) {
+      const first = {
+        ...s,
+        handSize: 5 as const,
+        fixedHand: s.fixedHand.slice(0, 5),
+        actions: [{ type: 'END_TURN', toOpponent: true } as Action],
+      };
+      newGame(first, naviOn);
+      cpu.start(cpuDeck, randomSeed(), `${first.deckName}:${first.seed}`, false);
+      return;
+    }
+    newGame(s, naviOn);
+    if (cpuDeck) cpu.start(cpuDeck, randomSeed(), `${s.deckName}:${s.seed}`, true);
+  };
+
+  /** メニューで選んだ内容で始める */
+  const beginGame = (c: StartConfig) => {
+    if (typeof c.method === 'object') {
+      // ルートガイドは先攻（ガイドの初手）
+      const g = c.method.guide;
+      startGuide(g);
+      if (c.cpuDeck) cpu.start(c.cpuDeck, randomSeed(), `${g.deckName}:${g.seed}`, true);
+      return;
+    }
+    if (c.method === 'pick') {
+      setSetupDeck(c.deckName);
+      setSetupPlan({ cpuDeck: c.cpuDeck, navi: c.navi, handSize: c.handSize });
+      setShowSetup(true);
+      return;
+    }
+    launch(
+      {
+        deckName: c.deckName,
+        seed: randomSeed(),
+        fixedHand: [],
+        handSize: c.handSize,
+        strict: session.strict,
+        actions: [],
+      },
+      c.navi,
+      c.cpuDeck,
+    );
+  };
+
   const startGuide = (g: Guide) => {
     cpu.stop();
     setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
@@ -1364,11 +1415,11 @@ export function App() {
       {cpuDuel.prompt && (
         <>
           <div className="cpu-announce">CPU：{cpuDuel.prompt.step.text}</div>
-          <div className="ap-hint">手札誘発を使いますか？</div>
+          <div className="ap-hint">手札誘発・場の妨害を使いますか？</div>
           <div className="btn-row">
             {cpuDuel.prompt.options.map((o) => (
-              <button key={o.uid} className="primary" onClick={() => cpuDuel.choose(o)}>
-                {o.name}：{o.label}
+              <button key={`${o.uid}-${o.abilityId ?? o.kind}`} className="primary" onClick={() => cpuDuel.choose(o)}>
+                {o.name}（{o.from === 'hand' ? '手札' : '場'}）：{o.label}
               </button>
             ))}
             <button onClick={() => cpuDuel.choose(null)}>使わない</button>
@@ -1555,7 +1606,11 @@ export function App() {
             actionPanel
           )}
           {cpu.duel?.stage === 'human' && !busy && (
-            <div className="cpu-banner">CPU戦：あなたのターン（後攻）。CPUの盤面の妨害・手札誘発に注意</div>
+            <div className="cpu-banner">
+              {cpu.duel.cpuDone
+                ? `CPU戦：あなたのターン（${cpu.duel.humanFirst ? '先攻2ターン目' : '後攻'}）。CPUの盤面の妨害・手札誘発に注意`
+                : 'CPU戦：あなたの先攻。盤面を作ったらエンドフェイズで「相手ターンへ」→ CPU（後攻）のターン'}
+            </div>
           )}
           <div className="board-wrap">
             <Board
@@ -2051,33 +2106,7 @@ export function App() {
             resume={session.actions.length ? { deckName: deckLabel(deck.name), actions: session.actions.length } : null}
             guides={GUIDES}
             onResume={() => setHome(false)}
-            onRandom={(deckName, handSize, naviOn) =>
-              newGame(
-                { deckName, seed: randomSeed(), fixedHand: [], handSize, strict: session.strict, actions: [] },
-                naviOn,
-              )
-            }
-            onPickHand={(deckName) => {
-              setSetupDeck(deckName);
-              setShowSetup(true);
-            }}
-            onGuide={startGuide}
-            onCpuDuel={(humanDeck, cpuDeck, naviOn) => {
-              const seed = randomSeed();
-              newGame(
-                {
-                  deckName: humanDeck,
-                  seed,
-                  fixedHand: [],
-                  handSize: 5,
-                  strict: true,
-                  // 1ターン目はCPU（先攻）。こちらは相手ターンとして見る
-                  actions: [{ type: 'END_TURN', toOpponent: true }],
-                },
-                naviOn,
-              );
-              cpu.start(cpuDeck, randomSeed(), `${humanDeck}:${seed}`);
-            }}
+            onStart={beginGame}
             onEditDecks={() => setModal('decks')}
             onImages={() => setModal('images')}
           />
@@ -2089,11 +2118,13 @@ export function App() {
               ...session,
               seed: randomSeed(),
               ...(setupDeck && setupDeck !== session.deckName ? { deckName: setupDeck, fixedHand: [] } : {}),
+              ...(setupPlan ? { handSize: setupPlan.handSize } : {}),
             }}
             decks={allDecks}
             onClose={() => {
               setShowSetup(false);
               setSetupDeck(null);
+              setSetupPlan(null);
             }}
             onStart={(s, search) => {
               try {
@@ -2108,18 +2139,11 @@ export function App() {
                 setError((e as Error).message);
                 return;
               }
-              setSession(s);
-              setCoach(null);
-              setSelected(null);
-              setPending(null);
-              setRun(null);
-              setPile(null);
               setShowSetup(false);
               setSetupDeck(null);
-              setHome(false);
+              setSetupPlan(null);
               // 「開始して最適ルートを探す」はナビモードで始める
-              setNavi(search);
-              naviKey.current = '';
+              launch(s, search || !!setupPlan?.navi, setupPlan?.cpuDeck ?? null);
             }}
           />
         )}

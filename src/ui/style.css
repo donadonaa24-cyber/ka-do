@@ -2407,3 +2407,8 @@ button.danger {
   flex: 1;
   min-width: 0;
 }
+.guide-tile.on {
+  border-color: var(--gold);
+  background: rgba(242, 193, 78, 0.12);
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}

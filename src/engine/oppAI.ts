@@ -480,3 +480,16 @@ export function handTrapAbility(name: string): { id: string; label: string } | n
   const a = HAND_TRAP_ABILITIES.find((x) => x.card === name && HAND_TRAP_NAMES.has(name));
   return a ? { id: a.id, label: a.label } : null;
 }
+
+/** チェーンの一番上に使える妨害の一覧（CPU戦でプレイヤーが選ぶ）。uid は使うカード */
+export function oppAbilityChoices(s: GameState, ctx: Ctx): { id: string; label: string; uid: string }[] {
+  const top = s.chain[s.chain.length - 1];
+  if (!top || top.opp) return [];
+  const out: { id: string; label: string; uid: string }[] = [];
+  for (const a of ABILITIES) {
+    if (a.speed < top.speed) continue;
+    const found = a.find(s, ctx, top);
+    if (found) out.push({ id: a.id, label: a.label, uid: found.uid });
+  }
+  return out;
+}

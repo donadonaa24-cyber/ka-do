@@ -45,7 +45,9 @@ describe('ゲーム開始', () => {
     let s = createGame(TEST_DECK, ctx, 1, [], 6);
     expect(s.hand).toHaveLength(6);
     expect(s.turn).toBe(2);
-    s = run(s, { type: 'NEXT_PHASE' });
+    // ドローフェイズから始まる
+    expect(s.phase).toBe('DP');
+    s = run(s, { type: 'NEXT_PHASE', to: 'M1' }, { type: 'NEXT_PHASE' });
     expect(s.phase).toBe('BP');
   });
 
