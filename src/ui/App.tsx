@@ -44,8 +44,9 @@ import type { PvpEntry } from '../engine/pvp';
 import { useDrag } from './useDrag';
 import {
   BUILTIN_IMAGES,
-  CARD_BACK,
+  backOf,
   CardFoilContext,
+  deckBackKey,
   CardImageContext,
   type CardFoils,
   FOIL_STYLES,
@@ -233,6 +234,8 @@ export function App() {
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
   /** 表示する画像：埋め込みの画像に、自分で設定した画像を上書き */
   const shownImages = useMemo(() => ({ ...BUILTIN_IMAGES, ...images }), [images]);
+  /** カードの裏面：自分のデッキの裏面、相手（CPU戦ではCPUのデッキ）の裏面 */
+  const myBack = backOf(images, session.deckName);
   /** キラカードにしたカード */
   const [foils, setFoilsState] = useState<CardFoils>(() => loadFoils());
   const setFoil = (id: string, style: CardFoils[string] | null) => {
@@ -334,6 +337,7 @@ export function App() {
     paused: home,
   });
   const cpuTurn = !!cpu.duel?.cpuTurn;
+  const oppBack = backOf(images, cpu.duel?.cpuDeckName);
 
   // 通信対戦
   const pvpHook = usePvpDuel({
@@ -1066,6 +1070,16 @@ export function App() {
       if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
       setCustomDecks(list);
       if (session.deckName === name) setSession({ ...session, deckName: next });
+      // デッキの裏面の画像も新しい名前に付け替える
+      const back = images[deckBackKey(name)];
+      if (back && saveImage(deckBackKey(next), back)) {
+        removeImage(deckBackKey(name));
+        setImages((m) => {
+          const n = { ...m, [deckBackKey(next)]: back };
+          delete n[deckBackKey(name)];
+          return n;
+        });
+      }
       return next;
     }
     const next = uniqueName(wanted, others);
@@ -1816,7 +1830,7 @@ export function App() {
     <CardImageContext.Provider value={shownImages}>
       <CardFoilContext.Provider value={foils}>
         <div
-          className={`app motion-${motionMode} ${images[CARD_BACK] ? 'has-back' : ''} ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
+          className={`app motion-${motionMode} ${myBack ? 'has-back' : ''} ${oppBack ? 'has-opp-back' : ''} ${busy ? 'busy' : ''} ${drag ? 'dragging' : ''} ${showOpp ? 'with-opp' : ''} ${
             showStepPopup && !dockRight ? 'with-popup' : ''
           }`}
           style={
@@ -1825,7 +1839,8 @@ export function App() {
               '--hand-h': `${handHeight}px`,
               '--coach-h': `${coachHeight}px`,
               '--hud-h': `${hudHeight}px`,
-              ...(images[CARD_BACK] ? { '--back-img': `url(${images[CARD_BACK]})` } : {}),
+              ...(myBack ? { '--back-img': `url(${myBack})` } : {}),
+              ...(oppBack ? { '--opp-back-img': `url(${oppBack})` } : {}),
             } as React.CSSProperties
           }
           onClickCapture={onClickCapture}
@@ -2297,12 +2312,18 @@ export function App() {
                     </button>
                     <button
                       onClick={() => {
-                        setSession((s) => ({ ...s, actions: [] }));
+                        // CPU戦なら、CPUも同じ初手で最初から（後攻なら相手ターンから始める）
+                        const d = cpu.duel;
+                        setSession((s) => ({
+                          ...s,
+                          actions: d && !d.humanFirst ? [{ type: 'END_TURN', toOpponent: true } as Action] : [],
+                        }));
+                        if (d) cpu.restart();
                         setModal(null);
                       }}
-                      disabled={session.actions.length === 0}
+                      disabled={session.actions.length === 0 || pvpOn}
                     >
-                      同じ初手で最初から
+                      同じ初手で最初から{cpu.duel ? '（CPU戦）' : ''}
                     </button>
                     {pvpOn && (
                       <button

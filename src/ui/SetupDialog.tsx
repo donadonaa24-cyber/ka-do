@@ -53,10 +53,20 @@ export function SetupDialog({ initial, decks, onStart, onClose }: Props) {
         </div>
 
         <div className="seg" role="tablist">
-          <button role="tab" aria-selected={mode === 'pick'} className={mode === 'pick' ? 'on' : ''} onClick={() => setMode('pick')}>
+          <button
+            role="tab"
+            aria-selected={mode === 'pick'}
+            className={mode === 'pick' ? 'on' : ''}
+            onClick={() => setMode('pick')}
+          >
             手札を選ぶ
           </button>
-          <button role="tab" aria-selected={mode === 'random'} className={mode === 'random' ? 'on' : ''} onClick={() => setMode('random')}>
+          <button
+            role="tab"
+            aria-selected={mode === 'random'}
+            className={mode === 'random' ? 'on' : ''}
+            onClick={() => setMode('random')}
+          >
             ランダムに引く
           </button>
         </div>
@@ -96,7 +106,9 @@ export function SetupDialog({ initial, decks, onStart, onClose }: Props) {
               <input id="seed" type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} />
               <button onClick={() => setSeed(randomSeed())}>ランダム</button>
             </label>
-            <p className="note">同じシードなら同じ初手・同じデッキ順になります。下で選んだカードは必ず初手に入ります。</p>
+            <p className="note">
+              同じシードなら同じ初手・同じデッキ順になります。下で選んだカードは必ず初手に入ります。
+            </p>
           </>
         )}
 
@@ -124,7 +136,11 @@ export function SetupDialog({ initial, decks, onStart, onClose }: Props) {
                 −
               </button>
               <span className="count">{picked(id)}</span>
-              <button onClick={() => add(id)} disabled={fixedHand.length >= handSize || picked(id) >= n} aria-label="増やす">
+              <button
+                onClick={() => add(id)}
+                disabled={fixedHand.length >= handSize || picked(id) >= n}
+                aria-label="増やす"
+              >
                 ＋
               </button>
             </div>

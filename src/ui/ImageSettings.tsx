@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CARD_DB, EDITABLE_CARDS } from '../data';
 import type { DeckList } from '../engine/types';
 import { CardView } from './CardView';
-import { CARD_BACK, type CardImages, matchCard, normalizeName } from './cardImages';
+import { backOf, CARD_BACK, type CardImages, deckBackKey, matchCard, normalizeName } from './cardImages';
 
 interface Props {
   /** 自分で設定した画像 */
@@ -44,6 +44,9 @@ export function ImageSettings({ images, shown, builtin, decks, current, onSet, o
   };
 
   const all = tab === ALL;
+  /** 設定する裏面（すべてのカードのタブでは共通、デッキのタブではそのデッキ） */
+  const backKey = all ? CARD_BACK : deckBackKey(tab);
+  const backPreview = all ? images[CARD_BACK] : backOf(images, tab);
   /** タブの中の全カード（検索・未設定の絞り込み前） */
   const tabIds = useMemo(() => {
     const deck = decks.find((d) => d.name === tab);
@@ -67,26 +70,35 @@ export function ImageSettings({ images, shown, builtin, decks, current, onSet, o
         画像はカードごとに保存され、どのデッキで使っても同じ画像が表示されます（このブラウザの中にだけ保存）。
       </p>
 
-      {/* カードの裏面（デッキ・EXデッキ・裏側のカード・相手の手札） */}
+      {/* カードの裏面：「すべてのカード」のタブでは全デッキ共通、デッキのタブではそのデッキだけ */}
       <div className="back-setting">
-        <div className="card f-back back-preview" />
+        <div
+          className="card f-back back-preview"
+          style={backPreview ? { backgroundImage: `url(${backPreview})`, backgroundSize: 'cover' } : undefined}
+        />
         <div className="grow">
-          <strong>カードの裏面</strong>
-          <p className="note">デッキ・EXデッキ・裏側のカード・相手の手札に使う画像です。</p>
+          <strong>カードの裏面{all ? '（すべてのデッキ共通）' : `（${tab}）`}</strong>
+          <p className="note">
+            {all
+              ? 'デッキ・EXデッキ・CPUの伏せカード・相手の手札に使う画像です。デッキごとに変えるには、下のタブでデッキを選んでください。'
+              : 'このデッキで遊ぶ時の裏面です（CPU戦では、CPUのデッキの裏面が相手側に出ます）。設定しなければ共通の裏面を使います。'}
+          </p>
           <div className="btn-row">
             <label className="file-btn">
-              {images[CARD_BACK] ? '裏面の画像を変更' : '裏面の画像を設定'}
+              {images[backKey] ? '裏面の画像を変更' : '裏面の画像を設定'}
               <input
                 type="file"
                 accept="image/*"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f) void onSet(CARD_BACK, f);
+                  if (f) void onSet(backKey, f);
                   e.target.value = '';
                 }}
               />
             </label>
-            {images[CARD_BACK] && <button onClick={() => onClear(CARD_BACK)}>最初の裏面に戻す</button>}
+            {images[backKey] && (
+              <button onClick={() => onClear(backKey)}>{all ? '最初の裏面に戻す' : '共通の裏面に戻す'}</button>
+            )}
           </div>
         </div>
       </div>

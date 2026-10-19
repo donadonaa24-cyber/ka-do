@@ -478,5 +478,10 @@ export function useCpuDuel(opts: {
         cpuNote,
       }
     : null;
-  return { duel: value, start, stop };
+  /** 同じCPUのデッキ・同じCPUの初手で、CPU戦を最初からやり直す */
+  const restart = useCallback(() => {
+    if (duel) start(duel.cpuDeckName, duel.seed, owner, !!duel.humanFirst);
+  }, [duel, owner, start]);
+
+  return { duel: value, start, stop, restart };
 }

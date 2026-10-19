@@ -78,7 +78,7 @@ export function CardView({
   const isDef = inst?.position === 'def';
   const cls = [
     'card',
-    faceDown && !showFaceDown ? 'f-back' : frameClass(def),
+    faceDown && !showFaceDown ? `f-back ${inst?.opp ? 'opp-back' : ''}` : frameClass(def),
     faceDown ? 'face-down' : '',
     isDef ? 'def-pos' : '',
     selected ? 'selected' : '',

@@ -139,7 +139,7 @@ export function Board({
         {top ? (
           <CardView def={getDef(state, ctx, top)} inst={state.cards[top]} uid={top} />
         ) : (
-          <div className={`card ${zone === 'ohand' && list.length ? 'f-back' : 'empty-pile'}`} />
+          <div className={`card ${zone === 'ohand' && list.length ? 'f-back opp-back' : 'empty-pile'}`} />
         )}
         <span className="pile-count">
           {label} {list.length}
@@ -150,7 +150,7 @@ export function Board({
   /** 相手のデッキ・EXデッキ（CPU戦・通信対戦では枚数を出す。練習では枚数は分からない） */
   const oppStack = (count: number | undefined, label: string) => (
     <div className="zone pile opp-zone">
-      <div className={`card ${count === 0 ? 'empty-pile' : 'f-back'}`} />
+      <div className={`card ${count === 0 ? 'empty-pile' : 'f-back opp-back'}`} />
       <span className="pile-count">
         {label} {count ?? '-'}
       </span>
@@ -178,7 +178,7 @@ export function Board({
             aria-label={`相手の手札 ${oppHand.length}枚`}
           >
             {oppHand.slice(0, 10).map((u) => (
-              <div key={u} className="opp-hand-card card f-back" data-uid={u} />
+              <div key={u} className="opp-hand-card card f-back opp-back" data-uid={u} />
             ))}
             <span className="pile-count">相手手札 {oppHand.length}</span>
           </div>

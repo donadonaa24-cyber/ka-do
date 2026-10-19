@@ -9,8 +9,13 @@ const WIDTH = 240;
 
 export type CardImages = Record<string, string>;
 
-/** カードの裏面の画像（カード画像と同じ場所に、この名前で保存する） */
+/** カードの裏面の画像（カード画像と同じ場所に、この名前で保存する）。全デッキ共通 */
 export const CARD_BACK = '__back';
+/** デッキごとの裏面の画像の保存名 */
+export const deckBackKey = (deckName: string) => `${CARD_BACK}:${deckName}`;
+/** そのデッキで使う裏面（デッキの裏面 → 共通の裏面。どちらも無ければ最初の裏面） */
+export const backOf = (images: CardImages, deckName: string | null | undefined): string | undefined =>
+  (deckName ? images[deckBackKey(deckName)] : undefined) ?? images[CARD_BACK];
 
 export const CardImageContext = createContext<CardImages>({});
 

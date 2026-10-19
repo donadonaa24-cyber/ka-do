@@ -2986,8 +2986,12 @@ button.danger {
 }
 
 /* ===== カードの裏面（画像の設定で変えた時） ===== */
-.app.has-back .f-back {
+.app.has-back .f-back:not(.opp-back) {
   background: #2b1a0c var(--back-img) center / cover no-repeat;
+}
+/* 相手のカードの裏面（CPU戦ではCPUのデッキの裏面） */
+.app.has-opp-back .f-back.opp-back {
+  background: #2b1a0c var(--opp-back-img) center / cover no-repeat;
 }
 .back-setting {
   display: flex;
