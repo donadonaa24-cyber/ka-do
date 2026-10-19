@@ -9,6 +9,10 @@ interface Props {
   /** 既製のデッキの名前（自分で作ったデッキと分けて表示する） */
   builtinNames: string[];
   current: string;
+  /** デッキの表示名 */
+  nameOf: (name: string) => string;
+  /** デッキの名前を変える（変えた後のデッキの名前を返す） */
+  onRename: (name: string, newName: string) => string;
   /** 続きから再開できるゲーム（操作がある時だけ） */
   resume: { deckName: string; actions: number } | null;
   guides: Guide[];
@@ -55,6 +59,8 @@ export function HomeMenu(p: Props) {
   const [navi, setNavi] = useState(true);
   const [cpuOn, setCpuOn] = useState(false);
   const [cpuDeck, setCpuDeck] = useState(p.builtinNames[0]);
+  /** 名前を変えている途中のデッキの新しい名前（null は変えていない） */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const deck = p.decks.find((d) => d.name === deckName) ?? p.decks[0];
   const guides = p.guides.filter((g) => g.deckName === deck.name);
   const builtin = p.decks.filter((d) => p.builtinNames.includes(d.name));
@@ -68,9 +74,12 @@ export function HomeMenu(p: Props) {
       key={d.name}
       className={`deck-tile ${d.name === deck.name ? 'on' : ''}`}
       aria-pressed={d.name === deck.name}
-      onClick={() => setDeckName(d.name)}
+      onClick={() => {
+        setDeckName(d.name);
+        setRenaming(null);
+      }}
     >
-      <strong>{d.name}</strong>
+      <strong>{p.nameOf(d.name)}</strong>
       <span className="deck-count">
         メイン{d.main.length}・EX{d.extra.length}
         {d.side?.length ? `・サイド${d.side.length}` : ''}
@@ -81,10 +90,10 @@ export function HomeMenu(p: Props) {
 
   // 選んだ内容（次の画面の上に出す）
   const summary = [
-    deck.name,
+    p.nameOf(deck.name),
     cpuOn ? '後攻（CPUが先攻）' : handSize === 5 ? '先攻' : '後攻',
     navi ? 'ナビあり' : 'ナビなし',
-    cpuOn ? `CPU：${cpuDeck}` : 'CPUなし',
+    cpuOn ? `CPU：${p.nameOf(cpuDeck)}` : 'CPUなし',
   ].slice(0, stepIndex + 1);
 
   if (step === 'top')
@@ -100,10 +109,6 @@ export function HomeMenu(p: Props) {
           <button className={`wide resume ${p.resume ? '' : 'primary'}`} onClick={() => setStep('deck')}>
             新しく始める
           </button>
-          <section className="btn-grid">
-            <button onClick={p.onEditDecks}>デッキ編集・作成</button>
-            <button onClick={p.onImages}>カード画像の設定</button>
-          </section>
           <p className="note build-time">
             ページの更新：
             {new Date(__BUILD_TIME__).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' })}
@@ -130,8 +135,8 @@ export function HomeMenu(p: Props) {
         {stepIndex > 0 && <p className="step-summary">{summary.slice(0, stepIndex).join(' ／ ')}</p>}
 
         {step === 'deck' && (
-          <section>
-            <h2>デッキを選ぶ</h2>
+          <section className="step-body">
+            <h2>保存されたデッキを選ぶ</h2>
             <div className="deck-tiles">{builtin.map(deckButton)}</div>
             {custom.length > 0 && (
               <>
@@ -139,6 +144,40 @@ export function HomeMenu(p: Props) {
                 <div className="deck-tiles">{custom.map(deckButton)}</div>
               </>
             )}
+            {renaming === null ? (
+              <div className="btn-row">
+                <button onClick={() => setRenaming(p.nameOf(deck.name))}>
+                  「{p.nameOf(deck.name)}」の名前を変える
+                </button>
+              </div>
+            ) : (
+              <form
+                className="rename-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setDeckName(p.onRename(deck.name, renaming));
+                  setRenaming(null);
+                }}
+              >
+                <input
+                  value={renaming}
+                  onChange={(e) => setRenaming(e.target.value)}
+                  aria-label="新しいデッキ名"
+                  autoFocus
+                  maxLength={30}
+                />
+                <button type="submit" className="primary">
+                  変更
+                </button>
+                <button type="button" onClick={() => setRenaming(null)}>
+                  やめる
+                </button>
+              </form>
+            )}
+            <div className="btn-grid">
+              <button onClick={p.onEditDecks}>デッキ編集・作成</button>
+              <button onClick={p.onImages}>カード画像の設定</button>
+            </div>
           </section>
         )}
 
@@ -198,7 +237,7 @@ export function HomeMenu(p: Props) {
                       aria-selected={cpuDeck === d.name}
                       onClick={() => setCpuDeck(d.name)}
                     >
-                      {d.name}
+                      {p.nameOf(d.name)}
                     </button>
                   ))}
                 </div>

@@ -12,6 +12,8 @@ interface Props {
   onSave: (decks: SavedDeck[]) => void;
   onPlay: (deckName: string) => void;
   onClose: () => void;
+  /** デッキの表示名（既製のデッキは名前を変えられる） */
+  nameOf?: (name: string) => string;
 }
 
 type Filter = 'all' | 'monster' | 'spell' | 'trap' | 'extra';
@@ -39,7 +41,7 @@ function countOf(list: string[], id: string) {
   return list.filter((x) => x === id).length;
 }
 
-export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
+export function DeckEditor({ decks, current, onSave, onPlay, onClose, nameOf = (n) => n }: Props) {
   const [editing, setEditing] = useState<SavedDeck | null>(null);
   /** 編集画面のタブ：メイン・EX・サイドの中身と、全カードからの追加 */
   const [tab, setTab] = useState<'main' | 'extra' | 'side' | 'add'>('main');
@@ -131,7 +133,7 @@ export function DeckEditor({ decks, current, onSave, onPlay, onClose }: Props) {
       return (
         <div key={custom?.id ?? d.name} className={`deck-row ${d.name === current ? 'current' : ''}`}>
           <div className="grow">
-            <strong>{d.name}</strong>
+            <strong>{nameOf(d.name)}</strong>
             <span className="meta">
               {custom ? '' : '既製・'}メイン{d.main.length}／EX{d.extra.length}
               {d.side?.length ? `／サイド${d.side.length}` : ''}

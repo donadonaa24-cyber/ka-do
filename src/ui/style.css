@@ -2398,3 +2398,12 @@ button.danger {
   background: rgba(242, 193, 78, 0.12);
   box-shadow: 0 0 0 1px var(--gold) inset;
 }
+.rename-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.rename-row input {
+  flex: 1;
+  min-width: 0;
+}

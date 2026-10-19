@@ -31,6 +31,28 @@ export function saveDecks(decks: SavedDeck[]): boolean {
   }
 }
 
+const ALIAS_KEY = 'ygo-solo:deck-names';
+
+/** 既製のデッキの表示名（中身やルートガイドとの対応は元の名前のまま） */
+export function loadDeckAliases(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(ALIAS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    return map && typeof map === 'object' ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveDeckAliases(map: Record<string, string>): boolean {
+  try {
+    localStorage.setItem(ALIAS_KEY, JSON.stringify(map));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function newDeckId(): string {
   return `deck-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
@@ -55,7 +77,9 @@ export function deckProblems(deck: DeckList, db: Record<string, CardDef>): strin
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   for (const [name, n] of counts) if (n > 3) out.push(`${name}が${n}枚です（同じカードは3枚まで）`);
-  if (deck.main.some((id) => db[id] && isExtraDeckCard(db[id]))) out.push('メインデッキにEXデッキのカードが入っています');
-  if (deck.extra.some((id) => db[id] && !isExtraDeckCard(db[id]))) out.push('EXデッキにメインデッキのカードが入っています');
+  if (deck.main.some((id) => db[id] && isExtraDeckCard(db[id])))
+    out.push('メインデッキにEXデッキのカードが入っています');
+  if (deck.extra.some((id) => db[id] && !isExtraDeckCard(db[id])))
+    out.push('EXデッキにメインデッキのカードが入っています');
   return out;
 }

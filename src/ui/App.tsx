@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BUILTIN_DECKS, CARD_DB, CARD_SCRIPTS } from '../data';
 import { DeckEditor } from './DeckEditor';
-import { loadDecks, type SavedDeck, saveDecks } from './deckStore';
+import { loadDeckAliases, loadDecks, type SavedDeck, saveDeckAliases, saveDecks, uniqueName } from './deckStore';
 import {
   type Action,
   applyAction,
@@ -205,6 +205,9 @@ export function App() {
     [session.strict],
   );
   const [customDecks, setCustomDecks] = useState<SavedDeck[]>(() => loadDecks());
+  /** 既製のデッキの表示名（名前を変えたもの） */
+  const [deckAliases, setDeckAliases] = useState<Record<string, string>>(() => loadDeckAliases());
+  const deckLabel = (name: string) => deckAliases[name] ?? name;
   const allDecks = useMemo(() => [...BUILTIN_DECKS, ...customDecks], [customDecks]);
   const deck = allDecks.find((d) => d.name === session.deckName) ?? BUILTIN_DECKS[0];
 
@@ -890,6 +893,29 @@ export function App() {
     setModal(null);
   };
 
+  /** デッキの名前を変える。自分のデッキは名前そのものを、既製のデッキは表示名を変える */
+  const renameDeck = (name: string, input: string): string => {
+    const wanted = input.trim();
+    if (!wanted) return name;
+    const others = allDecks.filter((d) => d.name !== name).flatMap((d) => [d.name, deckLabel(d.name)]);
+    const custom = customDecks.find((d) => d.name === name);
+    if (custom) {
+      const next = uniqueName(wanted, [...others, ...BUILTIN_DECKS.map((d) => d.name)]);
+      const list = customDecks.map((d) => (d.id === custom.id ? { ...d, name: next } : d));
+      if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
+      setCustomDecks(list);
+      if (session.deckName === name) setSession({ ...session, deckName: next });
+      return next;
+    }
+    const next = uniqueName(wanted, others);
+    const map = { ...deckAliases };
+    if (next === name) delete map[name];
+    else map[name] = next;
+    saveDeckAliases(map);
+    setDeckAliases(map);
+    return name;
+  };
+
   const startGuide = (g: Guide) => {
     cpu.stop();
     setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
@@ -1437,7 +1463,7 @@ export function App() {
         <header className="hud">
           <div className="hud-status">
             <button className="chip deck-chip" onClick={() => setHome(true)} aria-label="メニュー画面（デッキ選択）">
-              {deck.name}
+              {deckLabel(deck.name)}
             </button>
             <span className="chip">T{state.turn}</span>
             <span className={`chip phase ${state.opponentTurn ? 'opp' : ''}`}>
@@ -2007,7 +2033,9 @@ export function App() {
             decks={allDecks}
             builtinNames={BUILTIN_DECKS.map((d) => d.name)}
             current={deck.name}
-            resume={session.actions.length ? { deckName: deck.name, actions: session.actions.length } : null}
+            nameOf={deckLabel}
+            onRename={renameDeck}
+            resume={session.actions.length ? { deckName: deckLabel(deck.name), actions: session.actions.length } : null}
             guides={GUIDES}
             onResume={() => setHome(false)}
             onRandom={(deckName, handSize, naviOn) =>
@@ -2089,9 +2117,17 @@ export function App() {
             <DeckEditor
               decks={customDecks}
               current={deck.name}
+              nameOf={deckLabel}
               onSave={(list) => {
                 if (!saveDecks(list)) setError('ブラウザの保存容量が足りず、デッキを保存できませんでした');
                 setCustomDecks(list);
+                // 使っていたデッキの名前を変えた場合は、遊んでいるゲームもその名前で続ける
+                const before = customDecks.find((d) => d.name === session.deckName);
+                const after = before && list.find((d) => d.id === before.id);
+                if (after && after.name !== before.name) {
+                  setSession({ ...session, deckName: after.name });
+                  return;
+                }
                 // 使っていたデッキを消した場合は既製のデッキに戻す
                 if (![...BUILTIN_DECKS, ...list].some((d) => d.name === session.deckName)) {
                   setSession({ ...defaultSession(), deckName: BUILTIN_DECKS[0].name });
