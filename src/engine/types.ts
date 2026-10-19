@@ -137,6 +137,10 @@ export interface CardInstance {
   entryId: number;
   /** 召喚・特殊召喚でフィールドに出た時の entryId（効果で除外されて戻っただけなら一致しない） */
   summonedEntry: number | null;
+  /** CPU戦：CPUのゲームでのカード（相手の盤面に写したカードの対応） */
+  syncKey?: string;
+  /** 効果が無効になっているターン（エフェクト・ヴェーラー・無限泡影など） */
+  negatedTurn?: number;
   /** タイミングを逃す判定：このカードに最後に何かが起きた処理のまとまり */
   eventGroup?: number;
   /** 最後に召喚・特殊召喚したターン（フィールドを離れても残る。「召喚した時に適用する」効果の判定用） */
@@ -193,6 +197,8 @@ export interface ChainLink {
   target?: string;
   /** 発動・効果が無効にされた（destroy：無効にして破壊） */
   negated?: 'destroy' | 'effect';
+  /** 発動した場所（hand / monster / spelltrap / field-zone / gy / banished） */
+  from?: string;
 }
 
 /** 効果で得た追加の召喚権・リリースなし召喚 */
@@ -294,6 +300,10 @@ export interface GameState {
   spellActivatedThisTurn: boolean;
   /** このターンまで、自分のモンスターは直接攻撃できない（Ｓ：Ｐリトルナイト①・マインドフォースなど） */
   noDirectAttackUntil?: number;
+  /** デッキから手札に加えられないターン（ドロール＆ロックバード） */
+  noDeckToHandTurn?: number;
+  /** ドロー以外でデッキから手札に加えたターン（ドロール＆ロックバードの発動条件） */
+  deckToHandTurn?: number;
   /** 戦闘中（攻撃宣言からダメージステップ終了まで） */
   battle?: Battle | null;
   /** タイミングを逃す判定：処理のまとまりの番号と、最後に何かが起きたまとまり */

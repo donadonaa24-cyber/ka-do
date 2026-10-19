@@ -10,7 +10,7 @@ import {
   missedTiming,
 } from './game';
 import { oppResponse, resolveOppLink } from './oppAI';
-import type { EffectDef, Env, Step } from './scripts';
+import { type EffectDef, type Env, effectText, type Step } from './scripts';
 import type { CardDef, GameState, Location } from './types';
 
 /** 実行中の効果処理。途中の盤面（temp）を見ながら1ステップずつ選ばせる */
@@ -43,6 +43,8 @@ export interface Running {
   feasible?: boolean;
   /** 選べるカードが無く、効果を処理できなかった（不発） */
   fizzled?: boolean;
+  /** 発動した場所（相手の妨害の判定に使う） */
+  from?: string;
 }
 
 /** ステップに渡す盤面の見え方（前のステップで選んだカードを含む） */
@@ -90,21 +92,11 @@ export function effectAvailable(state: GameState, uid: string, effect: EffectDef
   return true;
 }
 
-/** カードテキストの、その効果（①②…）の部分 */
-function effectText(def: CardDef, effect: EffectDef): string {
-  const n = effect.label.match(/^[①-⑳]/)?.[0];
-  if (!n) return '';
-  const i = def.text.indexOf(`${n}：`);
-  if (i < 0) return '';
-  const rest = def.text.slice(i + 2);
-  const j = rest.search(/[①-⑳]：/);
-  return j < 0 ? rest : rest.slice(0, j);
-}
-
 /** 「このカードが召喚した時に発動できる」：召喚の直後でないとタイミングを逃す任意効果 */
 export function isTokiTrigger(def: CardDef, effect: EffectDef): boolean {
   if (!effect.onSummon || effect.applied) return false;
-  const t = effectText(def, effect);
+  // 番号の無い効果は対象外（全文には別の効果の「時に発動できる」が含まれるため）
+  const t = /^[①-⑳]/.test(effect.label) ? effectText(def.text, effect.label) : '';
   return /時に発動できる/.test(t) && !/場合に発動できる/.test(t);
 }
 
@@ -228,6 +220,9 @@ export function startEffect(
           'ダメージステップ中に発動できるのは、攻撃力・守備力を変える効果やダメージ計算時の効果、カウンター罠だけです',
       };
   }
+  // 効果を無効にされたカード（エフェクト・ヴェーラー・無限泡影など）は、このターン効果を発動できない
+  if (ctx.options.strict && state.cards[uid]?.negatedTurn === state.turn && isMonsterZone(findLocation(state, uid)))
+    return { kind: 'error', error: 'このカードの効果はこのターン無効になっています' };
   // 「召喚した時に発動できる」任意効果は、召喚の後に別の何かが起きるとタイミングを逃す
   if (ctx.options.strict && isTokiTrigger(env.def(uid), effect) && missedTiming(state, uid))
     return {
@@ -287,6 +282,7 @@ export function startEffect(
       mode: 0,
       chainMode: probe ? 'never' : state.chain?.length ? 'force' : chainMode,
       resolving: false,
+      from: effectLocation(state, uid) ?? undefined,
     },
     ctx,
   );
@@ -408,6 +404,7 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
     stepStart: run.stepIndex,
     speed,
     label: run.effect.label,
+    from: run.from,
   };
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };

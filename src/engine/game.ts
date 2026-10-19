@@ -103,6 +103,27 @@ export type Action =
   | { type: 'BANISH_UNTIL_DAMAGE_END'; uid: string }
   /** 効果処理の区切り（タイミングを逃す判定用） */
   | { type: 'TIMING' }
+  /** CPU戦：CPUの盤面（フィールド・墓地・除外・手札）を相手の盤面に写す */
+  | {
+      type: 'OPP_SYNC';
+      cards: {
+        key: string;
+        defId: string;
+        zone: 'omz' | 'oemz' | 'ostz' | 'ofz' | 'ogy' | 'obanished' | 'ohand';
+        index?: number;
+        faceUp: boolean;
+        position: BattlePosition;
+        equipTo?: string;
+        mods?: Partial<
+          Pick<CardInstance, 'atkMod' | 'defMod' | 'turnAtkMod' | 'turnDefMod' | 'atkSet' | 'equipAtk' | 'equipDef'>
+        >;
+      }[];
+      lp?: number;
+    }
+  /** このターン、そのカードの効果を無効にする */
+  | { type: 'NEGATE_CARD'; uid: string; by: string }
+  /** このターン、デッキからカードを手札に加えられない（ドロール＆ロックバード） */
+  | { type: 'NO_DECK_TO_HAND'; by: string }
   | { type: 'SHUFFLE_DECK' }
   | { type: 'ATTACH'; uid: string; target: string }
   | { type: 'DETACH'; target: string; uid: string }
@@ -171,6 +192,8 @@ export type Action =
       opp?: string;
       targetLink?: number;
       target?: string;
+      /** 発動した場所 */
+      from?: string;
     }
   /** チェーン上の効果の発動・効果を無効にする（相手の妨害の処理） */
   | { type: 'CHAIN_NEGATE'; index: number; mode: 'destroy' | 'effect'; by: string }
@@ -845,6 +868,11 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   const from = findLocation(state, uid);
   const leavingField = isOnField(from) && !isOnField(to);
   if (!opts.noEvent) markEvent(state, uid);
+  if (from?.zone === 'deck' && to.zone === 'hand') {
+    if (state.noDeckToHandTurn === state.turn && ctx.options.strict)
+      fail('ドロール＆ロックバードの効果で、このターンはデッキからカードを手札に加えられません');
+    state.deckToHandTurn = state.turn;
+  }
 
   if (from && isMonsterZone(from) && !isMonsterZone(to)) {
     for (const mat of [...inst.overlay]) {
@@ -1489,6 +1517,68 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     case 'TIMING':
       state.timingGroup = (state.timingGroup ?? 0) + 1;
       return;
+    case 'OPP_SYNC': {
+      const o = oppOf(state);
+      const byKey = new Map<string, string>();
+      for (const [u, inst] of Object.entries(state.cards)) if (inst.opp && inst.syncKey) byKey.set(inst.syncKey, u);
+      const keep = new Set(action.cards.map((c) => c.key));
+      for (const [k, u] of byKey)
+        if (!keep.has(k)) {
+          detach(state, u);
+          delete state.cards[u];
+          byKey.delete(k);
+        }
+      // 写したカードを一度ゾーンから外して、並べ直す
+      const synced = new Set(byKey.values());
+      const clear = (arr: (string | null)[]) => arr.forEach((u, i) => u && synced.has(u) && (arr[i] = null));
+      clear(o.mz);
+      clear(o.emz!);
+      clear(o.stz);
+      if (o.fz && synced.has(o.fz)) o.fz = null;
+      o.gy = o.gy.filter((u) => !synced.has(u));
+      o.banished = o.banished.filter((u) => !synced.has(u));
+      o.hand = o.hand.filter((u) => !synced.has(u));
+      for (const c of action.cards) {
+        let uid = byKey.get(c.key);
+        if (!uid) {
+          uid = `o${state.nextUid++}`;
+          state.cards[uid] = { ...newInstance(uid, c.defId), opp: true, syncKey: c.key };
+          state.cards[uid].entryId = state.nextUid++;
+          state.cards[uid].enteredTurn = state.turn;
+          byKey.set(c.key, uid);
+        }
+        const inst = state.cards[uid];
+        if (c.zone === 'omz') o.mz[c.index!] = uid;
+        else if (c.zone === 'oemz') o.emz![c.index!] = uid;
+        else if (c.zone === 'ostz') o.stz[c.index!] = uid;
+        else if (c.zone === 'ofz') o.fz = uid;
+        else if (c.zone === 'ogy') o.gy.push(uid);
+        else if (c.zone === 'obanished') o.banished.push(uid);
+        else o.hand.push(uid);
+        inst.faceUp = c.faceUp;
+        inst.position = c.position;
+        for (const [k, v] of Object.entries(c.mods ?? {}))
+          if (v === undefined) delete (inst as unknown as Record<string, unknown>)[k];
+          else (inst as unknown as Record<string, unknown>)[k] = v;
+      }
+      for (const c of action.cards) {
+        const inst = state.cards[byKey.get(c.key)!];
+        inst.equippedTo = c.equipTo ? (byKey.get(c.equipTo) ?? null) : null;
+      }
+      if (action.lp !== undefined) state.opponentLp = action.lp;
+      return;
+    }
+    case 'NEGATE_CARD': {
+      const inst = state.cards[action.uid];
+      if (!inst) return;
+      inst.negatedTurn = state.turn;
+      log(state, `${action.by}の効果：${name(state, ctx, action.uid)}の効果はこのターン無効`, 'info');
+      return;
+    }
+    case 'NO_DECK_TO_HAND':
+      state.noDeckToHandTurn = state.turn;
+      log(state, `${action.by}の効果：このターン、デッキからカードを手札に加えられない`, 'info');
+      return;
     case 'FAIL':
       return fail(action.message);
     case 'OPP_PLACE': {
@@ -1615,6 +1705,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         speed: action.speed,
         label: action.label,
         ...(action.opp ? { opp: action.opp, targetLink: action.targetLink, target: action.target } : {}),
+        ...(action.from ? { from: action.from } : {}),
       });
       log(
         state,

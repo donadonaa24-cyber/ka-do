@@ -2274,3 +2274,54 @@ button.danger {
   color: #ffb27a;
   font-weight: 700;
 }
+
+/* ナビ：最終盤面の候補 */
+.navi-choice {
+  width: min(640px, 100%);
+}
+.choice-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.choice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.disrupt-badge {
+  font-weight: 800;
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 179, 71, 0.18);
+  color: #ffc46b;
+  border: 1px solid rgba(255, 179, 71, 0.6);
+}
+.choice-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+/* CPU戦 */
+.cpu-panel {
+  border-color: #b98bff;
+}
+.cpu-announce {
+  font-weight: 700;
+  color: #d9c2ff;
+}
+.cpu-banner {
+  align-self: center;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(185, 139, 255, 0.15);
+  border: 1px solid rgba(185, 139, 255, 0.5);
+  color: #d9c2ff;
+}

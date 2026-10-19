@@ -33,6 +33,8 @@ export interface Evaluator {
   score: (state: GameState, ctx: Ctx) => number;
   /** 最終盤面の説明（妨害の一覧など） */
   describe: (state: GameState, ctx: Ctx) => string[];
+  /** 相手ターンに使える妨害（1回ごとに1つ。数が妨害数） */
+  disruptions?: (state: GameState, ctx: Ctx) => string[];
 }
 
 export interface RouteStep {

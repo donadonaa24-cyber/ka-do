@@ -13,6 +13,10 @@ export interface FoundRoute {
   summary: string[];
   steps: RouteStep[];
   finalUids: string[];
+  /** 最終盤面の妨害（数が妨害数） */
+  disruptions: string[];
+  /** 最終盤面を表す文字列（選んだ盤面に向かうルートを探し直すため） */
+  finalKey: string;
 }
 
 export interface RouteSearch {

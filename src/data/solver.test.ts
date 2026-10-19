@@ -37,7 +37,8 @@ describe('ルート探索', () => {
   it('ノー・フェイス＋しおり＋キャット', () => {
     const s = createGame(TOON_DECK, ctx, 3, ['34314989', '91500017', '72921536', '14558127', '10045474']);
     const routes = solve(s, ctx, TOON_EVALUATOR, {});
-    expect(routes[0].summary.join('\n')).toContain('心を見通す眼');
+    // 妨害の数が一番多い盤面を選ぶ
+    expect(TOON_EVALUATOR.disruptions!(routes[0].final, ctx).length).toBeGreaterThanOrEqual(6);
   }, 30000);
 });
 

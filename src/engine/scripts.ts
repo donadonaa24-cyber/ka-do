@@ -123,6 +123,17 @@ export interface EffectDef {
   steps: Step[];
 }
 
+/** カードテキストの、その効果（①②…）の部分。番号の無い効果（魔法・罠の発動など）は全文 */
+export function effectText(text: string, label: string): string {
+  const n = label.match(/^[①-⑳]/)?.[0];
+  if (!n) return text;
+  const i = text.indexOf(`${n}：`);
+  if (i < 0) return text;
+  const rest = text.slice(i + 2);
+  const j = rest.search(/[①-⑳]：/);
+  return j < 0 ? rest : rest.slice(0, j);
+}
+
 export interface CardScript {
   procedures?: ProcedureDef[];
   effects?: EffectDef[];

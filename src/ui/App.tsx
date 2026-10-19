@@ -33,7 +33,8 @@ import { OPP_PRESETS, oppPresetAction } from '../data/oppPresets';
 import { oppWouldRespond } from '../engine/oppAI';
 import { MotionLayer } from './Motion';
 import { ImageSettings } from './ImageSettings';
-import { RoutePanel, useRouteSearch } from './RoutePanel';
+import { type FoundRoute, RoutePanel, useRouteSearch } from './RoutePanel';
+import { useCpuDuel } from './useCpuDuel';
 import { useDrag } from './useDrag';
 import {
   BUILTIN_IMAGES,
@@ -182,6 +183,9 @@ export function App() {
   const [resolvingChain, setResolvingChain] = useState(false);
   /** ナビモード：自動で最適ルートを探し、1手ずつ解説する */
   const [navi, setNavi] = useState(false);
+  /** ナビ：最終盤面の候補（プレイヤーが選ぶ）と、選んだ最終盤面 */
+  const [naviChoice, setNaviChoice] = useState<FoundRoute[] | null>(null);
+  const [naviTarget, setNaviTarget] = useState<string | null>(null);
   /** 解説のポップアップ。普段は閉じて盤面で操作し、上の帯の「解説」で開く */
   const [popupOpen, setPopupOpen] = useState(false);
   /** 最後に自動で探した盤面（同じ盤面で何度も探さないため） */
@@ -242,7 +246,21 @@ export function App() {
     [ctx],
   );
 
+  // CPU戦：CPU（先攻）の展開に手札誘発を使い、そのまま後攻のターンを続ける
+  const cpu = useCpuDuel({ ctx, decks: allDecks, human: state, dispatchHuman: dispatch, onError: setError });
+  const cpuTurn = !!cpu.duel?.cpuTurn;
+  // CPUのターン中・CPUの盤面を写した直後は、1手戻すと盤面がずれるので戻せない
+  const lastAction = session.actions[session.actions.length - 1];
+  const undoLocked =
+    !!cpu.duel && (cpuTurn || !lastAction || ['END_TURN', 'OPP_SYNC', 'DRAW'].includes(lastAction.type));
+  const undoLockedRef = useRef(false);
+  undoLockedRef.current = undoLocked;
+
   const undo = useCallback(() => {
+    if (undoLockedRef.current) {
+      setError('CPU戦では、CPUのターンの操作は戻せません');
+      return;
+    }
     setPending(null);
     setRun(null);
     setError(null);
@@ -349,6 +367,9 @@ export function App() {
       setPending({ ...pending, picked });
       return;
     }
+    // CPUの伏せカード・手札は中身を見られない
+    const inst = state.cards[uid];
+    if (inst?.syncKey && !inst.faceUp) return setError('相手の裏側のカードです');
     setSelected(uid);
   };
 
@@ -492,6 +513,8 @@ export function App() {
   };
 
   const buttonsFor = (uid: string): Btn[] => {
+    // CPUのターン中は手札誘発（CPUの操作ごとに聞く）以外は操作しない
+    if (cpuTurn) return [];
     const d = def(uid);
     const inst = state.cards[uid];
     const loc = findLocation(state, uid);
@@ -844,6 +867,7 @@ export function App() {
 
   /** 新しいゲームを始める（盤面の選択状態・練習をリセット） */
   const newGame = (s: SessionData, naviOn: boolean) => {
+    cpu.stop();
     setSession(s);
     setCoach(null);
     setSelected(null);
@@ -851,12 +875,15 @@ export function App() {
     setRun(null);
     setPile(null);
     setNavi(naviOn);
+    setNaviTarget(null);
+    setNaviChoice(null);
     naviKey.current = '';
     setHome(false);
     setModal(null);
   };
 
   const startGuide = (g: Guide) => {
+    cpu.stop();
     setSession({ deckName: g.deckName, seed: g.seed, fixedHand: g.fixedHand, handSize: 5, strict: true, actions: [] });
     setCoach(coachFromGuide(g));
     setHome(false);
@@ -901,12 +928,22 @@ export function App() {
       setError('この盤面から動ける展開は見つかりませんでした');
       return;
     }
-    const best = found[0];
-    setCoach(coachFromRoute(best.title ?? '最適ルート', best.steps, best.summary, routeSearch.baseLog, best.finalUids));
-    setPopupOpen(false);
+    // 選んだ最終盤面に向かうルートが見つかればそのまま続ける。無ければ（初回も）どの盤面にするか選んでもらう
+    const same = naviTarget ? found.find((r) => r.finalKey === naviTarget) : undefined;
+    if (same || found.length === 1) startNaviRoute(same ?? found[0]);
+    else setNaviChoice(found);
     // 探し終わった結果だけに反応する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSearch.routes]);
+
+  /** 選んだルートでナビを始める */
+  const startNaviRoute = (r: FoundRoute) => {
+    setNaviTarget(r.finalKey);
+    setNaviChoice(null);
+    const summary = [`妨害${r.disruptions.length}：${r.disruptions.join('、') || 'なし'}`, ...r.summary];
+    setCoach(coachFromRoute(r.title ?? '最適ルート', r.steps, summary, routeSearch.baseLog, r.finalUids));
+    setPopupOpen(false);
+  };
 
   // 次の手に進んだら解説は閉じて、盤面で操作できるようにする（完成した時だけ開いてまとめを見せる）
   useEffect(() => setPopupOpen(!!coach && coachDone >= coach.steps.length), [coachDone, coach]);
@@ -1259,9 +1296,51 @@ export function App() {
     dispatch(coachAction);
   };
 
+  // CPU戦：CPUのターンの様子と、手札誘発を使うか聞くパネル
+  const cpuDuel = cpu.duel;
+  const cpuPanel = cpuDuel && (
+    <div className="action-panel cpu-panel">
+      <div className="ap-title">
+        {cpuDuel.stage === 'over' ? 'CPU戦の結果' : `CPUのターン（${cpuDuel.cpuDeckName}）`}
+      </div>
+      {cpuDuel.stage === 'thinking' && <div className="ap-hint">CPUが展開ルートを考えています…</div>}
+      {cpuDuel.last && cpuDuel.stage !== 'over' && <div className="ap-hint">直前：{cpuDuel.last}</div>}
+      {cpuDuel.prompt && (
+        <>
+          <div className="cpu-announce">CPU：{cpuDuel.prompt.step.text}</div>
+          <div className="ap-hint">手札誘発を使いますか？</div>
+          <div className="btn-row">
+            {cpuDuel.prompt.options.map((o) => (
+              <button key={o.uid} className="primary" onClick={() => cpuDuel.choose(o)}>
+                {o.name}：{o.label}
+              </button>
+            ))}
+            <button onClick={() => cpuDuel.choose(null)}>使わない</button>
+          </div>
+        </>
+      )}
+      {cpuDuel.stage === 'over' && (
+        <>
+          <div className="ap-hint">
+            あなたのLP {state.lp} ／ CPUのLP {state.opponentLp}
+            {state.status === 'won' ? '（勝利）' : state.status === 'lost' ? '（敗北）' : ''}
+          </div>
+          <div className="btn-row">
+            <button className="primary" onClick={() => setHome(true)}>
+              メニューへ
+            </button>
+            <button onClick={() => cpu.stop()}>このまま一人回しを続ける</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   const quitCoach = () => {
     setCoach(null);
     setNavi(false);
+    setNaviTarget(null);
+    setNaviChoice(null);
   };
 
   const coachBar = coach && !busy && !popupOpen && (
@@ -1358,13 +1437,22 @@ export function App() {
             )}
           </div>
           <div className="hud-actions">
-            <button onClick={undo} disabled={session.actions.length === 0} aria-label="1手戻す">
+            <button onClick={undo} disabled={session.actions.length === 0 || undoLocked} aria-label="1手戻す">
               戻す
             </button>
-            {state.opponentTurn ? (
-              <button className="primary" onClick={() => dispatch({ type: 'END_TURN' })}>
-                自分のターンへ
-              </button>
+            {cpuTurn ? (
+              <button disabled>CPUのターン</button>
+            ) : state.opponentTurn ? (
+              <>
+                {state.phase !== 'EP' && (
+                  <button onClick={() => dispatch({ type: 'NEXT_PHASE' })}>
+                    相手の{state.phase === 'M1' ? 'バトル' : state.phase === 'BP' ? 'M2' : 'エンド'}フェイズへ
+                  </button>
+                )}
+                <button className="primary" onClick={() => dispatch({ type: 'END_TURN' })}>
+                  自分のターンへ
+                </button>
+              </>
             ) : state.phase === 'EP' ? (
               <button className="primary" onClick={() => dispatch({ type: 'END_TURN', toOpponent: true })}>
                 相手ターンへ
@@ -1401,12 +1489,17 @@ export function App() {
               {naviSearching || coachBar}
             </div>
           )}
-          {peek && (run || pending) ? (
+          {cpu.duel && (cpuTurn || cpu.duel.stage === 'over') ? (
+            cpuPanel
+          ) : peek && (run || pending) ? (
             <button className="peek-back primary" onClick={() => setPeek(false)}>
               選択に戻る（{(run ?? pending)!.title}）
             </button>
           ) : (
             actionPanel
+          )}
+          {cpu.duel?.stage === 'human' && !busy && (
+            <div className="cpu-banner">CPU戦：あなたのターン（後攻）。CPUの盤面の妨害・手札誘発に注意</div>
           )}
           <div className="board-wrap">
             <Board
@@ -1418,7 +1511,7 @@ export function App() {
               onCardClick={onCardClick}
               onZoneClick={onZoneClick}
               onPileClick={(z) => setPile(pile === z ? null : z)}
-              dragStart={busy ? undefined : dragStart}
+              dragStart={busy || cpuTurn ? undefined : dragStart}
               dropTarget={dropTarget}
               dropOk={dropOk}
               hintCards={hl.cards}
@@ -1449,7 +1542,7 @@ export function App() {
                   selected={sel === u}
                   highlighted={pending?.picked.includes(u) || run?.picked.includes(u)}
                   onClick={() => onCardClick(u)}
-                  onPointerDown={busy ? undefined : dragStart(u)}
+                  onPointerDown={busy || cpuTurn ? undefined : dragStart(u)}
                   uid={u}
                 />
               </div>
@@ -1589,6 +1682,46 @@ export function App() {
                   </>
                 );
               })()}
+            </div>
+          </div>
+        )}
+
+        {/* ナビ：最終盤面を選ぶ */}
+        {naviChoice && (
+          <div className="modal-backdrop" onClick={() => setNaviChoice(null)}>
+            <div className="modal navi-choice" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h2>どの最終盤面を目指しますか？</h2>
+                <button onClick={() => setNaviChoice(null)}>閉じる</button>
+              </div>
+              <p className="note">
+                妨害の数（相手ターンに使える妨害・手札誘発）が多い順です。選んだ盤面に向けてナビします。
+              </p>
+              {naviChoice.map((r, i) => (
+                <div key={r.finalKey} className="choice-card">
+                  <div className="choice-head">
+                    <span className="disrupt-badge">妨害 {r.disruptions.length}</span>
+                    <strong>{r.title ?? `候補${i + 1}`}</strong>
+                    <span className="note">{r.steps.length}手</span>
+                  </div>
+                  <ul className="choice-list">
+                    {r.disruptions.map((d, j) => (
+                      <li key={j}>{d}</li>
+                    ))}
+                  </ul>
+                  <details>
+                    <summary>最終盤面の詳細</summary>
+                    <ul className="choice-list">
+                      {r.summary.map((l, j) => (
+                        <li key={j}>{l}</li>
+                      ))}
+                    </ul>
+                  </details>
+                  <button className="primary" onClick={() => startNaviRoute(r)}>
+                    この盤面を目指す
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1870,6 +2003,21 @@ export function App() {
               setShowSetup(true);
             }}
             onGuide={startGuide}
+            onCpuDuel={(humanDeck, cpuDeck) => {
+              newGame(
+                {
+                  deckName: humanDeck,
+                  seed: randomSeed(),
+                  fixedHand: [],
+                  handSize: 5,
+                  strict: true,
+                  // 1ターン目はCPU（先攻）。こちらは相手ターンとして見る
+                  actions: [{ type: 'END_TURN', toOpponent: true }],
+                },
+                false,
+              );
+              cpu.start(cpuDeck, randomSeed());
+            }}
             onEditDecks={() => setModal('decks')}
             onImages={() => setModal('images')}
           />

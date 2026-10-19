@@ -97,6 +97,73 @@ const HAND_USE: Record<string, string> = {
   'ＰＳＹフレームギア・δ': '自分の場にモンスターがいない時、相手の魔法の発動にチェーンして無効＆破壊',
 };
 
+/** 相手ターンに使える妨害の数（モンスター・伏せ／表のカード） */
+const DISRUPTION_COUNT: Record<string, number> = {
+  究極竜魔導師: 3,
+  青眼の究極霊竜: 1,
+  '聖珖神竜 スターダスト・シフル': 1,
+  青眼の精霊龍: 1,
+  '氷結界の龍胤 エクハジャール': 1,
+  天球の聖刻印: 1,
+  赤き竜: 1,
+  '白き幻獣－青眼の白龍': 1,
+  '神を超えたしもべ－青眼の究極竜': 1,
+  'トゥーン・カオス・ソルジャー': 1,
+  '超魔導竜騎士－ドラグーン・オブ・レッドアイズ': 1,
+  '光なき影 ア＝バオ・ア・クゥー': 1,
+  'Ｓ：Ｐリトルナイト': 1,
+  '厄災の星ティ・フォン': 1,
+  コミックキャット: 1,
+  'エビル・ボックス': 1,
+  'フルール・ド・バロネス': 1,
+  'ドラグニティロード－ゲオルギアス': 1,
+  'ヴァレルロード・Ｓ・ドラゴン': 1,
+  精霊コロゾ: 1,
+  聖王の粉砕: 1,
+  列王詩篇: 1,
+  白き龍の威光: 1,
+  'トゥーン・テラー': 1,
+  無限泡影: 1,
+  霆王の閃光: 1,
+  トゥーンのかばん: 1,
+  センサー万別: 1,
+  '聖なる心のバリア －マインドフォース－': 1,
+  心を見通す眼: 1,
+};
+
+/** 最終盤面の妨害の一覧（手札誘発も含む） */
+function disruptionList(state: GameState, ctx: Ctx): string[] {
+  const def = (u: string) => getDef(state, ctx, u);
+  const env = makeEnv(state, ctx, '');
+  const toonOnField = fieldMonsters(state).some((u) => state.cards[u].faceUp && env.isToon(u));
+  const out: string[] = [];
+  const add = (name: string, n: number) => {
+    for (let i = 0; i < n; i++) out.push(n > 1 ? `${name}（${i + 1}）` : name);
+  };
+  for (const u of fieldMonsters(state)) {
+    const d = def(u);
+    if (state.cards[u].destroyAtEnd || !state.cards[u].faceUp) continue;
+    const v = MONSTER_VALUE[d.name];
+    if (v?.needsWorld && !env.toonWorld) continue;
+    add(d.name, DISRUPTION_COUNT[d.name] ?? 0);
+  }
+  // エンドフェイズに戻るア＝バオ・ア・クゥー
+  for (const u of state.banished) if (def(u).name === '光なき影 ア＝バオ・ア・クゥー') add(def(u).name, 1);
+  for (const u of state.stz) {
+    if (!u) continue;
+    const d = def(u);
+    const inst = state.cards[u];
+    const n = DISRUPTION_COUNT[d.name] ?? 0;
+    if (!n) continue;
+    if (!inst.faceUp && d.kind === 'trap') {
+      if (TRAP_VALUE[d.name]?.needsToon && !(env.toonWorld && toonOnField)) continue;
+      add(d.name, n);
+    } else if (inst.faceUp && d.kind !== 'trap') add(d.name, n);
+  }
+  for (const u of state.hand) if (HAND_USE[def(u).name]) add(`手札：${def(u).name}`, 1);
+  return out;
+}
+
 function analyze(state: GameState, ctx: Ctx) {
   const def = (u: string) => getDef(state, ctx, u);
   const env = makeEnv(state, ctx, '');
@@ -158,10 +225,13 @@ function analyze(state: GameState, ctx: Ctx) {
     if (HAND_USE[name]) notes.push(`手札：${name}（${HAND_USE[name]}）`);
   }
   notes.push(`手札 ${state.hand.length}枚`);
+  // 妨害の数を一番大事にする（同じ数なら妨害の質・手札の枚数で比べる）
+  score += 3 * disruptionList(state, ctx).length;
   return { score, notes };
 }
 
 export const TOON_EVALUATOR: Evaluator = {
   score: (state, ctx) => analyze(state, ctx).score,
   describe: (state, ctx) => analyze(state, ctx).notes,
+  disruptions: disruptionList,
 };

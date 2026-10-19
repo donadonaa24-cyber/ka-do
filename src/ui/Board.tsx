@@ -122,6 +122,8 @@ export function Board({
           highlighted={picked.includes(uid)}
           uid={uid}
           stats={monsterZone(loc) ? currentStats(state, ctx, uid) : undefined}
+          // CPU戦のCPUの伏せカードは見せない（練習で自分で置いたカードは見える）
+          showFaceDown={!state.cards[uid].syncKey}
         />
       ) : (
         <span className="zone-label">{label}</span>

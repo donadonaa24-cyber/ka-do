@@ -17,6 +17,8 @@ interface Props {
   onRandom: (deckName: string, handSize: 5 | 6, navi: boolean) => void;
   onPickHand: (deckName: string) => void;
   onGuide: (g: Guide) => void;
+  /** CPU戦（CPUが先攻・こちらは後攻で手札誘発の練習） */
+  onCpuDuel: (humanDeck: string, cpuDeck: string) => void;
   onEditDecks: () => void;
   onImages: () => void;
 }
@@ -38,6 +40,7 @@ function keyCards(deck: DeckList): string[] {
 export function HomeMenu(p: Props) {
   const [deckName, setDeckName] = useState(p.current);
   const [handSize, setHandSize] = useState<5 | 6>(5);
+  const [cpuDeck, setCpuDeck] = useState(p.builtinNames[0]);
   const deck = p.decks.find((d) => d.name === deckName) ?? p.decks[0];
   const guides = p.guides.filter((g) => g.deckName === deck.name);
   const builtin = p.decks.filter((d) => p.builtinNames.includes(d.name));
@@ -106,6 +109,30 @@ export function HomeMenu(p: Props) {
             <button onClick={() => p.onRandom(deck.name, handSize, false)}>ランダムな初手で始める</button>
             <button onClick={() => p.onPickHand(deck.name)}>初手を選んで始める</button>
           </div>
+        </section>
+
+        <section>
+          <h2>CPU戦（後攻で手札誘発の練習）</h2>
+          <p className="note">
+            CPUが先攻で、ナビと同じように最適なルートで展開します。CPUが効果を使うたびに、あなたの手札誘発を使うか聞きます。止められたCPUは今の盤面からルートを探し直します。CPUのターンが終わったら、CPUの盤面を相手にあなたのターン（後攻）を続けます。
+          </p>
+          <div className="seg" role="tablist" aria-label="CPUのデッキ">
+            {p.decks
+              .filter((d) => p.builtinNames.includes(d.name))
+              .map((d) => (
+                <button
+                  key={d.name}
+                  className={cpuDeck === d.name ? 'on' : ''}
+                  aria-selected={cpuDeck === d.name}
+                  onClick={() => setCpuDeck(d.name)}
+                >
+                  CPU：{d.name}
+                </button>
+              ))}
+          </div>
+          <button className="primary wide" onClick={() => p.onCpuDuel(deck.name, cpuDeck)}>
+            CPU戦を始める（あなた：{deck.name}・後攻）
+          </button>
         </section>
 
         {guides.length > 0 && (
