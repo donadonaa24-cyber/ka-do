@@ -230,6 +230,26 @@ export function App() {
       return false;
     }
   });
+  /** マニュアル操作：ルールチェックなし・効果は自動で処理せず記録だけ（カードは自分で動かす） */
+  const [manual, setManualState] = useState(() => {
+    try {
+      return localStorage.getItem('ygo-manual') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setManual = (on: boolean) => {
+    setManualState(on);
+    try {
+      localStorage.setItem('ygo-manual', on ? '1' : '0');
+    } catch {
+      // 保存できなくても今の画面では使える
+    }
+  };
+  /** メニューのLP入力欄 */
+  const [lpInput, setLpInput] = useState('');
+  /** ルールチェックをするか（マニュアル操作の時はしない） */
+  const strictOn = session.strict && !manual;
   const setOreRule = (on: boolean) => {
     setOreRuleState(on);
     try {
@@ -309,10 +329,10 @@ export function App() {
   const ctx: Ctx = useMemo(
     () => ({
       db: CARD_DB,
-      options: pvpOn ? { strict: true, oppAI: false, oppAsk: true } : { strict: session.strict },
+      options: pvpOn ? { strict: true, oppAI: false, oppAsk: true } : { strict: strictOn },
       scripts: CARD_SCRIPTS,
     }),
-    [session.strict, pvpOn],
+    [strictOn, pvpOn],
   );
   const [customDecks, setCustomDecks] = useState<SavedDeck[]>(() => loadDecks());
   /** 既製のデッキの表示名（名前を変えたもの） */
@@ -525,9 +545,26 @@ export function App() {
     setPending(null);
     const preset = presetRef.current;
     presetRef.current = null;
+    // マニュアル操作：発動したことだけ記録する（効果の処理は自分でカードを動かす）
+    if (manual) {
+      const d = def(uid);
+      const fromHand = findLocation(state, uid)?.zone === 'hand';
+      if (effect.isCardActivation && fromHand) {
+        const field = d.spellType === 'field';
+        const build = (z: Location | null): Action => ({
+          type: 'ACTIVATE_CARD',
+          uid,
+          index: z && 'index' in z ? z.index : undefined,
+        });
+        if (preset || field) dispatch(build(preset));
+        else start({ title: `${d.name}を発動`, hint: '置くゾーンを選択', zone: 'stz', build: (_, z) => build(z) });
+      } else if (effect.isCardActivation) dispatch({ type: 'ACTIVATE_CARD', uid });
+      else dispatch({ type: 'ACTIVATE_EFFECT', uid, label: effect.label });
+      return;
+    }
     // ルールチェック中は、チェーンできる効果があればチェーンに積んで止める。
     // ルールチェックなしでも、「対象になった時」の効果などこの発動にチェーンする効果があれば止める
-    let r = startEffect(state, ctx, uid, effect, preset ?? undefined, session.strict ? 'auto' : 'reactive');
+    let r = startEffect(state, ctx, uid, effect, preset ?? undefined, strictOn ? 'auto' : 'reactive');
     // ドラッグで出し先が決まっていれば最初のゾーン選択に使う
     if (preset && r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, preset);
     onRunResult(r);
@@ -646,6 +683,22 @@ export function App() {
         onClick: () => dispatch({ type: 'MOVE', uid, to: { zone: 'banished' }, faceUp: false }),
       });
     }
+    // 融合・S・X・Lモンスターは、デッキではなくEXデッキへ戻る
+    if (isExtraDeckCard(def(uid)) && loc.zone !== 'extra')
+      btns.push({ label: 'EXデッキへ', onClick: () => dispatch(move(uid, { zone: 'extra' })) });
+    // 表側のカードを裏側にする（モンスターは裏側守備表示、魔法・罠はセットした状態）
+    const inst = state.cards[uid];
+    if (inst.faceUp && isMonsterZone(loc))
+      btns.push({
+        label: '裏側守備表示にする',
+        onClick: () =>
+          dispatch({ type: 'MOVE', uid, to: loc, faceUp: false, position: 'def', reason: '裏側守備表示にする' }),
+      });
+    if (inst.faceUp && loc.zone === 'stz')
+      btns.push({
+        label: '裏側にする（セット）',
+        onClick: () => dispatch({ type: 'MOVE', uid, to: loc, faceUp: false, reason: 'セットした状態にする' }),
+      });
     btns.push({ label: 'デッキの上へ', dest: 'deck', onClick: () => dispatch(move(uid, { zone: 'deck' })) });
     btns.push({
       label: 'デッキの下へ',
@@ -1005,7 +1058,7 @@ export function App() {
   const dropCheckerFor = (uid: string): ((target: string) => boolean) => {
     const from = findLocation(state, uid);
     if (!from) return () => false;
-    const allowFree = oreRule || !session.strict;
+    const allowFree = oreRule || !strictOn;
     const dests = new Set(
       buttonsFor(uid)
         .filter((b) => b.dest && (allowFree || !b.free))
@@ -1045,7 +1098,7 @@ export function App() {
     if (!dest || (from && loc && JSON.stringify(from) === JSON.stringify(loc))) return;
     if (from?.zone === zone && !loc) return;
     // 俺ルールがオフなら、本来できない移動はドラッグでもしない（ルールチェックがオフなら自由）
-    const allowFree = oreRule || !session.strict;
+    const allowFree = oreRule || !strictOn;
     const options = buttonsFor(uid)
       .filter((b) => b.dest === dest && (allowFree || !b.free))
       .map((b) => ({
@@ -1670,7 +1723,7 @@ export function App() {
   const runDemo = () => {
     if (!coachAction) return;
     const first = coachAction.type === 'BATCH' ? coachAction.actions[0] : coachAction;
-    if (session.strict && first && (first.type === 'ACTIVATE_EFFECT' || first.type === 'ACTIVATE_CARD')) {
+    if (strictOn && first && (first.type === 'ACTIVATE_EFFECT' || first.type === 'ACTIVATE_CARD')) {
       const uid = first.uid;
       const effects = state.cards[uid] ? (CARD_SCRIPTS[state.cards[uid].defId]?.effects ?? []) : [];
       const effect =
@@ -1940,7 +1993,7 @@ export function App() {
                 召喚{state.normalSummonUsed ? '済' : '可'}
               </span>
               {state.summonGrants.length > 0 && <span className="chip avail">追加召喚あり</span>}
-              {!session.strict && <span className="chip free">フリー</span>}
+              {!strictOn && <span className="chip free">{manual ? 'マニュアル' : 'フリー'}</span>}
               {state.status !== 'playing' && (
                 <span className="chip result">{state.status === 'won' ? '勝利' : '敗北'}</span>
               )}
@@ -2201,7 +2254,7 @@ export function App() {
                 )}
                 {(() => {
                   const all = buttonsFor(sel);
-                  const showFree = oreRule || !session.strict;
+                  const showFree = oreRule || !strictOn;
                   const legal = showFree ? all : all.filter((b) => !b.free);
                   const free = showFree ? [] : all.filter((b) => b.free);
                   const grid = (list: Btn[]) => (
@@ -2465,6 +2518,30 @@ export function App() {
                     <button onClick={() => setShowToken((v) => !v)}>トークン生成</button>
                     <button onClick={() => dispatch({ type: 'END_TURN' })}>ターン終了</button>
                   </div>
+                  <div className="lp-edit">
+                    <span>LP {state.lp}</span>
+                    {[-1000, -500, 500, 1000].map((d) => (
+                      <button key={d} onClick={() => dispatch({ type: 'CHANGE_LP', delta: d })}>
+                        {d > 0 ? `+${d}` : d}
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="LPを入力"
+                      value={lpInput}
+                      onChange={(e) => setLpInput(e.target.value)}
+                    />
+                    <button
+                      disabled={!/^\d+$/.test(lpInput)}
+                      onClick={() => {
+                        dispatch({ type: 'LP_SET', lp: Number(lpInput), reason: 'LPを変更' });
+                        setLpInput('');
+                      }}
+                    >
+                      にする
+                    </button>
+                  </div>
                 </section>
                 <section className="menu-sec">
                   <h3>相手の妨害の練習</h3>
@@ -2539,6 +2616,10 @@ export function App() {
                       召喚・移動の演出：
                       {motionMode === 'on' ? '常に出す' : motionMode === 'auto' ? '端末の設定に合わせる' : '出さない'}
                     </button>
+                    <button className={manual ? 'on' : ''} aria-pressed={manual} onClick={() => setManual(!manual)}>
+                      マニュアル操作（効果は記録だけ・カードは自分で動かす・ルールチェックなし）：
+                      {manual ? 'ON' : 'OFF'}
+                    </button>
                     <button className={oreRule ? 'on' : ''} aria-pressed={oreRule} onClick={() => setOreRule(!oreRule)}>
                       俺ルール（本来できない操作も常に表示）：{oreRule ? 'ON' : 'OFF'}
                     </button>
@@ -2546,7 +2627,8 @@ export function App() {
                       <input
                         id="strict-toggle"
                         type="checkbox"
-                        checked={session.strict}
+                        checked={strictOn}
+                        disabled={manual}
                         onChange={(e) => setSession((s) => ({ ...s, strict: e.target.checked }))}
                       />
                       ルールチェック

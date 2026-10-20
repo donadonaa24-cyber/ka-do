@@ -3087,3 +3087,13 @@ button.danger {
   color: #04121f;
   background: #5bc0ff;
 }
+.lp-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lp-edit input {
+  width: 96px;
+}
