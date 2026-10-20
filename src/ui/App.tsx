@@ -35,6 +35,7 @@ import { oppWouldRespond } from '../engine/oppAI';
 import { loadMotionMode, type MotionMode, MotionLayer, saveMotionMode } from './Motion';
 import { loadSound, play, saveSound, sfxForLog, type SoundSettings, unlockAudio } from './sound';
 import { type ChanceRoll, ChanceFx, randomChance } from './Chance';
+import { BackupPanel } from './BackupPanel';
 import { ImageSettings } from './ImageSettings';
 import { type FoundRoute, RoutePanel, useRouteSearch } from './RoutePanel';
 import { useCpuDuel } from './useCpuDuel';
@@ -264,7 +265,7 @@ export function App() {
   const [routes, setRoutes] = useState<SavedRoute[]>(() => loadRoutes());
   const [routeName, setRouteName] = useState('');
   const [coach, setCoach] = useState<Coach | null>(null);
-  const [modal, setModal] = useState<'routes' | 'menu' | 'images' | 'decks' | null>(null);
+  const [modal, setModal] = useState<'routes' | 'menu' | 'images' | 'decks' | 'backup' | null>(null);
   const [images, setImages] = useState<CardImages>(() => loadAllImages());
   /** 表示する画像：埋め込みの画像に、自分で設定した画像を上書き */
   const shownImages = useMemo(() => ({ ...BUILTIN_IMAGES, ...images }), [images]);
@@ -2438,6 +2439,9 @@ export function App() {
                     <button className="wide" onClick={() => setModal('images')}>
                       カード画像の設定
                     </button>
+                    <button className="wide" onClick={() => setModal('backup')}>
+                      データの書き出し・読み込み（別のページ・端末へ引っ越し）
+                    </button>
                   </div>
                 </section>
                 <section className="menu-sec">
@@ -2739,6 +2743,13 @@ export function App() {
                 }
                 onClose={() => setModal(null)}
               />
+            </div>
+          )}
+
+          {/* データの書き出し・読み込み */}
+          {modal === 'backup' && (
+            <div className="modal-backdrop" onClick={() => setModal(null)}>
+              <BackupPanel onClose={() => setModal(null)} onError={setError} />
             </div>
           )}
 

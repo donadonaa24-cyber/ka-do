@@ -3050,3 +3050,22 @@ button.danger {
   min-width: 120px;
   padding: 10px 12px;
 }
+
+/* データの書き出し・読み込み */
+.backup-modal .menu-sec .file-btn,
+.backup-modal .menu-sec > button {
+  align-self: flex-start;
+}
+.backup-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  background: rgba(242, 193, 78, 0.08);
+}
+.backup-message {
+  color: var(--ok);
+  font-size: 13px;
+}
