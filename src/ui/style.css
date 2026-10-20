@@ -3069,3 +3069,18 @@ button.danger {
   color: var(--ok);
   font-size: 13px;
 }
+
+/* メニュー画面の題名の横：自分専用・共有版 */
+.edition-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  vertical-align: middle;
+  color: #1b1405;
+  background: var(--gold);
+}
+.edition-badge.shared {
+  color: #04121f;
+  background: #5bc0ff;
+}

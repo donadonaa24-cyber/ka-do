@@ -5,6 +5,10 @@ import type { DeckList } from '../engine/types';
 import { isExtraDeckCard } from '../engine/types';
 import { PVP_ENABLED } from './features';
 
+/** このページが自分専用（画像入り）か共有版（画像なし）か（scripts/build-artifact.mjs が入れる） */
+const PAGE_EDITION =
+  typeof window === 'undefined' ? undefined : (window as unknown as { __PAGE_EDITION__?: string }).__PAGE_EDITION__;
+
 interface Props {
   decks: DeckList[];
   /** 既製のデッキの名前（自分で作ったデッキと分けて表示する） */
@@ -123,7 +127,12 @@ export function HomeMenu(p: Props) {
     return (
       <div className="home" role="dialog" aria-label="メニュー画面">
         <div className="home-inner">
-          <h1>遊戯王 一人回し</h1>
+          <h1>
+            遊戯王 一人回し
+            {PAGE_EDITION && (
+              <span className={`edition-badge ${PAGE_EDITION === '共有版' ? 'shared' : ''}`}>{PAGE_EDITION}</span>
+            )}
+          </h1>
           {p.resume && (
             <button className="primary wide resume" onClick={p.onResume}>
               続きから遊ぶ（{p.resume.deckName}・{p.resume.actions}手）

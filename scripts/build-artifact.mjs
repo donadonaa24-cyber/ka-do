@@ -17,7 +17,10 @@ const scripts = [...html.matchAll(/<script type="module" crossorigin src="([^"]+
 const styles = [...html.matchAll(/<link rel="stylesheet" crossorigin href="([^"]+)">/g)].map((m) => asset(m[1]));
 if (scripts.length !== 1 || styles.length !== 1) throw new Error('dist/index.html の形式が想定と違います');
 
-const title = html.match(/<title>.*<\/title>/)[0];
+// 自分専用（画像入り）と共有版（画像なし）を、タブ・ギャラリー・メニュー画面の名前で見分けられるようにする
+const edition = noImages ? '共有版' : '自分専用';
+const title = `<title>遊戯王 一人回しシミュレーター（${edition}）</title>`;
+const editionScript = `<script>window.__PAGE_EDITION__=${JSON.stringify(edition)}</script>`;
 
 // カードの裏面画像（private/ は公開リポジトリに入れないフォルダ。あれば非公開ページにだけ埋め込む）
 const backPath = 'private/card-back.jpg';
@@ -58,6 +61,7 @@ writeFileSync(
   `${title}
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>${styles[0]}${backCss}</style>
+${editionScript}
 ${cardImagesScript}
 <div id="root"></div>
 <script type="module">${js}</script>
