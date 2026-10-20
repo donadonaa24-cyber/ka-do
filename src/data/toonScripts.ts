@@ -1022,6 +1022,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '② スタンバイフェイズ：墓地の種族の数だけドローし、同じ数をデッキの下へ',
+        trigger: true,
         from: ['monster'],
         key: 'ア＝バオ・ア・クゥー②',
         limit: 1,
@@ -1158,6 +1159,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
       },
       {
         label: '③ エンドフェイズ：手札のモンスターをデッキの下に戻し、同じ数ドロー',
+        trigger: true,
         from: ['monster'],
         key: '神書の使いラハムゥ③',
         limit: 1,

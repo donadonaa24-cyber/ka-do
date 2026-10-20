@@ -194,6 +194,7 @@ export const OTHER_SCRIPTS: Record<string, CardScript> = {
       opponentOnly('② 効果の発動を無効にし破壊（相手用）', ['monster'], 'フルール・ド・バロネス②'),
       {
         label: '③ スタンバイフェイズ：EXデッキに戻り、墓地のレベル9以下を特殊召喚',
+        trigger: true,
         from: ['monster'],
         condition: (env) => (env.state.phase === 'SP' ? null : 'スタンバイフェイズにのみ発動できます'),
         steps: [

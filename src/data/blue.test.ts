@@ -795,6 +795,21 @@ describe('藍眼の銀龍①（バグ報告）', () => {
   });
 });
 
+describe('起動効果はメインフェイズだけ（バグ報告）', () => {
+  it('ドローフェイズには白き乙女①（起動効果）を発動できず、メインフェイズにはできる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, ['17947697']);
+    s = act(s, { type: 'END_TURN', toOpponent: true });
+    s = act(s, { type: 'END_TURN' });
+    expect(s.phase).toBe('DP');
+    const maiden = find(s, 'hand', '白き乙女');
+    const effect = CARD_SCRIPTS[s.cards[maiden].defId].effects!.find((e) => e.label.startsWith('①'))!;
+    const r = startEffect(s, ctx, maiden, effect);
+    expect(r.kind === 'error' && r.error).toMatch(/メインフェイズ/);
+    s = act(s, { type: 'NEXT_PHASE', to: 'M1' });
+    expect(startEffect(s, ctx, maiden, effect).kind).not.toBe('error');
+  });
+});
+
 describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報告）', () => {
   /** 効果を発動し、選択を順に行う（chainMode: auto）。done の操作を返す */
   const run = (s: GameState, uid: string, label: string, picks: string[][], zone?: Location) => {

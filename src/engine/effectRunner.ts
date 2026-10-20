@@ -277,6 +277,19 @@ export function startEffect(
     !effect.onSummon
   )
     return { kind: 'error', error: 'この効果は相手ターンには発動できません' };
+  // 起動効果・通常の魔法（スペルスピード1）は、自分のメインフェイズにしか発動できない
+  if (
+    ctx.options.strict &&
+    !state.opponentTurn &&
+    !state.battle &&
+    state.phase !== 'M1' &&
+    state.phase !== 'M2' &&
+    !effect.applied &&
+    effectSpeed(state, ctx, uid, effect) < 2 &&
+    !effect.trigger &&
+    !effect.onSummon
+  )
+    return { kind: 'error', error: 'この効果はメインフェイズにしか発動できません' };
   // 戦闘中：起動効果は発動できず、ダメージステップ中に発動できる効果は限られる
   if (ctx.options.strict && state.battle) {
     const speed = effectSpeed(state, ctx, uid, effect);
