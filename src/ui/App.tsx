@@ -524,8 +524,9 @@ export function App() {
     setPending(null);
     const preset = presetRef.current;
     presetRef.current = null;
-    // ルールチェック中は、チェーンできる効果があればチェーンに積んで止める
-    let r = startEffect(state, ctx, uid, effect, preset ?? undefined, session.strict ? 'auto' : 'never');
+    // ルールチェック中は、チェーンできる効果があればチェーンに積んで止める。
+    // ルールチェックなしでも、「対象になった時」の効果などこの発動にチェーンする効果があれば止める
+    let r = startEffect(state, ctx, uid, effect, preset ?? undefined, session.strict ? 'auto' : 'reactive');
     // ドラッグで出し先が決まっていれば最初のゾーン選択に使う
     if (preset && r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, preset);
     onRunResult(r);
@@ -1338,7 +1339,10 @@ export function App() {
       setResolvingChain(false);
       return;
     }
-    onRunResult(startResolve(state, ctx));
+    const r = startResolve(state, ctx);
+    // 相手が妨害をチェーンしてきた：さらにチェーンできるように、続けて解決するのをやめる
+    if (r.kind === 'done' && r.chained) setResolvingChain(false);
+    onRunResult(r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvingChain, chain.length, run, pending, posAsk]);
 

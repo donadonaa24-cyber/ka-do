@@ -216,6 +216,8 @@ export type Action =
       picks?: string[][];
       /** 発動時に選んだ対象（処理は解決する時） */
       deferred?: DeferredTarget[];
+      /** 練習用の相手AIの応答は、解決する時に聞く */
+      oppPending?: boolean;
       targetLink?: number;
       target?: string;
       /** 発動した場所 */
@@ -1785,6 +1787,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (strict && top && !simultaneous && (action.speed < 2 || action.speed < top.speed)) {
         fail(`スペルスピード${action.speed}の効果はチェーンできません`);
       }
+      // 上にチェーンが積まれたら、下のチェーンに相手が応答する機会は過ぎている
+      for (const l of state.chain) delete l.oppPending;
       state.chain.push({
         uid: action.uid,
         defId: state.cards[action.uid].defId,
@@ -1793,6 +1797,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         speed: action.speed,
         label: action.label,
         ...(action.trigger ? { trigger: true } : {}),
+        ...(action.oppPending ? { oppPending: true } : {}),
         ...(action.picks?.some((p) => p.length) ? { picks: action.picks } : {}),
         ...(action.deferred?.length
           ? { deferred: action.deferred, targets: action.deferred.flatMap((d) => d.picked) }

@@ -871,6 +871,50 @@ describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報�
     if (r.kind === 'running') expect(r.run.temp.chain).toHaveLength(0);
   });
 
+  it('ルールチェックなしでも、霊堂②で白き乙女を対象にすると乙女③をチェーンできる', () => {
+    const free: Ctx = { ...ctx, options: { strict: false } };
+    let s = createGame(BLUE_EYES_DECK, free, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    const effect = CARD_SCRIPTS[s.cards[hall].defId].effects!.find((e) =>
+      e.label.startsWith('② 手札・デッキの通常モンスター'),
+    )!;
+    let r: RunResult = startEffect(s, free, hall, effect, undefined, 'reactive');
+    if (r.kind !== 'running') throw new Error('対象を選ぶ前に止まっていません');
+    r = afterPick({ ...r.run, picked: [maiden] }, free);
+    if (r.kind !== 'done') throw new Error('チェーンに積まれていません');
+    s = act(s, r.action);
+    expect(s.chain).toHaveLength(1);
+    expect(chainableEffects(s, free, s.chain[0].speed).map((c) => c.effect.label)).toContainEqual(
+      expect.stringMatching(/^③ 対象になった時/),
+    );
+  });
+
+  it('相手の妨害があっても、先に乙女③をチェーンできる（相手は「解決する」を押した時に妨害してくる）', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, oppPresetAction(s, OPP_PRESETS[3]));
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女']]);
+    expect(s.chain.map((l) => l.opp ?? '自分')).toEqual(['自分']);
+    expect(chainableEffects(s, ctx, s.chain[0].speed).map((c) => c.effect.label)).toContainEqual(
+      expect.stringMatching(/^③ 対象になった時/),
+    );
+    // 乙女③をチェーンしなければ、解決する時に相手が妨害してくる
+    const r = startResolve(s, ctx);
+    expect(r.kind === 'done' && r.chained).toBe(true);
+    // 乙女③をチェーンすると、相手は乙女③に妨害してくる（霊堂②にはもう妨害しない）
+    s = run(s, maiden, '③ 対象になった時', []);
+    expect(s.chain[0].oppPending).toBeUndefined();
+    expect(s.chain.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('発動時に墓地にいなかった青眼の白龍は、霊堂②の処理後に乙女③で出せない', () => {
     let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
     s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });

@@ -28,9 +28,10 @@ export interface Running {
   mode: number;
   /**
    * チェーンの扱い。auto：コストを払った後、チェーンできる効果があればチェーンに積んで止める／
-   * force：必ず積む／never：最後まで処理する
+   * force：必ず積む／never：最後まで処理する／
+   * reactive：この発動にチェーンする効果（「対象になった時」の効果など）がある時だけ積む（ルールチェックなし）
    */
-  chainMode: 'auto' | 'force' | 'never';
+  chainMode: 'auto' | 'force' | 'never' | 'reactive';
   /** チェーンを解決している */
   resolving: boolean;
   /** 効果のステップとは別に、今選ばせているステップ（「処理後まで除外」など） */
@@ -88,7 +89,8 @@ function stepEnv(run: Running, ctx: Ctx): Env {
 
 export type RunResult =
   | { kind: 'running'; run: Running }
-  | { kind: 'done'; action: Action }
+  /** chained：解決せずに相手が妨害をチェーンした（こちらがさらにチェーンできるので、続けて解決しない） */
+  | { kind: 'done'; action: Action; chained?: boolean }
   /** blocked：処理で選ぶカードが無いため発動できない */
   | { kind: 'error'; error: string; blocked?: boolean };
 
@@ -378,6 +380,11 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
     const actions = [...resolveOppLink(state, ctx, link), { type: 'CHAIN_POP' } as Action];
     return { kind: 'done', action: { type: 'BATCH', label: `チェーン${no}を解決：相手の${name}`, actions } };
   }
+  // 相手（練習用の相手AI）がまだ応答していない：解決する前に妨害をチェーンしてくるか
+  if (link.oppPending && ctx.options.strict && ctx.options.oppAI !== false) {
+    const opp = oppResponse(state, ctx);
+    if (opp) return { kind: 'done', action: { type: 'BATCH', label: '相手がチェーン', actions: opp }, chained: true };
+  }
   // 無効にされた効果：処理せず、破壊されたカード・発動した魔法・罠は墓地へ
   if (link.negated) {
     const inst = state.cards[link.uid];
@@ -459,17 +466,23 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   if (!r.ok) return { kind: 'error', error: r.error };
   // 積んだ後に発動できるようになる効果（「対象になった時」の効果・同時に発動条件を満たした誘発効果など）があれば、
   // チェーンを組めるように止める
-  responses.push(
-    ...chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
-      (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
-    ),
+  const fresh = chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
+    (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
   );
   // 通信対戦：相手が妨害を使えるなら、チェーンに積んで相手の応答を待つ
   if (ctx.options.oppAsk && oppCanRespond(r.state, ctx))
     return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
+  // ルールチェックなし：この発動にチェーンする効果（「対象になった時」など）がある時だけ積む
+  if (run.chainMode === 'reactive' && fresh.length === 0) return null;
   // 相手（練習用の相手AI）が妨害をチェーンしてくるか
   const opp = ctx.options.strict && ctx.options.oppAI !== false ? oppResponse(r.state, ctx) : null;
-  if (run.chainMode === 'auto' && responses.length === 0 && !opp) return null;
+  if (run.chainMode === 'auto' && responses.length + fresh.length === 0 && !opp) return null;
+  // 「対象になった時」の効果などは発動した側が先にチェーンできる。相手は「解決する」を押した時に妨害してくる
+  if (opp && fresh.length)
+    return {
+      kind: 'done',
+      action: { type: 'BATCH', label: run.title, actions: [...run.batch, { ...push, oppPending: true }] },
+    };
   return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push, ...(opp ?? [])] } };
 }
 
