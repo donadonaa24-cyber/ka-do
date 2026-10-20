@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   afterPick,
   chainableEffects,
+  chainCandidates,
   completeStep,
   fizzleTop,
   type RunResult,
@@ -893,26 +894,46 @@ describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報�
     );
   });
 
-  it('相手の妨害があっても、先に乙女③をチェーンできる（相手は「解決する」を押した時に妨害してくる）', () => {
+  it('青き眼の精霊がいる間は、墓地の賢士（魔法使い族）を出せないので乙女③は発動できない', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'extra', '青き眼の精霊'), to: { zone: 'emz', index: 0 }, faceUp: true });
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    const effect = CARD_SCRIPTS[s.cards[hall].defId].effects!.find((e) =>
+      e.label.startsWith('② 手札・デッキの通常モンスター'),
+    )!;
+    let r: RunResult = startEffect(s, ctx, hall, effect, undefined, 'force');
+    if (r.kind !== 'running') throw new Error('対象を選ぶ前に止まっていません');
+    r = afterPick({ ...r.run, picked: [maiden] }, ctx);
+    if (r.kind !== 'done') throw new Error('チェーンに積まれていません');
+    s = act(s, r.action);
+    const labels = chainableEffects(s, ctx, s.chain[0].speed).map((c) => c.effect.label);
+    expect(labels.some((l) => l.startsWith('③ 対象になった時'))).toBe(false);
+    // 理由：精霊の効果で特殊召喚できない
+    const maidenEffect = CARD_SCRIPTS[s.cards[maiden].defId].effects!.find((e) => e.label.startsWith('③'))!;
+    const why = startEffect(s, ctx, maiden, maidenEffect, undefined, 'force');
+    expect(why.kind === 'error' && why.error).toMatch(/青き眼の精霊/);
+  });
+
+  it('霊堂②に相手が妨害をチェーンすると、乙女③は直接チェーンできないので発動できない', () => {
     let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
     s = act(s, oppPresetAction(s, OPP_PRESETS[3]));
     s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
     s = put(s, find(s, 'deck', '白き乙女'), 0);
     s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
     const hall = s.fz!;
-    const maiden = s.mz[0]!;
     s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女']]);
-    expect(s.chain.map((l) => l.opp ?? '自分')).toEqual(['自分']);
-    expect(chainableEffects(s, ctx, s.chain[0].speed).map((c) => c.effect.label)).toContainEqual(
-      expect.stringMatching(/^③ 対象になった時/),
-    );
-    // 乙女③をチェーンしなければ、解決する時に相手が妨害してくる
-    const r = startResolve(s, ctx);
-    expect(r.kind === 'done' && r.chained).toBe(true);
-    // 乙女③をチェーンすると、相手は乙女③に妨害してくる（霊堂②にはもう妨害しない）
-    s = run(s, maiden, '③ 対象になった時', []);
-    expect(s.chain[0].oppPending).toBeUndefined();
-    expect(s.chain.length).toBeGreaterThanOrEqual(2);
+    // 発動したら先に相手がチェーンするか決める（ここではテラーが無効にしてくる）
+    expect(s.chain).toHaveLength(2);
+    expect(s.chain[1].opp).toBeTruthy();
+    const labels = chainableEffects(s, ctx, s.chain[1].speed).map((c) => c.effect.label);
+    expect(labels.some((l) => l.startsWith('③ 対象になった時'))).toBe(false);
+    // 理由（タイミングを逃した）を見せる
+    const blocked = chainCandidates(s, ctx, s.chain[1].speed).blocked;
+    expect(blocked.find((c) => c.effect.label.startsWith('③ 対象になった時'))?.reason).toMatch(/タイミングを逃した/);
   });
 
   it('発動時に墓地にいなかった青眼の白龍は、霊堂②の処理後に乙女③で出せない', () => {
@@ -921,8 +942,12 @@ describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報�
     s = put(s, find(s, 'deck', '白き乙女'), 0);
     const hall = s.fz!;
     const maiden = s.mz[0]!;
-    // 墓地に出せるモンスターがいないので乙女③はチェーンできず、霊堂②はそのまま処理される
-    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女'], ['青眼の白龍']]);
+    // 墓地に出せるモンスターがいないので乙女③はチェーンできない（理由を見せるためにチェーンで止まる）
+    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女']]);
+    expect(s.chain).toHaveLength(1);
+    expect(chainableEffects(s, ctx, s.chain[0].speed).some((c) => c.uid === maiden)).toBe(false);
+    expect(chainCandidates(s, ctx, s.chain[0].speed).blocked.some((c) => c.uid === maiden)).toBe(true);
+    s = resolveAll(s, [['青眼の白龍']]);
     expect(s.chain).toHaveLength(0);
     expect(s.gy.map((u) => name(s, u))).toContain('青眼の白龍');
     // 処理が終わった後に、乙女③を起動効果のように発動することはできない

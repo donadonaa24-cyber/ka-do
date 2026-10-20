@@ -72,6 +72,7 @@ import {
 import { StepPopup } from './StepPopup';
 import {
   chainableEffects,
+  chainCandidates,
   fizzleTop,
   startResolve,
   afterPick,
@@ -1326,7 +1327,10 @@ export function App() {
   // ===== チェーン =====
 
   const chain = state.chain ?? [];
-  const chainResponses = chain.length ? chainableEffects(state, ctx, chain[chain.length - 1].speed) : [];
+  const chainOptions = chain.length ? chainCandidates(state, ctx, chain[chain.length - 1].speed) : null;
+  const chainResponses = chainOptions?.ok ?? [];
+  // 発動条件は満たしているのに使えない効果（青き眼の精霊がいて出せない、など）は理由を出す
+  const chainBlocked = chainOptions?.blocked ?? [];
   const battle = state.battle ?? null;
   // 戦闘の今の段階で発動できる効果
   const battleEffects = battle && !chain.length && !run && !pending ? chainableEffects(state, ctx, 0, true) : [];
@@ -1339,10 +1343,7 @@ export function App() {
       setResolvingChain(false);
       return;
     }
-    const r = startResolve(state, ctx);
-    // 相手が妨害をチェーンしてきた：さらにチェーンできるように、続けて解決するのをやめる
-    if (r.kind === 'done' && r.chained) setResolvingChain(false);
-    onRunResult(r);
+    onRunResult(startResolve(state, ctx));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvingChain, chain.length, run, pending, posAsk]);
 
@@ -1599,6 +1600,12 @@ export function App() {
       ) : (
         <div className="ap-hint">これ以上チェーンできる効果はありません。</div>
       )}
+      {!pvpWaiting &&
+        chainBlocked.map((c) => (
+          <div key={`${c.uid}-${c.effect.label}`} className="ap-hint chain-blocked">
+            使えない：{def(c.uid).name}の{c.effect.label.split('：')[0]}（{c.reason}）
+          </div>
+        ))}
       <div className="ap-hint">
         効果はまだ処理されていません。チェーンしないなら「チェーンを解決する」を押してください。
       </div>

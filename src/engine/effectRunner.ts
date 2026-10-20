@@ -89,8 +89,7 @@ function stepEnv(run: Running, ctx: Ctx): Env {
 
 export type RunResult =
   | { kind: 'running'; run: Running }
-  /** chained：解決せずに相手が妨害をチェーンした（こちらがさらにチェーンできるので、続けて解決しない） */
-  | { kind: 'done'; action: Action; chained?: boolean }
+  | { kind: 'done'; action: Action }
   /** blocked：処理で選ぶカードが無いため発動できない */
   | { kind: 'error'; error: string; blocked?: boolean };
 
@@ -191,7 +190,24 @@ export function chainableEffects(
   /** 戦闘中の各段階で発動できる効果（誘発効果・ダメージステップの効果も含める） */
   inBattle = false,
 ): { uid: string; effect: EffectDef }[] {
+  return chainCandidates(state, ctx, minSpeed, inBattle).ok;
+}
+
+/**
+ * チェーンできる効果（ok）と、発動条件は満たしているのに処理で選ぶカードが無いなどで発動できない効果（blocked）。
+ * blocked は「対象になった時」など、条件のある効果だけ（なぜチェーンの候補に出ないかを見せる）
+ */
+export function chainCandidates(
+  state: GameState,
+  ctx: Ctx,
+  minSpeed: number,
+  inBattle = false,
+): {
+  ok: { uid: string; effect: EffectDef }[];
+  blocked: { uid: string; effect: EffectDef; reason: string }[];
+} {
   const out: { uid: string; effect: EffectDef }[] = [];
+  const blocked: { uid: string; effect: EffectDef; reason: string }[] = [];
   const env = makeEnv(state, ctx, '');
   // チェーンが誘発効果だけ：同時に発動条件を満たした他の誘発効果（スペルスピード1）も積める
   const simultaneous = simultaneousTriggers(state);
@@ -214,7 +230,12 @@ export function chainableEffects(
         state.effectUses[`${env.def(uid).name}:発動`]
       )
         continue;
-      if (effect.condition?.(makeEnv(state, ctx, uid))) continue;
+      const unmet = effect.condition?.(makeEnv(state, ctx, uid));
+      if (unmet) {
+        // タイミングを逃した効果は、なぜ出ないかを見せる
+        if (unmet.startsWith('タイミングを逃した')) blocked.push({ uid, effect, reason: unmet });
+        continue;
+      }
       // 罠・速攻魔法はセットしたターンには発動できない（手札から発動する速攻魔法は除く）
       const d = env.def(uid);
       if (
@@ -224,11 +245,15 @@ export function chainableEffects(
       )
         continue;
       // コストを払えて、処理で選ぶカードがあるか
-      if (startEffect(state, ctx, uid, effect, undefined, 'never', true).kind === 'error') continue;
+      const probe = startEffect(state, ctx, uid, effect, undefined, 'never', true);
+      if (probe.kind === 'error') {
+        if (effect.condition) blocked.push({ uid, effect, reason: probe.error });
+        continue;
+      }
       out.push({ uid, effect });
     }
   }
-  return out;
+  return { ok: out, blocked };
 }
 
 export function startEffect(
@@ -380,11 +405,6 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
     const actions = [...resolveOppLink(state, ctx, link), { type: 'CHAIN_POP' } as Action];
     return { kind: 'done', action: { type: 'BATCH', label: `チェーン${no}を解決：相手の${name}`, actions } };
   }
-  // 相手（練習用の相手AI）がまだ応答していない：解決する前に妨害をチェーンしてくるか
-  if (link.oppPending && ctx.options.strict && ctx.options.oppAI !== false) {
-    const opp = oppResponse(state, ctx);
-    if (opp) return { kind: 'done', action: { type: 'BATCH', label: '相手がチェーン', actions: opp }, chained: true };
-  }
   // 無効にされた効果：処理せず、破壊されたカード・発動した魔法・罠は墓地へ
   if (link.negated) {
     const inst = state.cards[link.uid];
@@ -444,7 +464,8 @@ export function fizzleTop(state: GameState, ctx: Ctx): Action | null {
 function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   if (run.chainMode === 'never' || run.resolving || run.effect.applied) return null;
   const speed = effectSpeed(run.temp, ctx, run.self, run.effect);
-  const responses = chainableEffects(run.temp, ctx, Math.max(2, speed)).filter((c) => c.uid !== run.self);
+  const before = chainCandidates(run.temp, ctx, Math.max(2, speed));
+  const responses = before.ok.filter((c) => c.uid !== run.self);
   const def = makeEnv(run.temp, ctx, run.self).def(run.self);
   const index = ctx.scripts?.[def.id]?.effects?.indexOf(run.effect) ?? -1;
   if (index < 0) return null;
@@ -466,23 +487,23 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
   if (!r.ok) return { kind: 'error', error: r.error };
   // 積んだ後に発動できるようになる効果（「対象になった時」の効果・同時に発動条件を満たした誘発効果など）があれば、
   // チェーンを組めるように止める
-  const fresh = chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
+  const after = chainCandidates(r.state, ctx, Math.max(2, speed));
+  const fresh = after.ok.filter(
     (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
+  );
+  // 発動条件は満たしたのに使えない効果（青き眼の精霊がいて出せない乙女③など）も、理由を見せるために止める
+  const freshBlocked = after.blocked.filter(
+    (c) => c.uid !== run.self && !before.blocked.some((x) => x.uid === c.uid && x.effect === c.effect),
   );
   // 通信対戦：相手が妨害を使えるなら、チェーンに積んで相手の応答を待つ
   if (ctx.options.oppAsk && oppCanRespond(r.state, ctx))
     return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
   // ルールチェックなし：この発動にチェーンする効果（「対象になった時」など）がある時だけ積む
-  if (run.chainMode === 'reactive' && fresh.length === 0) return null;
+  if (run.chainMode === 'reactive' && fresh.length + freshBlocked.length === 0) return null;
   // 相手（練習用の相手AI）が妨害をチェーンしてくるか
   const opp = ctx.options.strict && ctx.options.oppAI !== false ? oppResponse(r.state, ctx) : null;
-  if (run.chainMode === 'auto' && responses.length + fresh.length === 0 && !opp) return null;
-  // 「対象になった時」の効果などは発動した側が先にチェーンできる。相手は「解決する」を押した時に妨害してくる
-  if (opp && fresh.length)
-    return {
-      kind: 'done',
-      action: { type: 'BATCH', label: run.title, actions: [...run.batch, { ...push, oppPending: true }] },
-    };
+  if (run.chainMode === 'auto' && responses.length + fresh.length + freshBlocked.length === 0 && !opp) return null;
+  // 発動したら先に相手がチェーンするか決める。相手が妨害を挟むと、「対象になった時」の効果は直接チェーンできなくなる
   return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push, ...(opp ?? [])] } };
 }
 
@@ -566,6 +587,19 @@ export function stepCandidates(run: Running, ctx: Ctx): string[] {
   );
 }
 
+/** 選ぶカードはあるが、どれも特殊召喚できない（青き眼の精霊がいる間など）なら、その理由 */
+function summonBlockedReason(run: Running, ctx: Ctx): string | null {
+  const step = currentStep(run);
+  if (step?.op !== 'pick' || step.zone !== 'monster' || step.zoneIf || step.noSummonCheck) return null;
+  const env = stepEnv(run, ctx);
+  for (const u of candidates(run.temp, step.from)) {
+    if ((step.filter && !env.matches(u, step.filter)) || (step.where && !step.where(env, u))) continue;
+    const error = effectSummonError(run.temp, ctx, u);
+    if (error) return error;
+  }
+  return null;
+}
+
 /**
  * 発動できるか（効果の処理で最初に選ぶカードがあるか）を、コストを払った後の盤面で確かめる。
  * 選べるカードが無い効果は発動できない（チェーンに積んでから不発になるのを防ぐ）
@@ -590,7 +624,8 @@ function resolutionBlocked(run: Running, ctx: Ctx): string | null {
     }
     sim = { ...sim, stepIndex: i };
     const [min] = pickRange(sim, ctx);
-    if (min > 0 && stepCandidates(sim, ctx).length < min) return `選べるカードがありません（${step.prompt}）`;
+    if (min > 0 && stepCandidates(sim, ctx).length < min)
+      return summonBlockedReason(sim, ctx) ?? `選べるカードがありません（${step.prompt}）`;
     if (min > 0 && step.zone && !step.zoneIf && !step.noSummonCheck) {
       // EXデッキのカードを出すならEXモンスターゾーンも使える
       const fromExtra = stepCandidates(sim, ctx).find((u) => findLocation(sim.temp, u)?.zone === 'extra');

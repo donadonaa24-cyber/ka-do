@@ -185,6 +185,13 @@ const sentFromFieldThisTurn = (env: Env) => {
 const chainTopTargets = (env: Env) => {
   const top = env.state.chain[env.state.chain.length - 1];
   const effect = top ? env.ctx.scripts?.[top.defId]?.effects?.[top.effect] : undefined;
+  // 相手の妨害（ア＝バオ・ア・クゥーなど）の対象になった時
+  if (top?.opp && top.target === env.self) return null;
+  // 対象にとった効果の上に別のチェーンが挟まると、直接チェーンできないのでタイミングを逃す
+  const below = env.state.chain.slice(0, -1);
+  const missed = below.some((l) => l.targets?.includes(env.self) || (l.opp && l.target === env.self));
+  if (missed && !top?.targets?.includes(env.self))
+    return 'タイミングを逃したため発動できません（対象にとった効果に直接チェーンする必要があります）';
   // 発動時に対象を選んだ効果なら、このカードが対象になっている時だけ
   if (top?.targets) return top.targets.includes(env.self) ? null : 'このカードは対象になっていません';
   if (effect?.targets && top.picks?.some((p) => p.length)) {

@@ -218,8 +218,6 @@ export interface ChainLink {
   deferred?: DeferredTarget[];
   /** 対象にとったカード（「対象になった時」の効果の判定に使う） */
   targets?: string[];
-  /** 練習用の相手AIがまだ応答していない（こちらが先にチェーンできるので、解決する時に聞く） */
-  oppPending?: boolean;
   /** 通信対戦：このチェーンに相手が応答した（使わなかった・使った） */
   oppPassed?: boolean;
   /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */
