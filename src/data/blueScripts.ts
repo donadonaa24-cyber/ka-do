@@ -185,6 +185,10 @@ const sentFromFieldThisTurn = (env: Env) => {
 const chainTopTargets = (env: Env) => {
   const top = env.state.chain[env.state.chain.length - 1];
   const effect = top ? env.ctx.scripts?.[top.defId]?.effects?.[top.effect] : undefined;
+  // 発動時に対象を選んだ効果なら、このカードが対象になっている時だけ
+  if (effect?.targets && top.picks?.some((p) => p.length)) {
+    return top.picks.some((p) => p.includes(env.self)) ? null : 'このカードは対象になっていません';
+  }
   if (effect?.targets) return null;
   // 相手のモンスターの攻撃対象になった時（攻撃宣言の直後）
   const b = env.state.battle;
@@ -848,7 +852,9 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
               : '手札・デッキに墓地へ送る通常モンスターがいません',
         steps: [
           {
+            // 対象は発動する時に選ぶ（白き乙女③など「対象になった時」の効果をチェーンできる）
             op: 'pick',
+            cost: true,
             prompt: '攻撃力・守備力を上げる自分フィールドの表側表示モンスター（対象）',
             from: ['monsters'],
             where: (env, u) => env.state.cards[u].faceUp,

@@ -201,6 +201,8 @@ export interface ChainLink {
   label: string;
   /** 誘発効果（同時に発動条件を満たした誘発効果は、スペルスピード1でもチェーンを組める） */
   trigger?: boolean;
+  /** 発動時に選んだカード（対象など）。解決する時にもう一度使う */
+  picks?: string[][];
   /** 通信対戦：このチェーンに相手が応答した（使わなかった・使った） */
   oppPassed?: boolean;
   /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */

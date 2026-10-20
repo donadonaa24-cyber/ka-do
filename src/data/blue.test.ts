@@ -793,3 +793,78 @@ describe('藍眼の銀龍①（バグ報告）', () => {
     expect(tryEffect(s, azure, '① X召喚時')).toMatch(/召喚/);
   });
 });
+
+describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報告）', () => {
+  /** 効果を発動し、選択を順に行う（chainMode: auto）。done の操作を返す */
+  const run = (s: GameState, uid: string, label: string, picks: string[][], zone?: Location) => {
+    const effect = CARD_SCRIPTS[s.cards[uid].defId].effects!.find((e) => e.label.startsWith(label))!;
+    let r: RunResult = startEffect(s, ctx, uid, effect, undefined, 'auto');
+    for (const names of picks) {
+      if (r.kind !== 'running') break;
+      const cands = stepCandidates(r.run, ctx);
+      const picked = names.map((n) => cands.find((u) => name(r.kind === 'running' ? r.run.temp : s, u) === n)!);
+      r = afterPick({ ...r.run, picked }, ctx);
+      if (r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, zone ?? mz(4));
+    }
+    if (r.kind !== 'done') throw new Error(r.kind === 'error' ? r.error : '選択が残っています');
+    return act(s, r.action);
+  };
+  const resolveAll = (s: GameState, picks: string[][]) => {
+    for (let i = 0; s.chain.length && i < 5; i++) {
+      let r: RunResult = startResolve(s, ctx);
+      while (r.kind === 'running' && picks.length) {
+        const cands = stepCandidates(r.run, ctx);
+        const names = picks.shift()!;
+        const picked = names.map((n) => cands.find((u) => name(r.kind === 'running' ? r.run.temp : s, u) === n)!);
+        r = afterPick({ ...r.run, picked }, ctx);
+        if (r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, mz(4));
+      }
+      if (r.kind !== 'done') throw new Error(r.kind === 'error' ? r.error : '選択が残っています');
+      s = act(s, r.action);
+    }
+    return s;
+  };
+
+  it('霊堂②で白き乙女を対象にすると、乙女③をチェーンして墓地のレベル1チューナーを出せる', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    // 霊堂②：対象は発動時に選ぶ。乙女③をチェーンできるので止まる
+    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女']]);
+    expect(s.chain).toHaveLength(1);
+    expect(s.chain[0].picks).toEqual([[maiden]]);
+    const responses = chainableEffects(s, ctx, s.chain[0].speed).map(
+      (c) => `${name(s, c.uid)}:${c.effect.label.slice(0, 2)}`,
+    );
+    expect(responses).toContain('白き乙女:③ ');
+    // 乙女③をチェーン：墓地の青き眼の賢士（光属性・レベル1チューナー）を特殊召喚
+    s = run(s, maiden, '③ 対象になった時', []);
+    expect(s.chain).toHaveLength(2);
+    // 解決：C2 乙女③（墓地の賢士を特殊召喚）→ C1 霊堂②（デッキの通常モンスターを墓地へ送り、乙女の攻守アップ）
+    s = resolveAll(s, [['青き眼の賢士'], ['青眼の白龍']]);
+    expect(s.mz.filter(Boolean).map((u) => name(s, u!))).toContain('青き眼の賢士');
+    expect(currentStats(s, ctx, maiden).atk).toBe(0 + 800);
+  });
+
+  it('対象になっていない白き乙女の③はチェーンできない', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = put(s, find(s, 'deck', '青眼の白龍'), 1);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    // 青眼の白龍を対象にした時は、乙女③は発動できない（チェーンせずにそのまま処理に進む）
+    const hall = s.fz!;
+    const effect = CARD_SCRIPTS[s.cards[hall].defId].effects!.find((e) =>
+      e.label.startsWith('② 手札・デッキの通常モンスター'),
+    )!;
+    let r: RunResult = startEffect(s, ctx, hall, effect, undefined, 'auto');
+    if (r.kind !== 'running') throw new Error('対象を選ぶ前に止まっていません');
+    const be = stepCandidates(r.run, ctx).find((u) => u === s.mz[1])!;
+    r = afterPick({ ...r.run, picked: [be] }, ctx);
+    expect(r.kind).toBe('running');
+    if (r.kind === 'running') expect(r.run.temp.chain).toHaveLength(0);
+  });
+});

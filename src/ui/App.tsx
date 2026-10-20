@@ -703,6 +703,9 @@ export function App() {
       // 同じ効果の別の使い方（「白き乙女を対象に発動し…」など）は、今その使い方ができる時だけ出す
       const variant = e.key && script!.effects!.slice(0, i).some((o) => o.key === e.key);
       if (variant && e.condition?.(makeEnv(state, ctx, uid))) continue;
+      // 「白き乙女を対象に発動し、乙女③をチェーン」のような、ルート探索用にまとめた使い方はボタンに出さない
+      // （本来の効果で対象を選ぶと、対象になったカードの効果をチェーンできる）
+      if (variant && e.label.includes('をチェーン')) continue;
       if (effectUsedUp(state, ctx, uid, e)) {
         btns.push({ label: e.label, used: true, onClick: () => {} });
         continue;

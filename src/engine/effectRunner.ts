@@ -381,6 +381,7 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
       mode: 0,
       chainMode: 'never',
       resolving: true,
+      history: link.picks ?? [],
     },
     ctx,
   );
@@ -417,13 +418,15 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
     label: run.effect.label,
     from: run.from,
     ...(trigger ? { trigger: true } : {}),
+    // 発動時に選んだ対象（解決する時に使う。「対象になった時」の効果の判定にも使う）
+    ...(run.history?.some((p) => p.length) ? { picks: run.history } : {}),
   };
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
-  // 誘発効果：同時に発動条件を満たした他の誘発効果があれば、チェーンを組めるように止める
-  if (trigger)
-    responses.push(
-      ...chainableEffects(r.state, ctx, 2).filter(
+  // 積んだ後に発動できるようになる効果（「対象になった時」の効果・同時に発動条件を満たした誘発効果など）があれば、
+  // チェーンを組めるように止める
+  responses.push(
+      ...chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
         (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
       ),
     );

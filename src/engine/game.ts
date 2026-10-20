@@ -211,6 +211,8 @@ export type Action =
       opp?: string;
       /** 誘発効果 */
       trigger?: boolean;
+      /** 発動時に選んだカード（対象など） */
+      picks?: string[][];
       targetLink?: number;
       target?: string;
       /** 発動した場所 */
@@ -1788,6 +1790,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         speed: action.speed,
         label: action.label,
         ...(action.trigger ? { trigger: true } : {}),
+        ...(action.picks?.some((p) => p.length) ? { picks: action.picks } : {}),
         ...(action.opp ? { opp: action.opp, targetLink: action.targetLink, target: action.target } : {}),
         ...(action.from ? { from: action.from } : {}),
       });
