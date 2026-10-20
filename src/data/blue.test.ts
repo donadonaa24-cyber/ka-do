@@ -817,7 +817,10 @@ describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報�
         const names = picks.shift()!;
         const picked = names.map((n) => cands.find((u) => name(r.kind === 'running' ? r.run.temp : s, u) === n)!);
         r = afterPick({ ...r.run, picked }, ctx);
-        if (r.kind === 'running' && r.run.stage === 'zone') r = completeStep(r.run, ctx, mz(4));
+        if (r.kind === 'running' && r.run.stage === 'zone') {
+          const t = r.run.temp;
+          r = completeStep(r.run, ctx, mz(t.mz[4] ? t.mz.findIndex((u) => !u) : 4));
+        }
       }
       if (r.kind !== 'done') throw new Error(r.kind === 'error' ? r.error : '選択が残っています');
       s = act(s, r.action);
@@ -866,5 +869,57 @@ describe('光の霊堂②の対象に白き乙女③をチェーン（バグ報�
     r = afterPick({ ...r.run, picked: [be] }, ctx);
     expect(r.kind).toBe('running');
     if (r.kind === 'running') expect(r.run.temp.chain).toHaveLength(0);
+  });
+
+  it('発動時に墓地にいなかった青眼の白龍は、霊堂②の処理後に乙女③で出せない', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    // 墓地に出せるモンスターがいないので乙女③はチェーンできず、霊堂②はそのまま処理される
+    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女'], ['青眼の白龍']]);
+    expect(s.chain).toHaveLength(0);
+    expect(s.gy.map((u) => name(s, u))).toContain('青眼の白龍');
+    // 処理が終わった後に、乙女③を起動効果のように発動することはできない
+    const effect = CARD_SCRIPTS[s.cards[maiden].defId].effects!.find((e) => e.label.startsWith('③ 対象になった時'))!;
+    expect(startEffect(s, ctx, maiden, effect, undefined, 'auto').kind).toBe('error');
+  });
+
+  it('霊堂②の解決時に対象がフィールドを離れていれば不発（通常モンスターは墓地へ送らない）', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '光の霊堂'), to: { zone: 'fz' }, faceUp: true });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'gy' } });
+    const hall = s.fz!;
+    const maiden = s.mz[0]!;
+    s = run(s, hall, '② 手札・デッキの通常モンスター', [['白き乙女']]);
+    expect(s.chain[0].targets).toEqual([maiden]);
+    s = act(s, { type: 'MOVE', uid: maiden, to: { zone: 'gy' } });
+    const gyBefore = s.gy.length;
+    s = resolveAll(s, []);
+    expect(s.chain).toHaveLength(0);
+    expect(s.gy).toHaveLength(gyBefore);
+    expect(s.log.some((l) => l.text.includes('不発'))).toBe(true);
+  });
+
+  it('青き眼の賢士②：白き乙女を対象に発動し、乙女③をチェーン → 乙女③で蘇生 → 賢士②で乙女を墓地へ送りブルーアイズを出す', () => {
+    let s = createGame(BLUE_EYES_DECK, ctx, 1, []);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青き眼の賢士'), to: { zone: 'hand' } });
+    s = put(s, find(s, 'deck', '白き乙女'), 0);
+    s = act(s, { type: 'MOVE', uid: find(s, 'deck', '青眼の白龍'), to: { zone: 'gy' } });
+    const sage = find(s, 'hand', '青き眼の賢士');
+    const maiden = s.mz[0]!;
+    // 発動時：賢士を捨て（コスト）、乙女を対象にする。乙女はまだフィールドにいる
+    s = run(s, sage, '② 手札から捨て', [['白き乙女']]);
+    expect(s.chain).toHaveLength(1);
+    expect(s.chain[0].targets).toEqual([maiden]);
+    expect(s.gy).toContain(sage);
+    expect(s.mz[0]).toBe(maiden);
+    s = run(s, maiden, '③ 対象になった時', []);
+    expect(s.chain).toHaveLength(2);
+    s = resolveAll(s, [['青眼の白龍'], ['青眼の白龍']]);
+    expect(s.gy).toContain(maiden);
+    expect(s.mz.filter(Boolean).map((u) => name(s, u!))).toEqual(['青眼の白龍', '青眼の白龍']);
   });
 });

@@ -186,6 +186,7 @@ const chainTopTargets = (env: Env) => {
   const top = env.state.chain[env.state.chain.length - 1];
   const effect = top ? env.ctx.scripts?.[top.defId]?.effects?.[top.effect] : undefined;
   // 発動時に対象を選んだ効果なら、このカードが対象になっている時だけ
+  if (top?.targets) return top.targets.includes(env.self) ? null : 'このカードは対象になっていません';
   if (effect?.targets && top.picks?.some((p) => p.length)) {
     return top.picks.some((p) => p.includes(env.self)) ? null : 'このカードは対象になっていません';
   }
@@ -378,6 +379,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '除外する相手フィールドの魔法・罠（対象）',
+            target: true,
             from: ['oppSpelltraps'],
             min: 1,
             max: 1,
@@ -434,6 +436,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '墓地へ送る自分フィールドの効果モンスター（対象）',
+            target: true,
             from: ['monsters'],
             where: (env, u) => env.state.cards[u].faceUp && isEffectMonster(env.def(u)),
             min: 1,
@@ -725,17 +728,25 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
         steps: [
           {
             op: 'pick',
-            prompt: '対象にする、墓地へ送られた「青眼の白龍」かブルーアイズ儀式モンスター → 出すゾーンを選択',
+            prompt: '対象にする、墓地へ送られた「青眼の白龍」かブルーアイズ儀式モンスター',
+            target: true,
             from: ['gy'],
             where: (env, u) => u !== env.self && sentThisTurnBlueEyesTarget(env, u),
             min: 1,
             max: 1,
+            then: () => [],
+          },
+          {
+            op: 'place',
+            prompt: 'このカードを出すゾーンを選択',
             zone: 'monster',
-            noSummonCheck: true,
-            then: (env, p, z) => [
-              ss(env.self, z, `攻撃力${env.def(p[0]).atk ?? 0}・フィールドを離れると除外`),
-              { type: 'STAT_MOD', uid: env.self, setAtk: env.def(p[0]).atk ?? 0 },
-            ],
+            then: (env, z) => {
+              const atk = env.def(env.picks![0][0]).atk ?? 0;
+              return [
+                ss(env.self, z, `攻撃力${atk}・フィールドを離れると除外`),
+                { type: 'STAT_MOD', uid: env.self, setAtk: atk },
+              ];
+            },
           },
         ],
       },
@@ -798,6 +809,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '除外するフィールドの魔法・罠（対象）',
+            target: true,
             from: ['spelltraps', 'oppSpelltraps'],
             where: (env, u) => u !== env.self,
             min: 1,
@@ -854,7 +866,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             // 対象は発動する時に選ぶ（白き乙女③など「対象になった時」の効果をチェーンできる）
             op: 'pick',
-            cost: true,
+            target: true,
             prompt: '攻撃力・守備力を上げる自分フィールドの表側表示モンスター（対象）',
             from: ['monsters'],
             where: (env, u) => env.state.cards[u].faceUp,
@@ -1025,6 +1037,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '装備先の自分フィールドの「青眼の白龍」（対象）',
+            target: true,
             from: ['monsters'],
             where: (env, u) => env.state.cards[u].faceUp && isBE(env, u),
             min: 1,
@@ -1398,6 +1411,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '対象にする「赤き竜」以外のレベル7以上のSモンスター',
+            target: true,
             from: ['monsters'],
             filter: { kind: ['monster'], frame: ['synchro'], minLevel: 7, excludeName: ['赤き竜'] },
             where: (env, u) => env.state.cards[u].faceUp,
@@ -1793,6 +1807,7 @@ export const BLUE_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '手札に戻す相手フィールドのカード（対象）',
+            target: true,
             from: ['oppField'],
             min: 1,
             max: 1,

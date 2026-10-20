@@ -189,6 +189,17 @@ export interface CardInstance {
 export type SummonType = 'normal' | 'special' | 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
 
 /** チェーンに積まれた効果。解決はスクリプトの effect 番号の stepStart 以降を実行する */
+/** 発動時に対象を選んだステップ（処理は解決する時に行う） */
+export interface DeferredTarget {
+  /** 効果のステップ番号 */
+  step: number;
+  picked: string[];
+  zone: Location | null;
+  mode: number;
+  /** 選んだ時の場所（`ゾーン:entryId`）。解決する時に変わっていれば対象から外れる */
+  at: string[];
+}
+
 export interface ChainLink {
   uid: string;
   defId: string;
@@ -203,6 +214,10 @@ export interface ChainLink {
   trigger?: boolean;
   /** 発動時に選んだカード（対象など）。解決する時にもう一度使う */
   picks?: string[][];
+  /** 発動時に選んだ対象（解決する時に、まだ同じ場所にあるものだけに処理する） */
+  deferred?: DeferredTarget[];
+  /** 対象にとったカード（「対象になった時」の効果の判定に使う） */
+  targets?: string[];
   /** 通信対戦：このチェーンに相手が応答した（使わなかった・使った） */
   oppPassed?: boolean;
   /** 相手（練習用の相手AI）の妨害。値は妨害の種類（oppAI.ts） */

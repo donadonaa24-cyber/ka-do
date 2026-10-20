@@ -9,6 +9,7 @@ import type {
   CardDef,
   CardInstance,
   DeckList,
+  DeferredTarget,
   GameOptions,
   GameState,
   Location,
@@ -213,6 +214,8 @@ export type Action =
       trigger?: boolean;
       /** 発動時に選んだカード（対象など） */
       picks?: string[][];
+      /** 発動時に選んだ対象（処理は解決する時） */
+      deferred?: DeferredTarget[];
       targetLink?: number;
       target?: string;
       /** 発動した場所 */
@@ -1791,6 +1794,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         label: action.label,
         ...(action.trigger ? { trigger: true } : {}),
         ...(action.picks?.some((p) => p.length) ? { picks: action.picks } : {}),
+        ...(action.deferred?.length
+          ? { deferred: action.deferred, targets: action.deferred.flatMap((d) => d.picked) }
+          : {}),
         ...(action.opp ? { opp: action.opp, targetLink: action.targetLink, target: action.target } : {}),
         ...(action.from ? { from: action.from } : {}),
       });

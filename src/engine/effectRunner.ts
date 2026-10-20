@@ -13,7 +13,7 @@ import {
 } from './game';
 import { oppCanRespond, oppResponse, resolveOppLink } from './oppAI';
 import { type EffectDef, type Env, effectText, type Step } from './scripts';
-import type { CardDef, GameState, Location } from './types';
+import type { CardDef, DeferredTarget, GameState, Location } from './types';
 
 /** 実行中の効果処理。途中の盤面（temp）を見ながら1ステップずつ選ばせる */
 export interface Running {
@@ -47,6 +47,38 @@ export interface Running {
   fizzled?: boolean;
   /** 発動した場所（相手の妨害の判定に使う） */
   from?: string;
+  /** 発動時に選んだ対象（then は解決する時に処理する） */
+  deferred?: DeferredTarget[];
+}
+
+/** 発動する時に処理するステップ（コストと、解決中でなければ対象を選ぶステップ） */
+function isActivationStep(run: Running, step: Step | undefined): boolean {
+  if (!step || run.extraStep) return false;
+  return !!step.cost || (step.op === 'pick' && !!step.target && !run.resolving);
+}
+
+/** 対象がまだ同じ場所にあるかを比べるための、今の場所 */
+function targetAt(state: GameState, uid: string): string {
+  return `${findLocation(state, uid)?.zone ?? ''}:${state.cards[uid]?.entryId ?? ''}`;
+}
+
+/**
+ * 発動時に選んだ対象の処理（then）を行う。解決する時に場所が変わった対象には処理せず、
+ * 対象を選んだのに1枚も残っていなければ不発にする
+ */
+function applyDeferred(run: Running, ctx: Ctx): Running | string {
+  let cur: Running = { ...run, deferred: undefined };
+  for (const d of run.deferred ?? []) {
+    const step = run.effect.steps[d.step];
+    if (step?.op !== 'pick') continue;
+    const valid = d.picked.filter((u, i) => targetAt(cur.temp, u) === d.at[i]);
+    if (d.picked.length && !valid.length)
+      return { ...cur, title: `${cur.title}（対象が無くなったため不発）`, fizzled: true };
+    const next = applyAll(cur, ctx, step.then(stepEnv(cur, ctx), valid, d.zone, d.mode));
+    if (typeof next === 'string') return next;
+    cur = next;
+  }
+  return cur;
 }
 
 /** ステップに渡す盤面の見え方（前のステップで選んだカードを含む） */
@@ -310,7 +342,7 @@ export function startEffect(
  */
 function costLookaheadBlocked(run: Running, ctx: Ctx, depth = 0): string | null {
   const step = currentStep(run);
-  if (run.extraStep || run.stage !== 'pick' || step?.op !== 'pick' || !step.cost || depth > 2) return null;
+  if (run.stage !== 'pick' || step?.op !== 'pick' || !isActivationStep(run, step) || depth > 2) return null;
   const cands = stepCandidates(run, ctx);
   const [min] = pickRange(run, ctx);
   if (cands.length < min) return `選べるカードがありません（${step.prompt}）`;
@@ -382,6 +414,7 @@ export function startResolve(state: GameState, ctx: Ctx): RunResult {
       chainMode: 'never',
       resolving: true,
       history: link.picks ?? [],
+      deferred: link.deferred,
     },
     ctx,
   );
@@ -420,16 +453,17 @@ function pushToChain(run: Running, ctx: Ctx): RunResult | null {
     ...(trigger ? { trigger: true } : {}),
     // 発動時に選んだ対象（解決する時に使う。「対象になった時」の効果の判定にも使う）
     ...(run.history?.some((p) => p.length) ? { picks: run.history } : {}),
+    ...(run.deferred?.length ? { deferred: run.deferred } : {}),
   };
   const r = applyAction(run.temp, push, ctx);
   if (!r.ok) return { kind: 'error', error: r.error };
   // 積んだ後に発動できるようになる効果（「対象になった時」の効果・同時に発動条件を満たした誘発効果など）があれば、
   // チェーンを組めるように止める
   responses.push(
-      ...chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
-        (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
-      ),
-    );
+    ...chainableEffects(r.state, ctx, Math.max(2, speed)).filter(
+      (c) => c.uid !== run.self && !responses.some((x) => x.uid === c.uid && x.effect === c.effect),
+    ),
+  );
   // 通信対戦：相手が妨害を使えるなら、チェーンに積んで相手の応答を待つ
   if (ctx.options.oppAsk && oppCanRespond(r.state, ctx))
     return { kind: 'done', action: { type: 'BATCH', label: run.title, actions: [...run.batch, push] } };
@@ -524,7 +558,9 @@ export function stepCandidates(run: Running, ctx: Ctx): string[] {
  * 選べるカードが無い効果は発動できない（チェーンに積んでから不発になるのを防ぐ）
  */
 function resolutionBlocked(run: Running, ctx: Ctx): string | null {
-  let sim: Running = { ...run, extraStep: undefined };
+  const applied = applyDeferred({ ...run, extraStep: undefined }, ctx);
+  if (typeof applied === 'string' || applied.fizzled) return null;
+  let sim: Running = applied;
   for (let i = run.stepIndex; i < run.effect.steps.length; i++) {
     const step = run.effect.steps[i];
     if (step.op === 'place') {
@@ -559,25 +595,33 @@ export function advance(run: Running, ctx: Ctx): RunResult {
   for (;;) {
     const step = currentStep(cur);
     // コストを払い終えたら、効果を処理できるか確かめる
-    if (!cur.resolving && !cur.feasible && !cur.extraStep && (!step || !step.cost)) {
+    if (!cur.resolving && !cur.feasible && !cur.extraStep && !isActivationStep(cur, step)) {
       const blocked = resolutionBlocked(cur, ctx);
       if (blocked) return { kind: 'error', error: blocked, blocked: true };
       cur = { ...cur, feasible: true };
     }
     // コストを払い終えたら、チェーンに積むか（積まずにこのまま処理するか）を決める
-    if (cur.chainMode !== 'never' && !cur.resolving && (!step || !step.cost)) {
+    if (cur.chainMode !== 'never' && !cur.resolving && !isActivationStep(cur, step)) {
       const pushed = pushToChain(cur, ctx);
       if (pushed) return pushed;
       cur = { ...cur, chainMode: 'never' };
     }
     // 効果の処理に入る前に「処理後まで除外」を使うか聞く
-    if (!cur.extraStep && !cur.tempBanishChecked && !cur.effect.applied && (!step || !step.cost)) {
+    if (!cur.extraStep && !cur.tempBanishChecked && !cur.effect.applied && !isActivationStep(cur, step)) {
       cur = { ...cur, tempBanishChecked: true };
       const extra = tempBanishStep(cur, ctx);
       if (extra) {
         cur = { ...cur, extraStep: extra };
         continue;
       }
+    }
+    // 発動時に選んだ対象の処理（対象が無くなっていれば不発）
+    if (cur.deferred?.length && !cur.extraStep && !isActivationStep(cur, step)) {
+      const next = applyDeferred(cur, ctx);
+      if (typeof next === 'string') return { kind: 'error', error: next };
+      if (next.fizzled) return finish(next, ctx);
+      cur = next;
+      continue;
     }
     if (!step) return finish(cur, ctx);
     if (step.op === 'do') {
@@ -655,6 +699,25 @@ export function completeStep(run: Running, ctx: Ctx, zone: Location | null): Run
         tempBanished: uid
           ? { uid, index: loc?.zone === 'mz' ? loc.index : -1, position: run.temp.cards[uid].position }
           : undefined,
+      },
+      ctx,
+    );
+  }
+  // 対象を選ぶステップ：選んだカードを覚えておき、処理は解決する時に行う
+  if (isActivationStep(run, step) && step.op === 'pick' && step.target) {
+    const d: DeferredTarget = {
+      step: run.stepIndex,
+      picked: run.picked,
+      zone,
+      mode: run.mode,
+      at: run.picked.map((u) => targetAt(run.temp, u)),
+    };
+    return advance(
+      {
+        ...run,
+        stepIndex: run.stepIndex + 1,
+        history: [...(run.history ?? []), run.picked],
+        deferred: [...(run.deferred ?? []), d],
       },
       ctx,
     );

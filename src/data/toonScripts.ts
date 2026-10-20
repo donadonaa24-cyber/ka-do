@@ -654,6 +654,7 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
           {
             op: 'pick',
             prompt: '対象にする自分フィールドのトゥーンモンスター',
+            target: true,
             from: ['monsters'],
             filter: { toonMonster: true },
             min: 1,

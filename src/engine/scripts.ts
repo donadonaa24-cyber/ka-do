@@ -59,6 +59,11 @@ export type Step =
       prompt: string;
       /** 発動時に払うコスト（チェーンに積む前に処理する） */
       cost?: boolean;
+      /**
+       * 対象を選ぶステップ：発動する時（チェーンに積む前）に選び、then は解決する時に処理する。
+       * 解決する時に対象が同じ場所に無ければ、その対象には処理しない（全ての対象が無ければ不発）
+       */
+      target?: boolean;
       from: PickZone[];
       filter?: CardFilter;
       /** CardFilter で表せない条件 */
