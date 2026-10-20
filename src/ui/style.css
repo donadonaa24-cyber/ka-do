@@ -3022,3 +3022,9 @@ button.danger {
     justify-content: flex-end;
   }
 }
+
+/* 盤面・手札のカードは、指で触れてそのまま動かせばドラッグ（画面のスクロールにしない） */
+.board .card,
+.hand-cards .card {
+  touch-action: none;
+}

@@ -17,9 +17,11 @@ interface Pending {
   timer: number | null;
 }
 
-/** タッチは少し長押ししてから動かすとドラッグ（すぐ動かすと画面のスクロール） */
+/** タッチは長押し、または少し動かすとドラッグ */
 const LONG_PRESS_MS = 200;
 const MOUSE_THRESHOLD = 6;
+const TOUCH_START = 8;
+/** 長押しの後、これより動かさずに離したらタップとして扱う */
 const TOUCH_CANCEL = 10;
 
 function dropTargetAt(x: number, y: number): string | null {
@@ -47,11 +49,8 @@ export function useDrag(onDrop: (uid: string, target: string, x: number, y: numb
       if (!p) return;
       const dist = Math.hypot(e.clientX - p.startX, e.clientY - p.startY);
       if (!p.active) {
-        if (p.touch) {
-          if (dist > TOUCH_CANCEL) cancel();
-        } else if (dist > MOUSE_THRESHOLD) {
-          activate(e.clientX, e.clientY);
-        }
+        // 盤面・手札のカードはタッチでもスクロールしない（touch-action: none）ので、長押ししなくても動かせばドラッグ
+        if (dist > (p.touch ? TOUCH_START : MOUSE_THRESHOLD)) activate(e.clientX, e.clientY);
         return;
       }
       setDrag({ uid: p.uid, x: e.clientX, y: e.clientY, target: dropTargetAt(e.clientX, e.clientY) });
