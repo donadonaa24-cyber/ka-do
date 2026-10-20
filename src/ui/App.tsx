@@ -180,6 +180,40 @@ export function App() {
     window.addEventListener('pointerdown', on, { once: true });
     return () => window.removeEventListener('pointerdown', on);
   }, []);
+  // スマホの戻るボタン：押しても、すぐにページを離れずに確認する。
+  // 履歴に目印を1つ積んでおき、戻るボタンでそれが取り除かれたら確認を出す
+  // （ブラウザは操作の前に積んだ履歴を戻るボタンで飛ばすので、最初の操作の時に積む）
+  const [leaveAsk, setLeaveAskState] = useState(false);
+  const leaveAskRef = useRef(false);
+  const setLeaveAsk = (v: boolean) => {
+    leaveAskRef.current = v;
+    setLeaveAskState(v);
+  };
+  const guardArmed = useRef(false);
+  const leaving = useRef(false);
+  const armBackGuard = useCallback(() => {
+    // 確認を出している間（「はい」「いいえ」を押す時）は積まない。「いいえ」の後に積み直す
+    if (guardArmed.current || leaving.current || leaveAskRef.current) return;
+    try {
+      history.pushState({ ygoBackGuard: true }, '');
+      guardArmed.current = true;
+    } catch {
+      // 履歴を使えない環境では確認できない
+    }
+  }, []);
+  useEffect(() => {
+    const onPop = () => {
+      if (leaving.current || !guardArmed.current) return;
+      guardArmed.current = false;
+      setLeaveAsk(true);
+    };
+    window.addEventListener('pointerdown', armBackGuard);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('pointerdown', armBackGuard);
+      window.removeEventListener('popstate', onPop);
+    };
+  }, [armBackGuard]);
   /** 召喚・移動の演出（既定は端末の設定に関係なく出す） */
   const [motionMode, setMotionModeState] = useState<MotionMode>(() => loadMotionMode());
   const setMotionMode = (m: MotionMode) => {
@@ -2046,6 +2080,34 @@ export function App() {
 
           {!home && <MotionLayer view={view} ctx={ctx} animate={animateMotion} />}
           {chance && <ChanceFx roll={chance} onDone={() => setChance(null)} />}
+          {leaveAsk && (
+            <div className="modal-backdrop leave-backdrop">
+              <div className="modal leave-modal" role="alertdialog" aria-label="ページを離れる確認">
+                <h2>このページを離れますか？</h2>
+                <p className="note">今のゲームは保存されているので、開き直すと続きから遊べます。</p>
+                <div className="btn-row leave-btns">
+                  <button
+                    onClick={() => {
+                      leaving.current = true;
+                      setLeaveAsk(false);
+                      history.back();
+                    }}
+                  >
+                    はい（離れる）
+                  </button>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setLeaveAsk(false);
+                      armBackGuard();
+                    }}
+                  >
+                    いいえ（続ける）
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showStepPopup && (
             <StepPopup

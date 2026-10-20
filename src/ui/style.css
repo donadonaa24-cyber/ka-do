@@ -3028,3 +3028,25 @@ button.danger {
 .hand-cards .card {
   touch-action: none;
 }
+
+/* 戻るボタンで離れる前の確認 */
+.leave-backdrop {
+  z-index: 500;
+  align-items: center;
+}
+.leave-modal {
+  max-width: 340px;
+  text-align: center;
+}
+.leave-modal h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.leave-btns {
+  justify-content: center;
+  margin-top: 10px;
+}
+.leave-btns button {
+  min-width: 120px;
+  padding: 10px 12px;
+}
