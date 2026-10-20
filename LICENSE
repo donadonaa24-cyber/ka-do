@@ -1,0 +1,52 @@
+遊戯王 一人回しシミュレーター 利用規約（ライセンス）
+
+Copyright (c) 2026 donadonaa24-cyber. All rights reserved.
+
+このリポジトリのプログラム・データ・デザイン（以下「本ソフトウェア」）の著作権は作者が持っています。
+次の条件で使うことを許可します。
+
+1. 自分用の利用・改造は自由です
+   本ソフトウェアを自分で使うこと、自分用にコピー・改造して使うことができます。
+
+2. 配ることはできません
+   本ソフトウェア（改造したもの、一部だけのもの、まとめたHTMLファイルなどを含みます）を、
+   作者の許可なく他の人に渡す・公開する・配布する・販売することはできません。
+   インターネット上で他の人が使える形で公開することも、配布に含みます。
+
+3. GitHub上での閲覧・フォーク
+   GitHubの利用規約で認められている範囲（リポジトリを見る、GitHub上でフォークする）は、この規約で妨げません。
+   ただし、フォークしたものを他の人が使える形で公開・配布することは2の通りできません。
+
+4. 遊戯王について
+   「遊戯王」およびカード名・カードの文章・カードの画像などの権利は、株式会社コナミデジタルエンタテインメントと
+   その権利者にあります。本ソフトウェアは非公式のファン作品で、コナミとは関係ありません。
+   この規約は、それらの権利について何も許可するものではありません。
+
+5. 保証はありません
+   本ソフトウェアは「そのまま」の状態で提供され、どんな保証もありません。
+   使ったことで起きた問題について、作者は責任を負いません。
+
+配布などの許可がほしい場合は、作者に連絡してください。
+
+---
+
+Yu-Gi-Oh! Solo Play Simulator — License
+
+Copyright (c) 2026 donadonaa24-cyber. All rights reserved.
+
+Permission is granted to use, copy and modify this software (the program, data and design in this
+repository) for your own personal use only.
+
+You may NOT distribute, publish, share, sublicense or sell this software or any modified version,
+portion or bundled build of it (including single-file HTML builds and publicly accessible hosting)
+without prior written permission from the author.
+
+Viewing and forking this repository on GitHub, as permitted by GitHub's Terms of Service, is not
+restricted by this license; publishing or distributing a fork is.
+
+"Yu-Gi-Oh!" and all related card names, card text and card images are the property of Konami Digital
+Entertainment and their respective owners. This is an unofficial fan project, not affiliated with or
+endorsed by Konami. This license grants no rights to any of that material.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE AUTHOR BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
