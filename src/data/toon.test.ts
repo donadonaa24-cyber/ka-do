@@ -240,17 +240,17 @@ describe('チェーン', () => {
 
     // チェーン2：コミックキャット②
     const catEffect = CARD_SCRIPTS['72921536'].effects![0];
-    // リリースはコストなので、チェーンに積む前に払う
+    // リリースはコストではなく効果の処理なので、発動したらそのままチェーンに積む
     r = startEffect(s, ctx, cat, catEffect, undefined, 'auto');
-    let run = (r as { run: Running }).run;
-    r = skipTempBanish(afterPick({ ...run, picked: [cat] }, ctx));
     s = act(s, (r as { action: Action }).action);
     expect(s.chain).toHaveLength(2);
-    expect(s.gy).toContain(cat);
+    expect(s.mz[0]).toBe(cat);
 
-    // チェーン2から解決：デッキからBEトゥーン
+    // チェーン2から解決：キャットをリリースし、デッキからBEトゥーン
     r = skipTempBanish(startResolve(s, ctx));
     expect(r.kind).toBe('running');
+    let run = (r as { run: Running }).run;
+    r = afterPick({ ...run, picked: [cat] }, ctx);
     run = (r as { run: Running }).run;
     const be = stepCandidates(run, ctx).find((u) => name(run.temp, u) === 'ブルーアイズ・トゥーン・ドラゴン')!;
     r = afterPick({ ...run, picked: [be] }, ctx);

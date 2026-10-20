@@ -14,6 +14,8 @@ interface Ability {
   find: (s: GameState, ctx: Ctx, link: ChainLink) => { uid: string; target?: string; cost: Action[] } | null;
   /** 解決したときの処理 */
   resolve: (s: GameState, ctx: Ctx, link: ChainLink) => Action[];
+  /** チェーンせずにも発動できる（相手の召喚の後などにも使える罠）。find はチェーンの一番上を使わないこと */
+  free?: boolean;
 }
 
 const def = (s: GameState, ctx: Ctx, uid: string) => getDef(s, ctx, uid);
@@ -86,6 +88,18 @@ const activateTrap = (s: GameState, uid: string, key: string): Action[] => [
   { type: 'OPP_USE', uid, key },
   ...(findLocation(s, uid)?.zone === 'ostz' ? [{ type: 'OPP_EDIT', uid, faceUp: true } as Action] : []),
 ];
+
+/** 白き龍の威光：相手（このゲームの相手側）の手札・表側のフィールド・墓地の「青眼の白龍」の数（3体まで） */
+function ikoCount(s: GameState, ctx: Ctx): number {
+  const o = s.opp;
+  if (!o) return 0;
+  const field = [...oppMonsterSlots(o), ...o.stz, o.fz].filter((u): u is string => !!u && s.cards[u].faceUp);
+  const be = [...o.hand, ...field, ...o.gy].filter((u) => {
+    const d = def(s, ctx, u);
+    return d.kind === 'monster' && (d.name === '青眼の白龍' || d.treatedAsName === '青眼の白龍');
+  });
+  return Math.min(3, be.length);
+}
 
 /** 相手（CPU）のモンスターの、相手ターンに使える妨害（1ターンに1度など） */
 const monsterAbility = (
@@ -239,6 +253,32 @@ const HAND_TRAP_ABILITIES: Ability[] = [
       return { uid, cost: activateTrap(s, uid, 'opp:列王詩篇') };
     },
     resolve: negate('effect', '列王詩篇', (_, link) => [toGyAfter(link.uid)]),
+  },
+  {
+    id: 'iko',
+    card: '白き龍の威光',
+    label: '① 「青眼の白龍」を3体まで見せ、その数だけ相手フィールドのカードを破壊',
+    speed: 2,
+    free: true,
+    find: (s, ctx) => {
+      const uid = setCard(s, ctx, '白き龍の威光');
+      if (!uid || used(s, `opp:白き龍の威光:${uid}`) || !ikoCount(s, ctx) || !playerField(s).length) return null;
+      return { uid, cost: activateTrap(s, uid, `opp:白き龍の威光:${uid}`) };
+    },
+    resolve: (s, ctx, link) => {
+      // 発動したカード（チェーンしたなら、その効果を発動したカード）を優先して、攻撃力の高い順に破壊（対象をとらない）
+      const source = link.targetLink !== undefined ? s.chain[link.targetLink]?.uid : undefined;
+      const atk = (u: string) =>
+        def(s, ctx, u).kind === 'monster' && s.cards[u].faceUp ? (def(s, ctx, u).atk ?? 0) : -1;
+      const field = playerField(s).sort((a, b) => Number(b === source) - Number(a === source) || atk(b) - atk(a));
+      const destroy = field.slice(0, ikoCount(s, ctx));
+      return [
+        ...destroy.map(
+          (u) => ({ type: 'MOVE', uid: u, to: { zone: 'gy' }, reason: '白き龍の威光の効果で破壊' }) as Action,
+        ),
+        toGyAfter(link.uid),
+      ];
+    },
   },
   {
     id: 'crush',
@@ -555,6 +595,28 @@ export function oppAbilityChoices(s: GameState, ctx: Ctx): { id: string; label: 
     if (found) out.push({ id: a.id, label: a.label, uid: found.uid });
   }
   return out;
+}
+
+/** チェーンせずに発動できる妨害（相手の召喚の後などに使う罠）の一覧。uid は使うカード */
+export function freeAbilityChoices(s: GameState, ctx: Ctx): { id: string; label: string; uid: string }[] {
+  if (s.chain.length || !s.opp) return [];
+  const dummy: ChainLink = { uid: '', defId: '', effect: -1, stepStart: 0, speed: 0, label: '' };
+  return ABILITIES.flatMap((a) => {
+    const found = a.free ? a.find(s, ctx, dummy) : null;
+    return found ? [{ id: a.id, label: a.label, uid: found.uid }] : [];
+  });
+}
+
+/** チェーンせずに妨害を発動する操作（チェーン1になる）。使えなければ null */
+export function forceFreeResponse(s: GameState, ctx: Ctx, abilityId: string): Action[] | null {
+  const a = ABILITIES.find((x) => x.id === abilityId && x.free);
+  const dummy: ChainLink = { uid: '', defId: '', effect: -1, stepStart: 0, speed: 0, label: '' };
+  const found = a && !s.chain.length ? a.find(s, ctx, dummy) : null;
+  if (!a || !found) return null;
+  return [
+    ...found.cost,
+    { type: 'CHAIN_PUSH', uid: found.uid, effect: -1, stepStart: 0, speed: a.speed, label: a.label, opp: a.id },
+  ];
 }
 
 /** 手札から捨てて使う、効果を止めない手札誘発（通信対戦では相手が使うかを聞く） */

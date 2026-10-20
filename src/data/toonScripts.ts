@@ -589,9 +589,9 @@ export const TOON_SCRIPTS: Record<string, CardScript> = {
         condition: mainPhase,
         steps: [
           {
+            // リリースはコストではなく効果の処理（発動にチェーンしてモンスターを除去されると、出せなくなることがある）
             op: 'pick',
-            cost: true,
-            prompt: 'コスト：リリースするモンスター（「トゥーン・ワールド」があれば相手のモンスターも選べる）',
+            prompt: 'リリースするモンスター（「トゥーン・ワールド」があれば相手のモンスターも選べる）',
             from: ['monsters', 'oppMonsters'],
             where: (env, u) => !env.state.cards[u].opp || env.toonWorld,
             min: 1,

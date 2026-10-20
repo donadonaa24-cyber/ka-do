@@ -455,7 +455,13 @@ export function useCpuDuel(opts: {
         setStage('acting');
         return;
       }
-      applyCpu(res.cpuActions, `あなたの${option.name}で「${step.text}」を止めた`, res.keep);
+      applyCpu(
+        res.cpuActions,
+        option.kind === 'free'
+          ? `「${step.text}」の後に、あなたは${option.name}を発動した`
+          : `あなたの${option.name}で「${step.text}」を止めた`,
+        res.keep,
+      );
       setStage('thinking');
     },
     [prompt, cpuState, ctx, human, applyCpu, planIndex, dispatchHuman, onError],

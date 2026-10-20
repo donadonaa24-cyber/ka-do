@@ -12,7 +12,7 @@ import {
 } from './effectRunner';
 import { actionUids } from './coach';
 import { type Action, applyAction, type Ctx, findLocation, getDef } from './game';
-import { forceOppResponse, oppAbilityChoices } from './oppAI';
+import { forceFreeResponse, forceOppResponse, freeAbilityChoices, oppAbilityChoices } from './oppAI';
 import type { EffectDef } from './scripts';
 import type { GameState, Location } from './types';
 
@@ -110,7 +110,8 @@ export interface HandTrapOption {
   label: string;
   /** 手札から・フィールドから */
   from: 'hand' | 'field';
-  kind: 'chain' | 'draw' | 'droll';
+  /** chain：CPUの効果の発動にチェーンする／free：CPUの召喚の後に発動する（白き龍の威光など） */
+  kind: 'chain' | 'free' | 'draw' | 'droll';
   abilityId?: string;
 }
 
@@ -180,6 +181,17 @@ export function handTrapOptions(
         from: 'hand',
         kind: 'droll',
       });
+  }
+  // CPUの召喚の後に発動できる罠（白き龍の威光など）
+  if (step.kind === 'summon') {
+    const after = applyAction(cpu, action, ctx);
+    if (after.ok && !after.state.chain.length)
+      for (const c of freeAbilityChoices(after.state, ctx)) {
+        const uid = after.state.cards[c.uid]?.syncKey;
+        if (!uid || !human.cards[uid]) continue;
+        const name = getDef(human, ctx, uid).name;
+        out.push({ uid, name, label: `${c.label}（召喚の後に発動）`, from: 'field', kind: 'free', abilityId: c.id });
+      }
   }
   // CPUの効果の発動にチェーンして止めるもの（手札誘発・フィールドの妨害）
   const pushed = step.kind === 'activate' ? pushCpuActivation(cpu, ctx, step, new Set(actionUids(action))) : null;
@@ -262,7 +274,14 @@ export function applyHandTrap(
   if (option.kind === 'droll')
     return { cpuActions: [{ type: 'NO_DECK_TO_HAND', by: option.name }], humanActions, replan: true, keep };
   const prefer = new Set(actionUids(action));
-  const pushed = pushCpuActivation(cpu, ctx, describeCpuStep(cpu, ctx, action), prefer);
+  // 召喚の後に発動：召喚してから、チェーン1として発動する
+  const after = option.kind === 'free' ? applyAction(cpu, action, ctx) : null;
+  const pushed =
+    option.kind === 'free'
+      ? after?.ok
+        ? { action, state: after.state }
+        : null
+      : pushCpuActivation(cpu, ctx, describeCpuStep(cpu, ctx, action), prefer);
   if (!pushed || !option.abilityId) return null;
   const cpuActions: Action[] = [pushed.action];
   let s = pushed.state;
@@ -273,7 +292,8 @@ export function applyHandTrap(
     cpuActions.push(a);
     return true;
   };
-  const resp = forceOppResponse(s, ctx, option.abilityId);
+  const resp =
+    option.kind === 'free' ? forceFreeResponse(s, ctx, option.abilityId) : forceOppResponse(s, ctx, option.abilityId);
   if (!resp || !apply({ type: 'BATCH', label: `（あなた）${option.name}`, actions: resp })) return null;
   // チェーンを上から解決する（CPUの選択は予定のルートに沿って自動で行う）
   for (let guard = 0; s.chain.length && guard < 10; guard++) {

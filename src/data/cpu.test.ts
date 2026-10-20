@@ -263,3 +263,45 @@ describe('CPUのＰＳＹフレームギア（プレイヤーが先攻）', () =
     expect(oppField.sort()).toEqual(['ＰＳＹフレーム・ドライバー', 'ＰＳＹフレームギア・γ'].sort());
   });
 });
+
+describe('白き龍の威光（CPU戦・プレイヤーが後攻）', () => {
+  const setup = () => {
+    // CPU：コミックキャットを持つトゥーン。プレイヤー：手札に青眼の白龍、白き龍の威光を伏せている
+    let cpu = createGame(TOON_DECK, ctx, 1, ['72921536']);
+    let human = createGame(BLUE_EYES_DECK, ctx, 1, ['89631139']);
+    const iko = Object.keys(human.cards).find((u) => name(human, u) === '白き龍の威光')!;
+    human = act(human, { type: 'MOVE', uid: iko, to: { zone: 'stz', index: 0 }, faceUp: false });
+    human = act(human, { type: 'END_TURN', toOpponent: true });
+    cpu = mirror(cpu, human);
+    const cat = cpu.hand.find((u) => name(cpu, u) === 'コミックキャット')!;
+    return { cpu, human, cat };
+  };
+
+  it('CPUのコミックキャットの召喚の後に発動して破壊できる', () => {
+    const { cpu, human, cat } = setup();
+    const action: Action = { type: 'NORMAL_SUMMON', uid: cat, index: 0 };
+    const opt = handTrapOptions(cpu, human, cctx, action, []).find((o) => o.name === '白き龍の威光');
+    expect(opt?.kind).toBe('free');
+    const res = applyHandTrap(cpu, cctx, action, opt!, human)!;
+    let s = cpu;
+    for (const a of res.cpuActions) s = cact(s, a);
+    expect(s.chain).toEqual([]);
+    expect(s.gy).toContain(cat);
+  });
+
+  it('コミックキャット②の発動にチェーンして破壊すると、リリースするモンスターがいないので出せない', () => {
+    let { cpu, human, cat } = setup();
+    cpu = cact(cpu, { type: 'NORMAL_SUMMON', uid: cat, index: 0 });
+    const eff = CARD_SCRIPTS['72921536'].effects!.find((e) => e.label.startsWith('②'))!;
+    const action = autoDrive(startEffect(cpu, cctx, cat, eff, undefined, 'never'), cctx, new Set())!;
+    expect(action).toBeTruthy();
+    const opt = handTrapOptions(cpu, human, cctx, action, []).find((o) => o.name === '白き龍の威光');
+    expect(opt?.kind).toBe('chain');
+    const res = applyHandTrap(cpu, cctx, action, opt!, human)!;
+    let s = cpu;
+    for (const a of res.cpuActions) s = cact(s, a);
+    expect(s.chain).toEqual([]);
+    expect(s.gy).toContain(cat);
+    expect(s.mz.filter(Boolean)).toHaveLength(0);
+  });
+});
