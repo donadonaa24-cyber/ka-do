@@ -3097,3 +3097,40 @@ button.danger {
 .lp-edit input {
   width: 96px;
 }
+/* カード詳細の画像：押すと拡大 */
+.detail-img-wrap.zoomable {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  min-height: 0;
+  cursor: zoom-in;
+}
+.img-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(4, 8, 18, 0.88);
+  cursor: zoom-out;
+}
+.img-zoom-card {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.img-zoom-card img {
+  display: block;
+  width: min(92vw, calc((100vh - 80px) * 0.686));
+  height: auto;
+}
+.img-zoom-hint {
+  font-size: 12px;
+  color: #c9d6f0;
+}

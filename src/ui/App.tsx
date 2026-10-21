@@ -246,6 +246,8 @@ export function App() {
       // 保存できなくても今の画面では使える
     }
   };
+  /** 拡大して見ているカード画像（カードの id） */
+  const [zoomCard, setZoomCard] = useState<string | null>(null);
   /** メニューのLP入力欄 */
   const [lpInput, setLpInput] = useState('');
   /** ルールチェックをするか（マニュアル操作の時はしない） */
@@ -2212,6 +2214,17 @@ export function App() {
             />
           )}
 
+          {/* カード画像の拡大（画面のどこかを押すと閉じる） */}
+          {zoomCard && shownImages[zoomCard] && (
+            <div className="img-zoom" role="dialog" aria-label="カード画像の拡大" onClick={() => setZoomCard(null)}>
+              <div className={`img-zoom-card ${foils[zoomCard] ? `foil foil-${foils[zoomCard]}` : ''}`}>
+                <img src={shownImages[zoomCard]} alt={CARD_DB[zoomCard]?.name ?? ''} />
+                {foils[zoomCard] && <span className="foil-fx" aria-hidden />}
+              </div>
+              <div className="img-zoom-hint">タップで閉じる</div>
+            </div>
+          )}
+
           {/* カード詳細 */}
           {sel && selDef && selLoc && !busy && !dropMenu && (
             <div
@@ -2235,10 +2248,15 @@ export function App() {
                 {selDef.materialText && <div className="meta">素材: {selDef.materialText}</div>}
                 <div className={`detail-body ${shownImages[selDef.id] ? 'with-img' : ''}`}>
                   {shownImages[selDef.id] && (
-                    <div className={`detail-img-wrap ${foils[selDef.id] ? `foil foil-${foils[selDef.id]}` : ''}`}>
+                    <button
+                      type="button"
+                      className={`detail-img-wrap zoomable ${foils[selDef.id] ? `foil foil-${foils[selDef.id]}` : ''}`}
+                      aria-label={`${selDef.name}の画像を拡大`}
+                      onClick={() => setZoomCard(selDef.id)}
+                    >
                       <img className="detail-img" src={shownImages[selDef.id]} alt={selDef.name} />
                       {foils[selDef.id] && <span className="foil-fx" aria-hidden />}
-                    </div>
+                    </button>
                   )}
                   <CardText text={selDef.text} />
                 </div>
