@@ -8,13 +8,17 @@ import { OTHER_SCRIPTS } from './otherScripts';
 import { BLUE_CARD_DATA } from './blueCards.generated';
 import { BLUE_SCRIPTS } from './blueScripts';
 import { OPP_GENERIC_CARDS } from './oppCards';
+import { TG_CARD_DATA } from './tgCards.generated';
+import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
+const TG_CARDS: CardDef[] = TG_CARD_DATA.map((c) => ({ ...c, ...TG_OVERRIDES[c.id] }));
 
 export const ALL_CARDS: CardDef[] = [
   ...TOON_CARDS,
   ...OTHER_CARD_DATA,
   ...BLUE_CARD_DATA,
+  ...TG_CARDS,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
 ];
@@ -22,11 +26,16 @@ export const ALL_CARDS: CardDef[] = [
 export { OPP_GENERIC_CARDS };
 
 /** デッキ編集で選べるカード（動作確認用の架空カードは除く） */
-export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA];
+export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA, ...TG_CARDS];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
 
-export const CARD_SCRIPTS: Record<string, CardScript> = { ...TOON_SCRIPTS, ...OTHER_SCRIPTS, ...BLUE_SCRIPTS };
+export const CARD_SCRIPTS: Record<string, CardScript> = {
+  ...TOON_SCRIPTS,
+  ...OTHER_SCRIPTS,
+  ...BLUE_SCRIPTS,
+  ...TG_SCRIPTS,
+};
 
 const n = (id: string, count: number) => Array<string>(count).fill(id);
 
@@ -200,7 +209,77 @@ export const BLUE_EYES_DECK: DeckList = {
   ],
 };
 
+/** 友達のＴＧ（デッキシートから） */
+export const TG_DECK: DeckList = {
+  name: 'ＴＧ',
+  main: [
+    // モンスター 24枚
+    ...n('1315120', 1), // ＴＧ ストライカー
+    ...n('293542', 3), // ＴＧ ワーウルフ
+    ...n('36687247', 1), // ＴＧ ラッシュ・ライノ
+    ...n('94145021', 1), // ドロール＆ロックバード
+    ...n('23434538', 1), // 増殖するＧ
+    ...n('59438930', 1), // 幽鬼うさぎ
+    ...n('14558127', 2), // 灰流うらら
+    ...n('11234702', 3), // ＴＧ スクリュー・サーペント
+    ...n('48633301', 2), // ＴＧ ブースター・ラプトル
+    ...n('74627016', 2), // ＴＧ タンク・ラーヴァ
+    ...n('94350039', 2), // ＴＧ ギア・ゾンビ
+    ...n('30348744', 1), // ＴＧ ドリル・フィッシュ
+    ...n('77392987', 3), // ＴＧ ロケット・サラマンダー
+    ...n('42141493', 1), // マルチャミー・フワロス
+    // 魔法 13枚
+    ...n('83764718', 1), // 死者蘇生
+    ...n('18144506', 1), // ハーピィの羽根帚
+    ...n('67169062', 1), // 貪欲な壺
+    ...n('47325505', 1), // 化石調査
+    ...n('8267140', 1), // コズミック・サイクロン
+    ...n('85106525', 1), // 篝火
+    ...n('28189908', 3), // ＴＧ－ブレイクリミッター
+    ...n('54573517', 3), // ＴＧ－オールクリア
+    ...n('38817295', 1), // 月女神の至天
+    // 罠 5枚
+    ...n('76641981', 1), // ＴＧ１－ＥＭ１
+    ...n('10045474', 2), // 無限泡影
+    ...n('2339825', 1), // ＴＧ－クローズ
+    ...n('66247039', 1), // 聖なる心のバリア －マインドフォース－
+  ],
+  extra: [
+    ...n('90953320', 1), // ＴＧ ハイパー・ライブラリアン
+    ...n('62560742', 1), // ＴＧ レシプロ・ドラゴン・フライ
+    ...n('98558751', 1), // ＴＧ ワンダー・マジシャン
+    ...n('24943456', 1), // ＴＧ パワー・グラディエイター
+    ...n('51447164', 1), // ＴＧ ブレード・ガンナー
+    ...n('97836203', 1), // ＴＧ ハルバード・キャノン
+    ...n('50954680', 1), // クリスタルウィング・シンクロ・ドラゴン
+    ...n('99937842', 1), // ＴＧ スター・ガーディアン
+    ...n('50750868', 1), // ＴＧ トライデント・ランチャー
+    ...n('63180841', 1), // シューティング・スター・ドラゴン・ＴＧ－ＥＸ
+    ...n('84815190', 1), // フルール・ド・バロネス
+    ...n('32480825', 1), // ＴＧ マイティ・ストライカー
+    ...n('68989420', 2), // ＴＧ オーバー・ドラグナー
+    ...n('95973569', 1), // ＴＧ グレイヴ・ブラスター
+  ],
+  side: [
+    ...n('12580477', 1), // サンダー・ボルト
+    ...n('53582587', 1), // 激流葬
+    ...n('67169062', 1), // 貪欲な壺
+    ...n('2295440', 1), // ワン・フォー・ワン
+    ...n('64910482', 1), // ＴＧ サイバー・マジシャン
+    ...n('1315120', 1), // ＴＧ ストライカー
+    ...n('3868277', 1), // ＴＧＸ３－ＤＸ２
+    ...n('76641981', 1), // ＴＧ１－ＥＭ１
+    ...n('83326048', 1), // 次元障壁
+    ...n('55063751', 1), // 海亀壊獣ガメシエル
+    ...n('66733743', 1), // ＴＧ メタル・スケルトン
+    ...n('93138457', 1), // バトル・スタン・ソニック
+    ...n('14532163', 1), // ライトニング・ストーム
+    ...n('32480825', 1), // ＴＧ マイティ・ストライカー
+    ...n('2339825', 1), // ＴＧ－クローズ
+  ],
+};
+
 /** 最初から入っているデッキ（編集はコピーして行う）。テスト用デッキは動作確認専用なので含めない */
-export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK];
+export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK, TG_DECK];
 
 export { TEST_DECK };

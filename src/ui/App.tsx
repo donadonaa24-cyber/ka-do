@@ -649,6 +649,10 @@ export function App() {
     return [ss('atk'), ss('def'), ss('def', true)];
   };
 
+  /** 自分フィールドの表側のモンスターのカード */
+  const fieldMonsterNames = () =>
+    [...state.mz, ...state.emz].filter((u): u is string => !!u && state.cards[u].faceUp).map((u) => def(u));
+
   const procedure = (uid: string, method: SummonMethod, label: string): Btn => ({
     label: `${label}召喚`,
     primary: true,
@@ -657,7 +661,13 @@ export function App() {
       start({
         title: `${def(uid).name}を${label}召喚`,
         hint: `${def(uid).materialText ?? ''} 素材を選んで「決定」→ 出すゾーンを選択`,
-        pickFrom: method === 'fusion' || method === 'ritual' ? ['hand', 'field'] : ['field'],
+        // S召喚：ＴＧ サイバー・マジシャンがいれば手札のＴＧモンスターも素材にできる
+        pickFrom:
+          method === 'fusion' || method === 'ritual'
+            ? ['hand', 'field']
+            : method === 'synchro' && fieldMonsterNames().some((d) => d.handSynchroFor)
+              ? ['field', 'hand']
+              : ['field'],
         zone: 'monster',
         allowEmz: method !== 'ritual',
         build: (picked, z) => ({ type: 'PROCEDURE_SUMMON', method, uid, materials: picked, to: z as MonsterLocation }),

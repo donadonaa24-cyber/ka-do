@@ -85,6 +85,8 @@ export type Step =
        * （召喚制限・正規の召喚をしていないEXモンスターなど）を候補から外す。素材を選ぶステップなどは true にする
        */
       noSummonCheck?: boolean;
+      /** 出せるゾーンを絞る（「このカードのリンク先」など） */
+      zoneFilter?: (state: GameState, self: string, loc: Location) => boolean;
       then: (env: Env, picked: string[], zone: Location | null, mode: number) => Action[];
     }
   | {
@@ -92,6 +94,7 @@ export type Step =
       prompt: string;
       zone: 'monster' | 'stz';
       cost?: boolean;
+      zoneFilter?: (state: GameState, self: string, loc: Location) => boolean;
       then: (env: Env, zone: Location) => Action[];
     }
   | { op: 'do'; cost?: boolean; then: (env: Env) => Action[] };

@@ -63,6 +63,16 @@ export interface CardDef {
   normalInHandGy?: boolean;
   /** 表側で存在する限り、自分はこの条件のモンスターしか特殊召喚できない */
   summonLock?: import('./filters').CardFilter;
+  /** このカテゴリ（例：TG）のSモンスターのS素材にする時、チューナー以外として扱える（ＴＧ タンク・ラーヴァ） */
+  nonTunerFor?: string;
+  /** フィールドのこのカードをこのカテゴリのSモンスターのS素材にする時、手札のチューナー以外の同じカテゴリのモンスターも素材にできる（ＴＧ サイバー・マジシャン） */
+  handSynchroFor?: string;
+  /** 直接攻撃できる（ＴＧ ドリル・フィッシュ） */
+  directAttack?: boolean;
+  /** 守備表示モンスターを攻撃した時、守備力を超えた分のダメージを与える */
+  piercing?: boolean;
+  /** 攻撃するダメージステップの間、攻撃力が上がる（ＴＧ ラッシュ・ライノ） */
+  attackBonus?: number;
   // --- 魔法・罠 ---
   spellType?: SpellType;
   trapType?: TrapType;
@@ -156,6 +166,10 @@ export interface CardInstance {
   summonType: SummonType | null;
   /** 効果で変わったレベル（フィールドを離れると戻る） */
   levelMod: number;
+  /** ターン終了時まで変わったレベル */
+  turnLevelMod?: number;
+  /** S召喚の素材にしたモンスター（ＴＧ レシプロ・ドラゴン・フライなど） */
+  materials?: string[];
   /** 効果で変わった攻撃力・守備力（フィールドを離れると戻る） */
   atkMod?: number;
   defMod?: number;
@@ -340,7 +354,8 @@ export interface GameState {
   timingGroup?: number;
   lastEventGroup?: number;
   /** ターン終了時までのEXデッキからの特殊召喚の制限（青眼龍轟臨・シンクロ・ランブルなど） */
-  extraLocks: { source: string; filter: import('./filters').CardFilter }[];
+  /** all：EXデッキからだけでなく全ての特殊召喚の制限 */
+  extraLocks: { source: string; filter: import('./filters').CardFilter; all?: boolean }[];
   /** 相手ターン（相手は存在しないので、相手ターンに使える効果を練習するためのターン） */
   opponentTurn: boolean;
   /** 相手の盤面（練習用。古い記録との互換のため省略可） */

@@ -22,7 +22,7 @@ import {
   oppMonsterSlots,
   type SummonMethod,
 } from './game';
-import { tributesRequired } from './rules';
+import { canMakeLinkRating, linkMaterialOptions, tributesRequired } from './rules';
 import type { CardDef, GameState, Location } from './types';
 import { isExtraDeckCard } from './types';
 
@@ -206,8 +206,13 @@ function materialZones(state: GameState, materials: string[]): MonsterLocation[]
 
 /** チューナー1体（またはチューナー2体以上＋1体）＋チューナー以外でレベルの合計が合う */
 function synchroMaterialsFit(state: GameState, ctx: Ctx, materials: string[], target: CardDef): boolean {
-  const tuners = materials.filter((u) => getDef(state, ctx, u).tuner).length;
-  const ok = target.multiTunerSynchro ? tuners >= 2 && materials.length - tuners === 1 : tuners === 1;
+  const defs = materials.map((u) => getDef(state, ctx, u));
+  const tuners = defs.filter((d) => d.tuner).length;
+  // ＴＧ タンク・ラーヴァなど：そのカテゴリのSモンスターの素材ならチューナー以外としても扱える
+  const flexible = defs.filter((d) => d.tuner && d.nonTunerFor && target.archetypes?.includes(d.nonTunerFor)).length;
+  const ok = target.multiTunerSynchro
+    ? tuners >= 2 && materials.length - tuners === 1
+    : tuners >= 1 && tuners - flexible <= 1;
   if (!ok) return false;
   return materials.reduce((s, u) => s + (currentLevel(state, ctx, u) ?? NaN), 0) === target.level;
 }
@@ -326,6 +331,14 @@ export function enumerateActions(state: GameState, ctx: Ctx, opts: EnumerateOpti
     for (const k of sizes) {
       for (const materials of combinations(faceUp, k, 20)) {
         if (method === 'synchro' && !synchroMaterialsFit(state, ctx, materials, d)) continue;
+        if (
+          method === 'link' &&
+          !canMakeLinkRating(
+            materials.map((m) => linkMaterialOptions(def(m))),
+            d.link ?? 0,
+          )
+        )
+          continue;
         const fieldMat = materials.find((m) => state.mz.includes(m));
         const zones = monsterZonesFor(state, true);
         const candidatesTo: MonsterLocation[] = opts.allZones

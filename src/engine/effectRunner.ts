@@ -832,7 +832,8 @@ export function zoneChoices(run: Running): Location[] {
     out.push(
       ...[0, 1].filter((i) => free(t.emz[i]) && !t.opp?.emz?.[i]).map((index) => ({ zone: 'emz' as const, index })),
     );
-  return out;
+  const only = step?.op === 'pick' || step?.op === 'place' ? step.zoneFilter : undefined;
+  return only ? out.filter((loc) => only(t, run.self, loc)) : out;
 }
 
 export function runZoneKind(run: Running): 'monster' | 'stz' | null {

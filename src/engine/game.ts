@@ -58,6 +58,8 @@ export type Action =
       as?: SummonMethod;
       /** このターンのエンドフェイズに破壊される */
       destroyAtEnd?: boolean;
+      /** 召喚条件を無視して特殊召喚する（ＴＧ グレイヴ・ブラスターなど） */
+      ignoreConditions?: boolean;
     }
   | {
       type: 'PROCEDURE_SUMMON';
@@ -104,6 +106,8 @@ export type Action =
   | { type: 'NO_DIRECT_ATTACK'; source: string; nextTurn?: boolean }
   /** 戦闘を次の段階へ進める */
   | { type: 'BATTLE_STEP' }
+  /** その攻撃を無効にする（バトル・スタン・ソニックなど） */
+  | { type: 'NEGATE_ATTACK'; by: string }
   /** 自分のモンスターをダメージステップ終了時まで除外する（ブルーアイズ・トゥーン・アルティメットドラゴン③） */
   | { type: 'BANISH_UNTIL_DAMAGE_END'; uid: string }
   /** 効果処理の区切り（タイミングを逃す判定用） */
@@ -160,7 +164,7 @@ export type Action =
   | { type: 'CHANGE_LP'; delta: number }
   | { type: 'GRANT_SUMMON'; grant: SummonGrant }
   | { type: 'SET_COUNTERS'; uid: string; value: number }
-  | { type: 'LEVEL_MOD'; uid: string; delta: number }
+  | { type: 'LEVEL_MOD'; uid: string; delta: number; untilEnd?: boolean }
   /**
    * 攻撃力・守備力を変える。untilEnd はターン終了時まで、setAtk は攻撃力を決まった値にする、
    * equip は装備カード（uid）が装備しているモンスターの攻守を上げる量
@@ -198,7 +202,8 @@ export type Action =
   | { type: 'RANDOM_TO_HAND'; uids: string[]; reason?: string }
   /** 効果処理の条件を満たさない（選び方が合わない）ことを伝える */
   | { type: 'FAIL'; message: string }
-  | { type: 'EXTRA_LOCK'; source: string; filter: CardFilter }
+  /** all：EXデッキからだけでなく、ターン終了時まで全ての特殊召喚を制限する */
+  | { type: 'EXTRA_LOCK'; source: string; filter: CardFilter; all?: boolean }
   | { type: 'DOUBLE_ATTACK'; uid: string }
   /** 効果をチェーンに積む（コストは支払い済み） */
   | {
@@ -358,6 +363,8 @@ function markSummoned(state: GameState, uid: string, type: SummonType = 'special
   inst.summonedEntry = inst.entryId;
   inst.summonedTurn = state.turn;
   inst.summonType = type;
+  // S素材の記録は、S召喚の時に付け直す
+  delete inst.materials;
   markEvent(state, uid);
   if (type !== 'normal' && type !== 'special') inst.properlySummoned = true;
 }
@@ -445,6 +452,7 @@ export function canAttackDirectly(state: GameState, ctx: Ctx, uid: string): bool
     )
   )
     return true;
+  if (d.directAttack && !isNegated(state, uid)) return true;
   if (!d.toon || !/直接攻撃できる/.test(d.text)) return false;
   if (!env.toonWorld) return false;
   const oppMons = state.opp ? oppMonsterSlots(state.opp) : [];
@@ -514,7 +522,10 @@ function checkLp(state: GameState) {
 /** ダメージ計算：戦闘ダメージを与え、破壊されるモンスターを決める（墓地へ送るのはダメージステップ終了時） */
 function damageCalc(state: GameState, ctx: Ctx, b: Battle) {
   const an = name(state, ctx, b.attacker);
-  const a = attackValue(state, ctx, b.attacker);
+  const ad = getDef(state, ctx, b.attacker);
+  // 攻撃するダメージステップの間だけ攻撃力が上がる（ＴＧ ラッシュ・ライノ）
+  const bonus = ad.attackBonus && !isNegated(state, b.attacker) ? ad.attackBonus : 0;
+  const a = attackValue(state, ctx, b.attacker) + bonus;
   // 攻撃したモンスターのコントローラーの相手がダメージを受ける
   const attackerIsOpp = !!state.cards[b.attacker].opp;
   if (!b.target) {
@@ -554,8 +565,11 @@ function damageCalc(state: GameState, ctx: Ctx, b: Battle) {
       destroy(b.target);
       destroy(b.attacker);
     }
-  } else if (a > d) destroy(b.target);
-  else if (a < d) damage(state, attackerIsOpp ? true : false, d - a);
+  } else if (a > d) {
+    destroy(b.target);
+    // 貫通：守備力を攻撃力が超えた分のダメージ
+    if (ad.piercing && !isNegated(state, b.attacker)) damage(state, !attackerIsOpp, a - d);
+  } else if (a < d) damage(state, attackerIsOpp ? true : false, d - a);
   b.destroyed = destroyed;
   b.targetSurvived = !destroyed.includes(b.target);
 }
@@ -630,18 +644,17 @@ function battleStep(state: GameState, ctx: Ctx) {
 
 export function currentLevel(state: GameState, ctx: Ctx, uid: string): number | undefined {
   const base = levelOf(getDef(state, ctx, uid));
-  return base === undefined ? undefined : base + (state.cards[uid]?.levelMod ?? 0);
+  const inst = state.cards[uid];
+  return base === undefined ? undefined : base + (inst?.levelMod ?? 0) + (inst?.turnLevelMod ?? 0);
 }
 
 /** 特殊召喚の制限（EXデッキからの制限・表側の「〜しか特殊召喚できない」） */
 function checkSummonLocks(state: GameState, ctx: Ctx, uid: string, from: Location | null) {
   if (!ctx.options.strict) return;
   const def = getDef(state, ctx, uid);
-  if (from?.zone === 'extra') {
-    for (const lock of state.extraLocks)
-      if (!matchesFilter(def, lock.filter, false))
-        fail(`${lock.source}の効果で、このターン${def.name}はEXデッキから特殊召喚できません`);
-  }
+  for (const lock of state.extraLocks)
+    if ((from?.zone === 'extra' || lock.all) && !matchesFilter(def, lock.filter, false))
+      fail(`${lock.source}の効果で、このターン${def.name}は${lock.all ? '' : 'EXデッキから'}特殊召喚できません`);
   for (const u of fieldMonsters(state)) {
     const d = getDef(state, ctx, u);
     if (d.summonLock && state.cards[u].faceUp && !matchesFilter(def, d.summonLock, false))
@@ -868,6 +881,7 @@ function resetInstance(inst: CardInstance) {
   inst.summonedEntry = null;
   inst.summonType = null;
   inst.levelMod = 0;
+  delete inst.turnLevelMod;
   delete inst.atkMod;
   delete inst.defMod;
   delete inst.turnAtkMod;
@@ -1191,6 +1205,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       for (const inst of Object.values(state.cards)) {
         delete inst.turnAtkMod;
         delete inst.turnDefMod;
+        delete inst.turnLevelMod;
       }
       if (toOpponent) {
         log(
@@ -1289,7 +1304,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       checkMonsterZoneFree(state, ctx, to);
       checkExtraDeckPlacement(state, ctx, uid, to, from);
       checkSummonLocks(state, ctx, uid, from);
-      checkEffectSummon(state, ctx, uid, from, action.as);
+      if (!action.ignoreConditions) checkEffectSummon(state, ctx, uid, from, action.as);
       const faceDown = !!action.faceDown;
       moveCard(state, ctx, uid, to, {
         faceUp: !faceDown,
@@ -1727,10 +1742,16 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       );
       return;
     }
+    case 'NEGATE_ATTACK': {
+      if (!state.battle) fail('攻撃が行われていません');
+      endBattle(state, `${action.by}の効果で、その攻撃を無効にした`);
+      return;
+    }
     case 'LEVEL_MOD': {
       const inst = state.cards[action.uid];
       if (!isMonsterZone(findLocation(state, action.uid))) fail('フィールドのモンスターではありません');
-      inst.levelMod += action.delta;
+      if (action.untilEnd) inst.turnLevelMod = (inst.turnLevelMod ?? 0) + action.delta;
+      else inst.levelMod += action.delta;
       log(state, `${name(state, ctx, action.uid)}のレベルが${currentLevel(state, ctx, action.uid)}になった`, 'info');
       return;
     }
@@ -1765,8 +1786,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return;
     }
     case 'EXTRA_LOCK': {
-      state.extraLocks.push({ source: action.source, filter: action.filter });
-      log(state, `${action.source}の効果：ターン終了時までEXデッキから特殊召喚できるモンスターが制限された`, 'info');
+      state.extraLocks.push({ source: action.source, filter: action.filter, ...(action.all ? { all: true } : {}) });
+      log(
+        state,
+        `${action.source}の効果：ターン終了時まで${action.all ? '' : 'EXデッキから'}特殊召喚できるモンスターが制限された`,
+        'info',
+      );
       return;
     }
     case 'DOUBLE_ATTACK': {
@@ -1958,13 +1983,36 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     }
     case 'synchro': {
       if (strict) {
-        requireFaceUpFieldMonsters(state, ctx, materials, 'シンクロ素材');
+        // 手札のモンスター：ＴＧ サイバー・マジシャンなどがいる時だけ、そのカテゴリのチューナー以外のモンスターを素材にできる
+        const inHand = materials.filter((m) => findLocation(state, m)?.zone === 'hand');
+        requireFaceUpFieldMonsters(
+          state,
+          ctx,
+          materials.filter((m) => !inHand.includes(m)),
+          'シンクロ素材',
+        );
+        if (inHand.length) {
+          const enabler = matDefs.find(
+            (d, i) => !inHand.includes(materials[i]) && d.handSynchroFor && def.archetypes?.includes(d.handSynchroFor),
+          );
+          if (!enabler) fail('手札のモンスターはシンクロ素材にできません');
+          for (const m of inHand) {
+            const d = getDef(state, ctx, m);
+            if (d.kind !== 'monster' || d.tuner || !d.archetypes?.includes(enabler.handSynchroFor!))
+              fail(`手札からシンクロ素材にできるのは、チューナー以外の「${enabler.handSynchroFor}」モンスターだけです`);
+          }
+        }
         const tuners = matDefs.filter((d) => d.tuner).length;
+        // ＴＧ タンク・ラーヴァなど：そのカテゴリのSモンスターの素材にする時はチューナー以外としても扱える
+        const flexible = matDefs.filter(
+          (d) => d.tuner && d.nonTunerFor && def.archetypes?.includes(d.nonTunerFor),
+        ).length;
         if (def.multiTunerSynchro) {
           if (tuners < 2 || materials.length - tuners !== 1)
             fail('このカードのシンクロ召喚にはチューナー2体以上とチューナー以外のモンスター1体が必要です');
         } else {
-          if (tuners !== 1) fail('シンクロ召喚にはチューナー1体とチューナー以外のモンスターが必要です');
+          if (tuners - flexible > 1 || tuners < 1)
+            fail('シンクロ召喚にはチューナー1体とチューナー以外のモンスターが必要です');
           if (materials.length < 2) fail('チューナー以外のモンスターが1体以上必要です');
         }
         const sum = levels.reduce<number>((s, l) => s + (l ?? NaN), 0);
@@ -2044,6 +2092,7 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     moveCard(state, ctx, uid, to, { faceUp: true, position });
   }
   markSummoned(state, uid, method);
+  if (method === 'synchro') state.cards[uid].materials = [...materials];
   const how = action.materialsTo === 'deck' ? 'デッキに戻して' : '素材に';
   log(
     state,
