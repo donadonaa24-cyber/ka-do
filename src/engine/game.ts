@@ -60,6 +60,11 @@ export type Action =
       destroyAtEnd?: boolean;
       /** 召喚条件を無視して特殊召喚する（ＴＧ グレイヴ・ブラスターなど） */
       ignoreConditions?: boolean;
+      /**
+       * 俺ルールで出す：召喚条件・特殊召喚の制限を確かめず、EX・儀式モンスターは正規の方法で召喚したものとして扱う
+       * （シンクロ召喚などの代わりに手で出したモンスターを、後で墓地から蘇生できるように）
+       */
+      free?: boolean;
     }
   | {
       type: 'PROCEDURE_SUMMON';
@@ -161,6 +166,8 @@ export type Action =
       def: number;
       attribute?: Attribute;
       race?: string;
+      /** カテゴリ（ＴＧトークンは「ＴＧ」モンスター） */
+      archetypes?: string[];
       to: MonsterLocation;
       position?: BattlePosition;
     }
@@ -1320,14 +1327,15 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (isMonsterZone(from)) fail('既にフィールドにいます');
       checkMonsterZoneFree(state, ctx, to);
       checkExtraDeckPlacement(state, ctx, uid, to, from);
-      checkSummonLocks(state, ctx, uid, from);
-      if (!action.ignoreConditions) checkEffectSummon(state, ctx, uid, from, action.as);
+      if (!action.free) checkSummonLocks(state, ctx, uid, from);
+      if (!action.ignoreConditions && !action.free) checkEffectSummon(state, ctx, uid, from, action.as);
       const faceDown = !!action.faceDown;
       moveCard(state, ctx, uid, to, {
         faceUp: !faceDown,
         position: faceDown ? 'def' : (action.position ?? 'atk'),
       });
       markSummoned(state, uid, action.as ?? 'special');
+      if (action.free) state.cards[uid].properlySummoned = true;
       if (action.destroyAtEnd) state.cards[uid].destroyAtEnd = true;
       const pos = faceDown ? '裏側守備表示' : action.position === 'def' ? '守備表示' : '攻撃表示';
       log(
@@ -1571,6 +1579,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         def: action.def,
         attribute: action.attribute,
         race: action.race,
+        ...(action.archetypes ? { archetypes: action.archetypes } : {}),
         text: 'トークン',
       };
       const uid = `c${state.nextUid++}`;

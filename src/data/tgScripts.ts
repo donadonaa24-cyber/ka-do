@@ -469,6 +469,7 @@ export const TG_SCRIPTS: Record<string, CardScript> = {
                 def: 0,
                 attribute: '地',
                 race: '機械族',
+                archetypes: [TG],
                 to: z as MonsterLocation,
                 position: 'atk',
               },

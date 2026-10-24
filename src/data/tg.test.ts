@@ -116,6 +116,12 @@ describe('ＴＧ', () => {
     s = r.state;
     s = useEffect(s, larva, '② 「ＴＧ」SモンスターのS素材', [{ zone: mz(2) }]);
     expect(name(s, s.mz[2]!)).toBe('ＴＧトークン');
+    // ＴＧトークンは「ＴＧ」モンスターなので、スター・ガーディアン（チューナー以外は「ＴＧ」）の素材にできる
+    // 2枚目のギア・ゾンビは手札に引いていることがある
+    s = put(s, find(s, 'deck', 'ＴＧ ギア・ゾンビ') ?? find(s, 'hand', 'ＴＧ ギア・ゾンビ'), 0);
+    s = put(s, find(s, 'deck', 'ＴＧ ワーウルフ') ?? find(s, 'hand', 'ＴＧ ワーウルフ'), 1);
+    const sg = synchro(s, 'ＴＧ スター・ガーディアン', [s.mz[2]!, s.mz[0]!, s.mz[1]!], mz(3));
+    expect(sg.ok ? '' : sg.error).toBe('');
   });
 
   it('サイバー・マジシャン：手札の「ＴＧ」モンスターもS素材にできる（マイティ・ストライカー①でサーチ）', () => {
@@ -174,6 +180,17 @@ describe('ＴＧ', () => {
     s = act(s, { type: 'NEXT_PHASE', to: 'EP' });
     s = useEffect(s, wolf, 'エンドフェイズ', [{ pick: ['ＴＧ ストライカー'] }]);
     expect(s.hand.map((u) => name(s, u))).toContain('ＴＧ ストライカー');
+  });
+
+  it('俺ルールの特殊召喚：正規の召喚をしていないSモンスターも墓地から出せ、その後は正規の召喚をしたものとして扱う', () => {
+    let s = createGame(TG_DECK, ctx, 1, []);
+    const sg = find(s, 'extra', 'ＴＧ スター・ガーディアン');
+    s = act(s, { type: 'SPECIAL_SUMMON', uid: sg, to: { zone: 'emz', index: 0 }, free: true });
+    s = act(s, { type: 'MOVE', uid: sg, to: { zone: 'gy' } });
+    // 効果での蘇生もできる（正規の召喚をしたものとして扱う）
+    expect(s.cards[sg].properlySummoned).toBe(true);
+    s = act(s, { type: 'SPECIAL_SUMMON', uid: sg, to: mz(0) });
+    expect(s.mz[0]).toBe(sg);
   });
 
   it('ブースター・ラプトルは自分の「ＴＧ」がいれば手札から特殊召喚できる（1ターンに1度）', () => {

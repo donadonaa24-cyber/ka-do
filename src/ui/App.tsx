@@ -645,7 +645,8 @@ export function App() {
           hint: '出すゾーンを選択',
           zone: 'monster',
           allowEmz: findLocation(state, uid)?.zone === 'extra',
-          build: (_, z) => ({ type: 'SPECIAL_SUMMON', uid, to: z as MonsterLocation, position, faceDown }),
+          // 俺ルールの操作：召喚条件を確かめず、正規の召喚をしたものとして扱う（後で墓地から蘇生できる）
+          build: (_, z) => ({ type: 'SPECIAL_SUMMON', uid, to: z as MonsterLocation, position, faceDown, free: true }),
         }),
     });
     return [ss('atk'), ss('def'), ss('def', true)];
