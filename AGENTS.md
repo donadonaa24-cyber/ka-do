@@ -34,6 +34,7 @@ npx prettier --write <変更したファイル>   # .prettierrc：singleQuote, p
 npm run dev              # http://localhost:5173
 npm run build:share      # dist/share.html（共有版・画像なし）
 npm run build:artifact   # dist/artifact.html（自分専用・private/ の画像を埋め込む）
+npm run build:pages      # pages/index.html（GitHub Pages 用の共有版。通常は GitHub Actions が作る）
 ```
 
 - `vite build` は `dist/` を空にする。両方のHTMLが欲しい時は、1つ作るたびに別の場所へコピーする。
@@ -57,6 +58,14 @@ npm run build:artifact   # dist/artifact.html（自分専用・private/ の画�
 
 - Claude 以外で作業した時は「ページへの反映は Claude に頼む」とオーナーに伝える。
 - または、ビルドしたHTMLファイルをそのまま渡す。
+
+### GitHub Pages（共有版・自動公開）
+
+- main に push されると、GitHub Actions（`.github/workflows/pages.yml`）がテストを通してから共有版を GitHub Pages に公開する。テストが通らなければ公開しない。
+- ビルドは `npm run build:pages`（`pages/index.html`。画像なし・検索エンジンに載せない `noindex` 付き）。
+- GitHub Pages は URL を知っていれば誰でも開ける。画像や個人のデータは絶対に入れない。
+- 保存データ（デッキ・画像）はページごとに別々。claude.ai のページと行き来する時は「データの書き出し・読み込み」で移す。
+- 通信対戦（PvP）は claude.ai のページの共有ストレージを使うので、GitHub Pages では動かない。
 
 ## 5. 構成
 

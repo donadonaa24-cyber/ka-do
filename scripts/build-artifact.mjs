@@ -1,12 +1,14 @@
 // vite build の出力（dist/）を1つのHTMLにまとめる。claude.ai の非公開ページ（Artifact）として公開する用。
 // 使い方: npm run build && node scripts/build-artifact.mjs [出力先] [--no-images]
 // --no-images：カード画像・裏面画像を入れない（友達に共有する用。画像は各自が「画像を設定」で入れる）
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+// --pages：GitHub Pages 用に、そのまま開けるHTML（doctype・head付き、検索エンジンに載せない設定）にする
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 const dist = 'dist';
 const args = process.argv.slice(2);
 const noImages = args.includes('--no-images');
+const pages = args.includes('--pages');
 const out = args.find((a) => !a.startsWith('--')) ?? join(dist, 'artifact.html');
 const html = readFileSync(join(dist, 'index.html'), 'utf8');
 
@@ -56,15 +58,31 @@ const js = scripts[0]
   .replaceAll('</script', '<\\/script')
   .replace(/([A-Za-z0-9_$])="([A-Za-z0-9+/]{200,}={0,2})"/g, '$1=""+"$2"');
 
-writeFileSync(
-  out,
-  `${title}
-<meta name="claude:viewport-fit-sides" content="cover">
-<style>${styles[0]}${backCss}</style>
+const body = `<style>${styles[0]}${backCss}</style>
 ${editionScript}
 ${cardImagesScript}
 <div id="root"></div>
 <script type="module">${js}</script>
-`,
+`;
+mkdirSync(dirname(out), { recursive: true });
+writeFileSync(
+  out,
+  pages
+    ? // GitHub Pages：誰でも開けるページなので、検索エンジンには載せない（noindex）
+      `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+${title}
+</head>
+<body>
+${body}</body>
+</html>
+`
+    : `${title}
+<meta name="claude:viewport-fit-sides" content="cover">
+${body}`,
 );
 console.log(`${out} を出力しました`);

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build:artifact": "tsc --noEmit && vite build && node scripts/build-artifact.mjs",
-    "build:share": "tsc --noEmit && vite build && node scripts/build-artifact.mjs dist/share.html --no-images"
+    "build:share": "tsc --noEmit && vite build && node scripts/build-artifact.mjs dist/share.html --no-images",
+    "build:pages": "tsc --noEmit && vite build && node scripts/build-artifact.mjs pages/index.html --no-images --pages"
   },
   "dependencies": {
     "react": "^18.3.1",
