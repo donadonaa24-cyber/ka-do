@@ -460,11 +460,13 @@ export const TG_SCRIPTS: Record<string, CardScript> = {
             op: 'place',
             prompt: '「ＴＧトークン」を出すゾーンを選択',
             zone: 'monster',
+            noSummonCheck: true,
             then: (_, z) => [
               {
                 type: 'CREATE_TOKEN',
                 name: 'ＴＧトークン',
                 level: 1,
+                tuner: false,
                 atk: 0,
                 def: 0,
                 attribute: '地',

@@ -181,6 +181,24 @@ const markWhirlwindSource: Step = {
   then: (env, p) => [{ type: 'ACTIVATE_EFFECT', uid: env.self, silent: true, key: whirlwindKey(env, p[0]), limit: 1 }],
 };
 
+// 壊獣カウンターを置くカード（出典：日本語cards.cdb）。他の種類のカウンターを流用しない。
+// 壊獣の出現記録／ＫＹＯＵＴＯＵウォーターフロント／壊獣捕獲大作戦。
+const KAIJU_COUNTER_HOLDERS = new Set(['11163040', '56111151', '81057455']);
+const kaijuCounterCards = (env: Env) =>
+  candidates(env.state, ['field']).filter(
+    (u) => faceUp(env, u) && KAIJU_COUNTER_HOLDERS.has(env.def(u).id) && env.state.cards[u].counters > 0,
+  );
+const removeKaijuCounter = (number: number): Step => ({
+  op: 'pick',
+  cost: true,
+  prompt: `コスト：壊獣カウンターを1つ取り除くカード（${number}/2）`,
+  from: ['field'],
+  where: (env, u) => kaijuCounterCards(env).includes(u),
+  min: 1,
+  max: 1,
+  then: (env, p) => [{ type: 'SET_COUNTERS', uid: p[0], value: env.state.cards[p[0]].counters - 1 }],
+});
+
 export const BLACKWING_OVERRIDES: Record<string, Partial<CardDef>> = {
   '49003716': { piercing: true },
   '9012916': { atkPerCounter: -700 },
@@ -488,6 +506,7 @@ export const BLACKWING_SCRIPTS: Record<string, CardScript> = {
             op: 'place',
             prompt: '幻耀トークンを出すゾーン',
             zone: 'monster',
+            noSummonCheck: true,
             then: (_, z) => [
               {
                 type: 'CREATE_TOKEN',
@@ -1215,7 +1234,41 @@ export const BLACKWING_SCRIPTS: Record<string, CardScript> = {
         ],
       },
       manual('① 相手モンスター1体をリリースし、手札から相手フィールドに攻撃表示で特殊召喚', ['hand']),
-      manual('④ 壊獣カウンター2つを取り除きラディアントークンを特殊召喚（S素材にできない）'),
+      {
+        label: '④ 壊獣カウンター2つを取り除きラディアントークンを特殊召喚（星7・非チューナー・S素材にできない）',
+        from: ['monster'],
+        key: '多次元壊獣ラディアン④',
+        limit: 1,
+        perCard: true,
+        condition: (env) =>
+          kaijuCounterCards(env).reduce((n, u) => n + env.state.cards[u].counters, 0) >= 2
+            ? null
+            : '自分・相手フィールドに壊獣カウンターが2つ以上必要です',
+        steps: [
+          removeKaijuCounter(1),
+          removeKaijuCounter(2),
+          {
+            op: 'place',
+            prompt: 'ラディアントークンを出すゾーン',
+            zone: 'monster',
+            noSummonCheck: true,
+            then: (_, z) => [
+              {
+                type: 'CREATE_TOKEN',
+                name: 'ラディアントークン',
+                level: 7,
+                tuner: false,
+                attribute: '闇',
+                race: '悪魔族',
+                atk: 2800,
+                def: 0,
+                cannotBeSynchroMaterial: true,
+                to: z as MonsterLocation,
+              },
+            ],
+          },
+        ],
+      },
     ],
   },
 };

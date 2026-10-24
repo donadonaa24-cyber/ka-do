@@ -176,6 +176,7 @@ export type Action =
       /** カテゴリ（ＴＧトークンは「ＴＧ」モンスター） */
       archetypes?: string[];
       tuner?: boolean;
+      cannotBeSynchroMaterial?: boolean;
       to: MonsterLocation;
       position?: BattlePosition;
     }
@@ -1624,11 +1625,13 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         attribute: action.attribute,
         race: action.race,
         ...(action.archetypes ? { archetypes: action.archetypes } : {}),
-        ...(action.tuner ? { tuner: true } : {}),
+        ...(action.tuner !== undefined ? { tuner: action.tuner } : {}),
+        ...(action.cannotBeSynchroMaterial ? { cannotBeSynchroMaterial: true } : {}),
         text: 'トークン',
       };
       const uid = `c${state.nextUid++}`;
       state.cards[uid] = newInstance(uid, defId);
+      checkSummonLocks(state, ctx, uid, null);
       placeRaw(state, uid, action.to, { faceUp: true, position: action.position ?? 'atk' });
       markSummoned(state, uid);
       log(state, `${action.name}を特殊召喚`, 'summon');
@@ -2113,6 +2116,8 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     }
     case 'synchro': {
       if (strict) {
+        const forbidden = matDefs.find((d) => d.cannotBeSynchroMaterial);
+        if (forbidden) fail(`${forbidden.name}はS素材にできません`);
         // 手札のモンスター：ＴＧ サイバー・マジシャンなどがいる時だけ、そのカテゴリのチューナー以外のモンスターを素材にできる
         const inHand = materials.filter((m) => findLocation(state, m)?.zone === 'hand');
         requireFaceUpFieldMonsters(
@@ -2244,6 +2249,10 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
     if (!from || !(proc.summonFrom as string[]).includes(from.zone))
       fail(`${def.name}はこの場所から特殊召喚できません`);
     if (materials.includes(uid)) fail('召喚するモンスター自身は選べません');
+    if (proc.summonType === 'synchro') {
+      const forbidden = materials.map((u) => getDef(state, ctx, u)).find((d) => d.cannotBeSynchroMaterial);
+      if (forbidden) fail(`${forbidden.name}はS素材にできません`);
+    }
     const key = `${def.name}:召喚条件`;
     if (proc.oncePerTurn && state.effectUses[key]) fail(`${def.name}のこの方法での特殊召喚は1ターンに1度です`);
     const err = proc.validate(makeEnv(state, ctx, uid), materials);

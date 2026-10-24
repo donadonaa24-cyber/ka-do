@@ -28,6 +28,8 @@ export interface CardDef {
   atk?: number;
   def?: number;
   tuner?: boolean;
+  /** このモンスターはS素材にできない（ラディアントークンなど） */
+  cannotBeSynchroMaterial?: boolean;
   /** このカテゴリのモンスターを素材としてS召喚した場合、フィールドではチューナーとして扱う */
   tunerWithMaterial?: string;
   /** 特殊召喚できない（ＢＦ－南風のアウステルなど） */
