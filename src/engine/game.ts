@@ -60,6 +60,10 @@ export type Action =
       destroyAtEnd?: boolean;
       /** 召喚条件を無視して特殊召喚する（ＴＧ グレイヴ・ブラスターなど） */
       ignoreConditions?: boolean;
+      /** フィールドから離れた場合に除外される（Ｍ・ＨＥＲＯ ファーネス） */
+      banishOnLeave?: boolean;
+      /** 正規の方法で特殊召喚したものとして扱う（「マスク・チェンジ」の効果で出したＭ・ＨＥＲＯなど） */
+      proper?: boolean;
       /**
        * 俺ルールで出す：召喚条件・特殊召喚の制限を確かめず、EX・儀式モンスターは正規の方法で召喚したものとして扱う
        * （シンクロ召喚などの代わりに手で出したモンスターを、後で墓地から蘇生できるように）
@@ -114,7 +118,8 @@ export type Action =
   /** その攻撃を無効にする（バトル・スタン・ソニックなど） */
   | { type: 'NEGATE_ATTACK'; by: string }
   /** このターンのエンドフェイズに破壊される（リミッター解除） */
-  | { type: 'DESTROY_AT_END'; uid: string }
+  /** このターン（nextTurn なら次のターン）のエンドフェイズに破壊される */
+  | { type: 'DESTROY_AT_END'; uid: string; nextTurn?: boolean }
   /** このターンのエンドフェイズにダメージを受ける（パワー・ボンド） */
   | { type: 'DAMAGE_AT_END'; amount: number; by: string }
   /** 自分のモンスターをダメージステップ終了時まで除外する（ブルーアイズ・トゥーン・アルティメットドラゴン③） */
@@ -395,6 +400,7 @@ function checkEffectSummon(state: GameState, ctx: Ctx, uid: string, from: Locati
   if (!ctx.options.strict) return;
   const def = getDef(state, ctx, uid);
   if (def.onlyBy && as !== def.onlyBy) fail(`${def.name}は${METHOD_LABEL[def.onlyBy]}召喚でしか特殊召喚できません`);
+  if (def.onlyByEffectOf) fail(`${def.name}は「${def.onlyByEffectOf}」の効果でのみ特殊召喚できます`);
   const special = isExtraDeckCard(def) || def.frame === 'ritual';
   if (!special || as) return;
   if (def.frame === 'ritual' && (from?.zone === 'hand' || from?.zone === 'deck'))
@@ -915,6 +921,8 @@ function resetInstance(inst: CardInstance) {
   delete inst.equipAtk;
   delete inst.equipDef;
   inst.destroyAtEnd = false;
+  delete inst.destroyAtTurn;
+  delete inst.banishOnLeave;
   delete inst.banishAtEnd;
   delete inst.returnAtOppEnd;
   delete inst.oppSpent;
@@ -980,7 +988,9 @@ function moveCard(state: GameState, ctx: Ctx, uid: string, to: Location, opts: P
   }
 
   let dest = to;
-  if (isExtraDeckCard(def) && (to.zone === 'hand' || to.zone === 'deck')) dest = { zone: 'extra' };
+  // 「フィールドから離れた場合に除外される」モンスター
+  if (leavingField && inst.banishOnLeave) dest = { zone: 'banished' };
+  if (isExtraDeckCard(def) && (dest.zone === 'hand' || dest.zone === 'deck')) dest = { zone: 'extra' };
   // 相手のカードは相手の墓地・除外・手札へ（デッキ・EXに戻るカードは手札扱い）
   if (inst.opp) {
     if (dest.zone === 'gy') dest = { zone: 'ogy' };
@@ -1340,8 +1350,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         position: faceDown ? 'def' : (action.position ?? 'atk'),
       });
       markSummoned(state, uid, action.as ?? 'special');
-      if (action.free) state.cards[uid].properlySummoned = true;
+      if (action.free || action.proper) state.cards[uid].properlySummoned = true;
       if (action.destroyAtEnd) state.cards[uid].destroyAtEnd = true;
+      if (action.banishOnLeave) state.cards[uid].banishOnLeave = true;
       const pos = faceDown ? '裏側守備表示' : action.position === 'def' ? '守備表示' : '攻撃表示';
       log(
         state,
@@ -1787,7 +1798,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       return;
     }
     case 'DESTROY_AT_END': {
-      state.cards[action.uid].destroyAtEnd = true;
+      if (action.nextTurn) state.cards[action.uid].destroyAtTurn = state.turn + 1;
+      else state.cards[action.uid].destroyAtEnd = true;
       return;
     }
     case 'DAMAGE_AT_END': {
@@ -1934,6 +1946,7 @@ function destroyAtEndPhase(state: GameState, ctx: Ctx) {
     log(state, `${d.by}の効果で${d.amount}ダメージ（LP ${state.lp}）`, 'warn');
   }
   delete state.endDamage;
+  destroyAtTurnEnd(state, ctx);
   for (const u of fieldMonsters(state)) {
     if (!state.cards[u].destroyAtEnd) continue;
     moveCard(state, ctx, u, { zone: 'gy' }, { reason: '効果で破壊' });
@@ -1947,8 +1960,18 @@ function destroyAtEndPhase(state: GameState, ctx: Ctx) {
   }
 }
 
+/** 「次のターンのエンドフェイズに破壊される」モンスター（フュージョン・デステニー） */
+function destroyAtTurnEnd(state: GameState, ctx: Ctx) {
+  for (const u of fieldMonsters(state)) {
+    if (state.cards[u].destroyAtTurn !== state.turn) continue;
+    moveCard(state, ctx, u, { zone: 'gy' }, { reason: '効果で破壊' });
+    log(state, `${getDef(state, ctx, u).name}はエンドフェイズに破壊された`, 'move');
+  }
+}
+
 /** 相手ターンのエンドフェイズ：除外されていた「戻ってくる」カードを自分フィールドに戻す（空きが無ければ墓地へ） */
 function returnAtOppEnd(state: GameState, ctx: Ctx) {
+  destroyAtTurnEnd(state, ctx);
   for (const u of [...state.banished]) {
     if (!state.cards[u].returnAtOppEnd) continue;
     const mzIndex = state.mz.indexOf(null);
@@ -2167,7 +2190,9 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
     state.cards[uid].overlay = overlay;
   } else {
-    sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy', method === 'ritual' ? 'リリース' : '素材');
+    // 効果による融合召喚の素材は「効果で墓地へ送られた」扱い
+    const reason = method === 'ritual' ? 'リリース' : action.by ? `素材（${action.by}）` : '素材';
+    sendMaterials(state, ctx, materials, action.materialsTo ?? 'gy', reason);
     checkMonsterZoneFree(state, ctx, to);
     checkExtraDeckPlacement(state, ctx, uid, to, from);
     checkSummonLocks(state, ctx, uid, from);

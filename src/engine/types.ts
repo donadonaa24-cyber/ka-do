@@ -57,6 +57,8 @@ export interface CardDef {
   oncePerTurnActivation?: boolean;
   /** チューナー2体以上でS召喚する（青眼の究極霊竜など） */
   multiTunerSynchro?: boolean;
+  /** 「このカードは「〇〇」の効果でのみ特殊召喚できる」（Ｍ・ＨＥＲＯ ダーク・ロウ） */
+  onlyByEffectOf?: string;
   /** 「このカードは〇〇召喚でしか特殊召喚できない」 */
   onlyBy?: 'fusion' | 'synchro' | 'xyz' | 'link' | 'ritual';
   /** 手札・墓地では通常モンスターとして扱う（白き霊龍） */
@@ -206,6 +208,10 @@ export interface CardInstance {
   properlySummoned: boolean;
   /** エンドフェイズに破壊される（青眼の精霊龍③で出したモンスターなど） */
   destroyAtEnd: boolean;
+  /** このターンのエンドフェイズに破壊される（フュージョン・デステニーの「次のターンのエンドフェイズ」） */
+  destroyAtTurn?: number;
+  /** フィールドから離れた場合に除外される */
+  banishOnLeave?: boolean;
   /** エンドフェイズに除外される（ＰＳＹフレームギアの効果で特殊召喚したモンスター） */
   banishAtEnd?: boolean;
   /** 除外されたこのカードは、相手ターンのエンドフェイズに自分フィールドに戻ってくる */

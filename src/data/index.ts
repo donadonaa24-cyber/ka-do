@@ -15,10 +15,13 @@ import { ANIME_CARD_DATA } from './animeCards';
 import { SIGNER_CARD_DATA } from './signerCards';
 import { ANIME_SCRIPTS } from './animeScripts';
 import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
+import { HERO_CARD_DATA } from './heroCards.generated';
+import { HERO_OVERRIDES, HERO_SCRIPTS } from './heroScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 const TG_CARDS: CardDef[] = TG_CARD_DATA.map((c) => ({ ...c, ...TG_OVERRIDES[c.id] }));
 const CYBER_CARDS: CardDef[] = CYBER_CARD_DATA.map((c) => ({ ...c, ...CYBER_OVERRIDES[c.id] }));
+const HERO_CARDS: CardDef[] = HERO_CARD_DATA.map((c) => ({ ...c, ...HERO_OVERRIDES[c.id] }));
 
 export const ALL_CARDS: CardDef[] = [
   ...TOON_CARDS,
@@ -27,6 +30,7 @@ export const ALL_CARDS: CardDef[] = [
   ...TG_CARDS,
   ...CYBER_CARDS,
   ...SIGNER_CARD_DATA,
+  ...HERO_CARDS,
   ...ANIME_CARD_DATA,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
@@ -42,6 +46,7 @@ export const EDITABLE_CARDS: CardDef[] = [
   ...TG_CARDS,
   ...CYBER_CARDS,
   ...SIGNER_CARD_DATA,
+  ...HERO_CARDS,
   ...ANIME_CARD_DATA,
 ];
 
@@ -53,6 +58,7 @@ export const CARD_SCRIPTS: Record<string, CardScript> = {
   ...BLUE_SCRIPTS,
   ...TG_SCRIPTS,
   ...CYBER_SCRIPTS,
+  ...HERO_SCRIPTS,
   ...ANIME_SCRIPTS,
 };
 
@@ -348,6 +354,58 @@ export const CYBER_DRAGON_DECK: DeckList = {
 };
 
 /** 最初から入っているデッキ（編集はコピーして行う）。テスト用デッキは動作確認専用なので含めない */
-export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK, TG_DECK, CYBER_DRAGON_DECK];
+/** ＨＥＲＯ（友達のルート2つで使うカード＋手札誘発など） */
+export const HERO_DECK: DeckList = {
+  name: 'ＨＥＲＯ',
+  main: [
+    // モンスター 24枚
+    ...n('40237839', 1), // ハネクリボー・サバティエル ＬＶ１０
+    ...n('9411399', 3), // Ｄ－ＨＥＲＯ ディアボリックガイ
+    ...n('66206748', 2), // Ｍ・ＨＥＲＯ ファウンティン
+    ...n('58288218', 2), // Ｍ・ＨＥＲＯ ファーネス
+    ...n('10808715', 2), // Ｍ・ＨＥＲＯ ダスク・クロウ
+    ...n('27780618', 2), // Ｖ・ＨＥＲＯ ヴァイオン
+    ...n('50720316', 2), // Ｅ・ＨＥＲＯ シャドー・ミスト
+    ...n('40044918', 2), // Ｅ・ＨＥＲＯ エアーマン
+    ...n('89943723', 1), // Ｅ・ＨＥＲＯ ネオス
+    ...n('14558127', 3), // 灰流うらら
+    ...n('23434538', 3), // 増殖するＧ
+    ...n('94145021', 1), // ドロール＆ロックバード
+    // 魔法 11枚
+    ...n('52947044', 2), // フュージョン・デステニー
+    ...n('24094653', 2), // 融合
+    ...n('45906428', 1), // ミラクル・フュージョン
+    ...n('21143940', 2), // マスク・チェンジ
+    ...n('8949584', 1), // ヒーローアライブ
+    ...n('18144506', 1), // ハーピィの羽根帚
+    ...n('83764718', 1), // 死者蘇生
+    ...n('8267140', 1), // コズミック・サイクロン
+    // 罠 5枚
+    ...n('75047173', 1), // フェイバリット・コンタクト
+    ...n('10045474', 3), // 無限泡影
+    ...n('59438930', 1), // 幽鬼うさぎ
+  ],
+  extra: [
+    ...n('60461804', 2), // Ｄ－ＨＥＲＯ デストロイフェニックスガイ
+    ...n('23204029', 2), // Ｃ・ＨＥＲＯ カオス
+    ...n('58481572', 2), // Ｍ・ＨＥＲＯ ダーク・ロウ
+    ...n('56733747', 1), // Ｅ・ＨＥＲＯ シャイニング・ネオス・ウィングマン
+    ...n('22908820', 1), // Ｅ・ＨＥＲＯ サンライザー
+    ...n('93347961', 1), // Ｅ・ＨＥＲＯ フレイム・ウィングマン－フレイム・シュート
+    ...n('58004362', 2), // Ｘ・ＨＥＲＯ クロスガイ
+    ...n('19324993', 1), // Ｘ・ＨＥＲＯ ヘル・デバイサー
+    ...n('1948619', 1), // Ｘ・ＨＥＲＯ ワンダー・ドライバー
+  ],
+  side: [],
+};
+
+export const BUILTIN_DECKS: DeckList[] = [
+  TOON_DECK,
+  PRE_LIMIT_TOON_DECK,
+  BLUE_EYES_DECK,
+  TG_DECK,
+  CYBER_DRAGON_DECK,
+  HERO_DECK,
+];
 
 export { TEST_DECK };
