@@ -175,6 +175,7 @@ export type Action =
       race?: string;
       /** カテゴリ（ＴＧトークンは「ＴＧ」モンスター） */
       archetypes?: string[];
+      tuner?: boolean;
       to: MonsterLocation;
       position?: BattlePosition;
     }
@@ -440,6 +441,7 @@ export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: n
   const theirs = state.opp ? aura([...state.opp.stz, state.opp.fz]) : 0;
   // サイバー・ドラゴン・インフィニティ①：X素材の数×200アップ
   if (d.atkPerOverlay && !isNegated(state, uid)) da += d.atkPerOverlay * inst.overlay.length;
+  if (d.atkPerCounter && !isNegated(state, uid)) da += d.atkPerCounter * inst.counters;
   if (inst.faceUp && (mine || theirs)) {
     const delta = inst.opp ? theirs - mine : mine - theirs;
     da += delta;
@@ -683,6 +685,7 @@ export function currentLevel(state: GameState, ctx: Ctx, uid: string): number | 
 function checkSummonLocks(state: GameState, ctx: Ctx, uid: string, from: Location | null) {
   if (!ctx.options.strict) return;
   const def = getDef(state, ctx, uid);
+  if (def.cannotSpecialSummon) fail(`${def.name}は特殊召喚できません`);
   for (const lock of state.extraLocks)
     if ((from?.zone === 'extra' || lock.all) && !matchesFilter(def, lock.filter, false))
       fail(`${lock.source}の効果で、このターン${def.name}は${lock.all ? '' : 'EXデッキから'}特殊召喚できません`);
@@ -699,6 +702,18 @@ export function getDef(state: GameState, ctx: Ctx, uid: string): CardDef {
   const inst = state.cards[uid];
   const def = state.tokenDefs[inst.defId] ?? ctx.db[inst.defId];
   if (!def) throw new Error(`カード定義がありません: ${inst.defId}`);
+  if (
+    def.tunerWithMaterial &&
+    isMonsterZone(findLocation(state, uid)) &&
+    inst.faceUp &&
+    inst.summonType === 'synchro' &&
+    !isNegated(state, uid) &&
+    inst.materials?.some((m) => {
+      const id = state.cards[m]?.defId;
+      return (state.tokenDefs[id] ?? ctx.db[id])?.archetypes?.includes(def.tunerWithMaterial!);
+    })
+  )
+    return { ...def, tuner: true };
   return def;
 }
 
@@ -1278,6 +1293,13 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       if (strict) {
         if (!state.hand.includes(uid)) fail('通常召喚は手札のモンスターのみ行えます');
         if (!grant && state.normalSummonUsed) fail('通常召喚（セット）はターンに1度までです');
+        if (
+          grant?.sourceUid &&
+          (!isMonsterZone(findLocation(state, grant.sourceUid)) ||
+            !state.cards[grant.sourceUid]?.faceUp ||
+            isNegated(state, grant.sourceUid))
+        )
+          fail(`${grant.source}が表側表示で存在し、効果が有効な間だけ追加召喚できます`);
         if (grant && action.set) fail('追加の召喚権ではセットできません');
         if (grant && !matchesFilter(def, grant.filter, toonWorld))
           fail(`${def.name}は「${grant.source}」の効果で召喚できません`);
@@ -1602,6 +1624,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         attribute: action.attribute,
         race: action.race,
         ...(action.archetypes ? { archetypes: action.archetypes } : {}),
+        ...(action.tuner ? { tuner: true } : {}),
         text: 'トークン',
       };
       const uid = `c${state.nextUid++}`;
@@ -2011,8 +2034,9 @@ function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
 
   if (strict) {
     if (def.kind === 'trap') {
-      if (fromHand) fail('罠カードはセットしてから発動します');
-      if (inst.enteredTurn === state.turn) fail('セットしたターンに罠カードは発動できません');
+      if (fromHand && !ctx.scripts?.[def.id]?.canActivateFromHand?.(makeEnv(state, ctx, uid)))
+        fail('罠カードはセットしてから発動します');
+      if (!fromHand && inst.enteredTurn === state.turn) fail('セットしたターンに罠カードは発動できません');
     } else if (def.spellType === 'quick') {
       if (isSet && inst.enteredTurn === state.turn) fail('セットしたターンに速攻魔法は発動できません');
     } else {

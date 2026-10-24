@@ -28,6 +28,10 @@ export interface CardDef {
   atk?: number;
   def?: number;
   tuner?: boolean;
+  /** このカテゴリのモンスターを素材としてS召喚した場合、フィールドではチューナーとして扱う */
+  tunerWithMaterial?: string;
+  /** 特殊召喚できない（ＢＦ－南風のアウステルなど） */
+  cannotSpecialSummon?: boolean;
   pendulumScale?: number;
   /** 特殊召喚モンスター（通常召喚不可） */
   cannotNormalSummon?: boolean;
@@ -85,6 +89,8 @@ export interface CardDef {
   oppTurnSynchro?: boolean;
   /** X素材1つにつき攻撃力が上がる（サイバー・ドラゴン・インフィニティ） */
   atkPerOverlay?: number;
+  /** このカードのカウンター1つにつき攻撃力が変化する */
+  atkPerCounter?: number;
   /** フィールド・墓地に存在する限り、このカード名として扱う（サイバー・ドラゴン・コアなど） */
   fieldGyName?: string;
   /** 表側で存在する限り、フィールドのモンスターは機械族になり、自分の機械族の攻守がこの値上がり相手の機械族は下がる（機械仕掛けの夜） */
@@ -271,6 +277,8 @@ export interface ChainLink {
 export interface SummonGrant {
   /** 効果の出どころ（表示用） */
   source: string;
+  /** このモンスターが表側表示で存在する間だけ使える召喚権 */
+  sourceUid?: string;
   /** 通常召喚に加えて行える召喚 */
   extraSummon: boolean;
   /** リリースなしで召喚できる */

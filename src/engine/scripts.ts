@@ -98,6 +98,8 @@ export type Step =
       prompt: string;
       zone: 'monster' | 'stz';
       cost?: boolean;
+      /** 自身の特殊召喚ではない配置（対象の蘇生・トークン生成など） */
+      noSummonCheck?: boolean;
       zoneFilter?: (state: GameState, self: string, loc: Location) => boolean;
       then: (env: Env, zone: Location) => Action[];
     }
@@ -147,6 +149,8 @@ export function effectText(text: string, label: string): string {
 }
 
 export interface CardScript {
+  /** 条件を満たす場合だけ、罠カードを手札から発動できる */
+  canActivateFromHand?: (env: Env) => boolean;
   procedures?: ProcedureDef[];
   effects?: EffectDef[];
   /**
