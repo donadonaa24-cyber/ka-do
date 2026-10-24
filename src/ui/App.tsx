@@ -1043,6 +1043,18 @@ export function App() {
               build: (_, z) => move(uid, z ?? { zone: 'fz' }),
             }),
         });
+        btns.push({
+          label: 'セットする',
+          dest: d.spellType === 'field' ? 'fz' : 'stz',
+          free: true,
+          onClick: () =>
+            start({
+              title: `${d.name}をセット`,
+              hint: 'セットするゾーンを選択',
+              zone: d.spellType === 'field' ? 'none' : 'stz',
+              build: (_, z) => ({ type: 'MOVE', uid, to: z ?? { zone: 'fz' }, faceUp: false, reason: 'セット' }),
+            }),
+        });
       }
       if (loc.zone !== 'deck') btns.push(effectBtn(uid));
     }

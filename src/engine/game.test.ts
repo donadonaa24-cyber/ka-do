@@ -296,6 +296,16 @@ describe('魔法・罠', () => {
     expect(s.cards[tr].faceUp).toBe(true);
   });
 
+  it('墓地の罠を効果でセットすると、そのターンは発動できない', () => {
+    let s = createGame(TEST_DECK, ctx, 1, ['t-trap']);
+    const tr = handOf(s, 't-trap');
+    s = run(s, { type: 'MOVE', uid: tr, to: { zone: 'gy' } });
+    s = run(s, { type: 'MOVE', uid: tr, to: { zone: 'stz', index: 1 }, faceUp: false, reason: 'セット' });
+    expect(s.stz[1]).toBe(tr);
+    expect(s.cards[tr].faceUp).toBe(false);
+    expect(err(s, { type: 'ACTIVATE_CARD', uid: tr })).toMatch('セットしたターン');
+  });
+
   it('フィールド魔法は張り替えると古い方が墓地へ', () => {
     let s = createGame(TEST_DECK, ctx, 3, ['t-spell-field', 't-spell-field']);
     const [f1, f2] = s.hand.filter((u) => s.cards[u].defId === 't-spell-field');
