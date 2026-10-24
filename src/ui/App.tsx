@@ -2247,7 +2247,10 @@ export function App() {
             >
               <div className="sheet" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-head">
-                  <h2>{selDef.name}</h2>
+                  <h2>
+                    {selDef.name}
+                    {selDef.variant && `（${selDef.variant}）`}
+                  </h2>
                   <button onClick={() => setSelected(null)}>閉じる</button>
                 </div>
                 <div className="meta">

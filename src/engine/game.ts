@@ -1451,7 +1451,11 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
           fail('表側攻撃表示のモンスターのみ攻撃できます');
         const maxAttacks = byOpp
           ? 1
-          : Math.max(def.attacksPerBattle ?? 1, inst.doubleAttackTurn === state.turn ? 2 : 1);
+          : Math.max(
+              def.attacksPerBattle ?? 1,
+              inst.doubleAttackTurn === state.turn ? 2 : 1,
+              def.attacksFromMaterials ? Math.max(def.attacksFromMaterials, inst.materials?.length ?? 0) : 1,
+            );
         if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks)
           fail('このモンスターは既に攻撃しています');
         if (!byOpp && def.cannotAttackTurnSummoned && inst.enteredTurn === state.turn)

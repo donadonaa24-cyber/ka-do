@@ -11,6 +11,8 @@ import { OPP_GENERIC_CARDS } from './oppCards';
 import { TG_CARD_DATA } from './tgCards.generated';
 import { CYBER_CARD_DATA } from './cyberCards.generated';
 import { CYBER_OVERRIDES, CYBER_SCRIPTS } from './cyberScripts';
+import { ANIME_CARD_DATA } from './animeCards';
+import { ANIME_SCRIPTS } from './animeScripts';
 import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
@@ -23,6 +25,7 @@ export const ALL_CARDS: CardDef[] = [
   ...BLUE_CARD_DATA,
   ...TG_CARDS,
   ...CYBER_CARDS,
+  ...ANIME_CARD_DATA,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
 ];
@@ -36,6 +39,7 @@ export const EDITABLE_CARDS: CardDef[] = [
   ...BLUE_CARD_DATA,
   ...TG_CARDS,
   ...CYBER_CARDS,
+  ...ANIME_CARD_DATA,
 ];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
@@ -46,6 +50,7 @@ export const CARD_SCRIPTS: Record<string, CardScript> = {
   ...BLUE_SCRIPTS,
   ...TG_SCRIPTS,
   ...CYBER_SCRIPTS,
+  ...ANIME_SCRIPTS,
 };
 
 const n = (id: string, count: number) => Array<string>(count).fill(id);

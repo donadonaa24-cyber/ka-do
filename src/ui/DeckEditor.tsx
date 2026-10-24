@@ -252,6 +252,7 @@ export function DeckEditor({
         aria-label={`${def.name}（${tab === 'side' ? 'サイド' : 'デッキ'}${n}枚）`}
       >
         <CardView def={def} small />
+        {def.variant && <span className="tile-variant">{def.variant}</span>}
         {n > 0 && <span className="tile-count">×{n}</span>}
         {tab === 'add' && sideN > 0 && <span className="tile-side">サ{sideN}</span>}
       </button>
@@ -264,7 +265,10 @@ export function DeckEditor({
       <div className="deck-action-head">
         <CardView def={focusDef} small />
         <div className="grow">
-          <strong>{focusDef.name}</strong>
+          <strong>
+            {focusDef.name}
+            {focusDef.variant && `（${focusDef.variant}）`}
+          </strong>
           <span className="meta">{statLine(focusDef)}</span>
           <span className="meta">
             {isExtraDeckCard(focusDef) ? 'EX' : 'メイン'} {inDeckOf(focus)}枚・サイド {inSideOf(focus)}枚（合計
