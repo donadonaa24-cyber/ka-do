@@ -17,11 +17,15 @@ import { ANIME_SCRIPTS } from './animeScripts';
 import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
 import { HERO_CARD_DATA } from './heroCards.generated';
 import { HERO_OVERRIDES, HERO_SCRIPTS } from './heroScripts';
+import { BLACKWING_CARD_DATA } from './blackwingCards.generated';
+import { BLACKWING_OVERRIDES, BLACKWING_SCRIPTS } from './blackwingScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 const TG_CARDS: CardDef[] = TG_CARD_DATA.map((c) => ({ ...c, ...TG_OVERRIDES[c.id] }));
 const CYBER_CARDS: CardDef[] = CYBER_CARD_DATA.map((c) => ({ ...c, ...CYBER_OVERRIDES[c.id] }));
 const HERO_CARDS: CardDef[] = HERO_CARD_DATA.map((c) => ({ ...c, ...HERO_OVERRIDES[c.id] }));
+
+const BLACKWING_CARDS: CardDef[] = BLACKWING_CARD_DATA.map((c) => ({ ...c, ...BLACKWING_OVERRIDES[c.id] }));
 
 export const ALL_CARDS: CardDef[] = [
   ...TOON_CARDS,
@@ -31,6 +35,7 @@ export const ALL_CARDS: CardDef[] = [
   ...CYBER_CARDS,
   ...SIGNER_CARD_DATA,
   ...HERO_CARDS,
+  ...BLACKWING_CARDS,
   ...ANIME_CARD_DATA,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
@@ -47,6 +52,7 @@ export const EDITABLE_CARDS: CardDef[] = [
   ...CYBER_CARDS,
   ...SIGNER_CARD_DATA,
   ...HERO_CARDS,
+  ...BLACKWING_CARDS,
   ...ANIME_CARD_DATA,
 ];
 
@@ -59,6 +65,7 @@ export const CARD_SCRIPTS: Record<string, CardScript> = {
   ...TG_SCRIPTS,
   ...CYBER_SCRIPTS,
   ...HERO_SCRIPTS,
+  ...BLACKWING_SCRIPTS,
   ...ANIME_SCRIPTS,
 };
 
@@ -399,6 +406,71 @@ export const HERO_DECK: DeckList = {
   side: [],
 };
 
+/** 画像で指定されたブラックフェザー（メイン42枚・EX15枚・サイド15枚） */
+export const BLACKWING_DECK: DeckList = {
+  name: 'ブラックフェザー',
+  main: [
+    ...n('2009101', 1), // ＢＦ－疾風のゲイル
+    ...n('49003716', 1), // ＢＦ－黒槍のブラスト
+    ...n('14785765', 1), // ＢＦ－精鋭のゼピュロス
+    ...n('94145021', 1), // ドロール＆ロックバード
+    ...n('23434538', 1), // 増殖するＧ
+    ...n('73652465', 1), // ＢＦ－突風のオロシ
+    ...n('59438930', 1), // 幽鬼うさぎ
+    ...n('77152542', 1), // ＢＦ－砂塵のハルマッタン
+    ...n('14558127', 2), // 灰流うらら
+    ...n('81470373', 3), // ＢＦ－毒風のシムーン
+    ...n('71187462', 3), // ＢＦ－無頼のヴァータ
+    ...n('8571567', 3), // ＢＦ－嵐砂のシャマール
+    ...n('34976176', 2), // ＢＦ－雪撃のチヌーク
+    ...n('70465810', 3), // ＢＦ－幻耀のスズリ
+    ...n('54594017', 1), // ＢＦ－下弦のサルンガ
+    ...n('42141493', 1), // マルチャミー・フワロス
+    ...n('18144506', 1), // ハーピィの羽根帚
+    ...n('1475311', 1), // 闇の誘惑
+    ...n('91351370', 3), // 黒い旋風
+    ...n('8267140', 1), // コズミック・サイクロン
+    ...n('7602800', 3), // 黒羽の旋風
+    ...n('38817295', 1), // 月女神の至天
+    ...n('10045474', 1), // 無限泡影
+    ...n('80254726', 1), // ブラック・バード・クローズ
+    ...n('69973414', 2), // ＢＦ－ツインシャドウ
+    ...n('40366667', 1), // 霊王の波動
+    ...n('66247039', 1), // 聖なる心のバリア －マインドフォース－
+  ],
+  extra: [
+    ...n('33236860', 1), // ＢＦ－孤高のシルバー・ウィンド
+    ...n('9012916', 2), // ブラックフェザー・ドラゴン
+    ...n('81983656', 1), // ＢＦ Ｔ－漆黒のホーク・ジョー
+    ...n('95040215', 1), // ＢＦ－星影のノートゥング
+    ...n('16051717', 1), // Ａ ＢＦ－驟雨のライキリ
+    ...n('9753964', 1), // 琰魔竜 レッド・デーモン・アビス
+    ...n('53389254', 1), // Ａ ＢＦ－五月雨のソハヤ
+    ...n('54082269', 1), // ＢＦ－フルアーマード・ウィング
+    ...n('36429703', 1), // ＲＲ－ワイズ・ストリクス
+    ...n('73218989', 2), // ブラックフェザー・アサルト・ドラゴン
+    ...n('10602628', 2), // ＢＦ－魔風のボレアース
+    ...n('31114334', 1), // Ａ ＢＦ－叢雲のクサナギ
+  ],
+  side: [
+    ...n('12580477', 1), // サンダー・ボルト
+    ...n('83764718', 1), // 死者蘇生
+    ...n('81105204', 1), // ＢＦ－残夜のクリス
+    ...n('77152542', 1), // ＢＦ－砂塵のハルマッタン
+    ...n('23338098', 1), // Ａ ＢＦ－涙雨のチドリ
+    ...n('80773359', 1), // Ａ ＢＦ－神立のオニマル
+    ...n('28674152', 1), // 多次元壊獣ラディアン
+    ...n('10045474', 1), // 無限泡影
+    ...n('17465972', 1), // ＢＦ－南風のアウステル
+    ...n('5041348', 1), // 天威の龍鬼神
+    ...n('14532163', 1), // ライトニング・ストーム
+    ...n('54594017', 1), // ＢＦ－下弦のサルンガ
+    ...n('27572350', 1), // 深淵の神獣ディス・パテル
+    ...n('22850702', 1), // カオス・アンヘル－混沌の双翼－
+    ...n('6325660', 1), // 霆王の閃光
+  ],
+};
+
 export const BUILTIN_DECKS: DeckList[] = [
   TOON_DECK,
   PRE_LIMIT_TOON_DECK,
@@ -406,6 +478,7 @@ export const BUILTIN_DECKS: DeckList[] = [
   TG_DECK,
   CYBER_DRAGON_DECK,
   HERO_DECK,
+  BLACKWING_DECK,
 ];
 
 export { TEST_DECK };

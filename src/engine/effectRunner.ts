@@ -627,7 +627,7 @@ function resolutionBlocked(run: Running, ctx: Ctx): string | null {
       if (step.zone !== 'monster') return null;
       if (!zoneChoices({ ...sim, stepIndex: i, stage: 'zone', picked: [] }).length)
         return 'モンスターゾーンに空きがありません';
-      return effectSummonError(sim.temp, ctx, run.self);
+      return step.noSummonCheck ? null : effectSummonError(sim.temp, ctx, run.self);
     }
     if (step.op === 'do') {
       const next = applyAll(sim, ctx, step.then(stepEnv(sim, ctx)));
@@ -693,7 +693,7 @@ export function advance(run: Running, ctx: Ctx): RunResult {
     }
     if (step.op === 'place') {
       const next: Running = { ...cur, stage: 'zone', picked: [] };
-      const cannot = step.zone === 'monster' && effectSummonError(cur.temp, ctx, cur.self);
+      const cannot = step.zone === 'monster' && !step.noSummonCheck && effectSummonError(cur.temp, ctx, cur.self);
       if (cannot && cur.resolving)
         return finish({ ...cur, title: `${cur.title}（${cannot}・不発）`, fizzled: true }, ctx);
       if (cannot) return { kind: 'error', error: cannot };

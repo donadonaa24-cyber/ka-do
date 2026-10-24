@@ -13,6 +13,7 @@ import {
   createGame,
   type Ctx,
   currentLevel,
+  getDef,
   isNegated,
   type MonsterLocation,
 } from '../engine/game';
@@ -116,6 +117,16 @@ describe('ＴＧ', () => {
     s = r.state;
     s = useEffect(s, larva, '② 「ＴＧ」SモンスターのS素材', [{ zone: mz(2) }]);
     expect(name(s, s.mz[2]!)).toBe('ＴＧトークン');
+    expect(getDef(s, ctx, s.mz[2]!)).toMatchObject({
+      level: 1,
+      tuner: false,
+      attribute: '地',
+      race: '機械族',
+      atk: 0,
+      def: 0,
+      archetypes: ['TG'],
+    });
+    expect(s.cards[s.mz[2]!].position).toBe('atk');
     // ＴＧトークンは「ＴＧ」モンスターなので、スター・ガーディアン（チューナー以外は「ＴＧ」）の素材にできる
     // 2枚目のギア・ゾンビは手札に引いていることがある
     s = put(s, find(s, 'deck', 'ＴＧ ギア・ゾンビ') ?? find(s, 'hand', 'ＴＧ ギア・ゾンビ'), 0);

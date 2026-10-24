@@ -207,6 +207,7 @@ function materialZones(state: GameState, materials: string[]): MonsterLocation[]
 /** チューナー1体（またはチューナー2体以上＋1体）＋チューナー以外でレベルの合計が合う */
 function synchroMaterialsFit(state: GameState, ctx: Ctx, materials: string[], target: CardDef): boolean {
   const defs = materials.map((u) => getDef(state, ctx, u));
+  if (defs.some((d) => d.cannotBeSynchroMaterial)) return false;
   const tuners = defs.filter((d) => d.tuner).length;
   // ＴＧ タンク・ラーヴァなど：そのカテゴリのSモンスターの素材ならチューナー以外としても扱える
   const flexible = defs.filter((d) => d.tuner && d.nonTunerFor && target.archetypes?.includes(d.nonTunerFor)).length;
