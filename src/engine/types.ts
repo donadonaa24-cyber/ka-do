@@ -73,6 +73,12 @@ export interface CardDef {
   piercing?: boolean;
   /** 攻撃するダメージステップの間、攻撃力が上がる（ＴＧ ラッシュ・ライノ） */
   attackBonus?: number;
+  /** X素材1つにつき攻撃力が上がる（サイバー・ドラゴン・インフィニティ） */
+  atkPerOverlay?: number;
+  /** フィールド・墓地に存在する限り、このカード名として扱う（サイバー・ドラゴン・コアなど） */
+  fieldGyName?: string;
+  /** 表側で存在する限り、フィールドのモンスターは機械族になり、自分の機械族の攻守がこの値上がり相手の機械族は下がる（機械仕掛けの夜） */
+  allMachineAura?: number;
   // --- 魔法・罠 ---
   spellType?: SpellType;
   trapType?: TrapType;
@@ -168,7 +174,7 @@ export interface CardInstance {
   levelMod: number;
   /** ターン終了時まで変わったレベル */
   turnLevelMod?: number;
-  /** S召喚の素材にしたモンスター（ＴＧ レシプロ・ドラゴン・フライなど） */
+  /** S召喚・融合召喚の素材にしたモンスター（ＴＧ レシプロ・ドラゴン・フライなど） */
   materials?: string[];
   /** 効果で変わった攻撃力・守備力（フィールドを離れると戻る） */
   atkMod?: number;
@@ -311,6 +317,8 @@ export interface LogEntry {
 
 export interface GameState {
   seed: number;
+  /** このターンのエンドフェイズに受けるダメージ（パワー・ボンド） */
+  endDamage?: { amount: number; by: string }[];
   cards: Record<string, CardInstance>;
   /** トークンなど実行時に生成された定義 */
   tokenDefs: Record<string, CardDef>;

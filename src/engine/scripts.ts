@@ -27,8 +27,12 @@ export interface ProcedureDef {
   materialFilter?: (env: Env, uid: string) => boolean;
   /** コストにしたカードの移動の理由（「リリース」なら「リリースされた場合」の効果が使える） */
   materialsReason?: string;
-  /** コストにしたカードの行き先 */
-  materialsTo: 'gy' | 'deck' | 'banished';
+  /** コストにしたカードの行き先（overlay：出すXモンスターの素材にする） */
+  materialsTo: 'gy' | 'deck' | 'banished' | 'overlay';
+  /** 召喚の種類（指定しなければ特殊召喚） */
+  summonType?: import('./types').SummonType;
+  /** 召喚した後の処理（攻撃力を決めるなど） */
+  after?: (env: Env, materials: string[]) => Action[];
   /** 「１ターンに１度」の召喚条件 */
   oncePerTurn?: boolean;
   /** 召喚する前のカードの場所 */

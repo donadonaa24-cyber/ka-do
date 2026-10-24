@@ -71,7 +71,7 @@ export type Action =
       /** 融合・儀式素材の行き先（既定は墓地） */
       materialsTo?: 'gy' | 'banished' | 'deck';
       /** 融合素材を選べる場所（既定は手札・フィールド。究極融合などは墓地も） */
-      materialZones?: ('hand' | 'field' | 'gy')[];
+      materialZones?: ('hand' | 'field' | 'gy' | 'deck')[];
       /** 効果による融合・儀式召喚（ログ用の効果名） */
       by?: string;
     }
@@ -108,6 +108,10 @@ export type Action =
   | { type: 'BATTLE_STEP' }
   /** その攻撃を無効にする（バトル・スタン・ソニックなど） */
   | { type: 'NEGATE_ATTACK'; by: string }
+  /** このターンのエンドフェイズに破壊される（リミッター解除） */
+  | { type: 'DESTROY_AT_END'; uid: string }
+  /** このターンのエンドフェイズにダメージを受ける（パワー・ボンド） */
+  | { type: 'DAMAGE_AT_END'; amount: number; by: string }
   /** 自分のモンスターをダメージステップ終了時まで除外する（ブルーアイズ・トゥーン・アルティメットドラゴン③） */
   | { type: 'BANISH_UNTIL_DAMAGE_END'; uid: string }
   /** 効果処理の区切り（タイミングを逃す判定用） */
@@ -414,6 +418,18 @@ export function currentStats(state: GameState, ctx: Ctx, uid: string): { atk?: n
   if (!isAnyMonsterZone(findLocation(state, uid))) return { atk, def };
   let da = (inst.atkMod ?? 0) + (inst.turnAtkMod ?? 0);
   let dd = (inst.defMod ?? 0) + (inst.turnDefMod ?? 0);
+  // 機械仕掛けの夜：フィールドの表側表示モンスターは機械族になり、そのカードのコントローラーの機械族は上がり、相手の機械族は下がる
+  const aura = (cards: (string | null | undefined)[]) =>
+    cards.reduce((n, u) => n + (u && state.cards[u]?.faceUp ? (getDef(state, ctx, u).allMachineAura ?? 0) : 0), 0);
+  const mine = aura([...state.stz, state.fz]);
+  const theirs = state.opp ? aura([...state.opp.stz, state.opp.fz]) : 0;
+  // サイバー・ドラゴン・インフィニティ①：X素材の数×200アップ
+  if (d.atkPerOverlay && !isNegated(state, uid)) da += d.atkPerOverlay * inst.overlay.length;
+  if (inst.faceUp && (mine || theirs)) {
+    const delta = inst.opp ? theirs - mine : mine - theirs;
+    da += delta;
+    dd += delta;
+  }
   for (const u of state.stz) {
     const eq = u ? state.cards[u] : null;
     if (eq && eq.equippedTo === uid) {
@@ -1198,7 +1214,8 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       state.opponentTurn = toOpponent;
       state.phase = toOpponent ? 'M1' : 'DP';
       state.normalSummonUsed = false;
-      state.effectUses = {};
+      // 「デュエル中に1度」の効果（キーが duel: で始まる）は残す
+      state.effectUses = Object.fromEntries(Object.entries(state.effectUses).filter(([k]) => k.startsWith('duel:')));
       state.spellActivatedThisTurn = false;
       state.summonGrants = state.summonGrants.filter((g) => !g.thisTurnOnly);
       state.extraLocks = [];
@@ -1742,6 +1759,15 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       );
       return;
     }
+    case 'DESTROY_AT_END': {
+      state.cards[action.uid].destroyAtEnd = true;
+      return;
+    }
+    case 'DAMAGE_AT_END': {
+      state.endDamage = [...(state.endDamage ?? []), { amount: action.amount, by: action.by }];
+      log(state, `${action.by}：このターンのエンドフェイズに${action.amount}ダメージを受ける`, 'info');
+      return;
+    }
     case 'NEGATE_ATTACK': {
       if (!state.battle) fail('攻撃が行われていません');
       endBattle(state, `${action.by}の効果で、その攻撃を無効にした`);
@@ -1875,6 +1901,12 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
 
 /** エンドフェイズ：「エンドフェイズに破壊される」モンスターを破壊する・「エンドフェイズに除外される」モンスターを除外する */
 function destroyAtEndPhase(state: GameState, ctx: Ctx) {
+  // パワー・ボンドなど：エンドフェイズに受けるダメージ
+  for (const d of state.endDamage ?? []) {
+    state.lp = Math.max(0, state.lp - d.amount);
+    log(state, `${d.by}の効果で${d.amount}ダメージ（LP ${state.lp}）`, 'warn');
+  }
+  delete state.endDamage;
   for (const u of fieldMonsters(state)) {
     if (!state.cards[u].destroyAtEnd) continue;
     moveCard(state, ctx, u, { zone: 'gy' }, { reason: '効果で破壊' });
@@ -2039,7 +2071,7 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
           const zone = isMonsterZone(l) ? 'field' : l?.zone;
           if (!allowed.includes(zone as 'hand')) {
             fail(
-              `融合素材は${allowed.map((z) => ({ hand: '手札', field: 'フィールド', gy: '墓地' })[z]).join('・')}から選んでください`,
+              `融合素材は${allowed.map((z) => ({ hand: '手札', field: 'フィールド', gy: '墓地', deck: 'デッキ' })[z]).join('・')}から選んでください`,
             );
           }
         }
@@ -2092,7 +2124,7 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
     moveCard(state, ctx, uid, to, { faceUp: true, position });
   }
   markSummoned(state, uid, method);
-  if (method === 'synchro') state.cards[uid].materials = [...materials];
+  if (method === 'synchro' || method === 'fusion') state.cards[uid].materials = [...materials];
   const how = action.materialsTo === 'deck' ? 'デッキに戻して' : '素材に';
   log(
     state,
@@ -2119,18 +2151,33 @@ function specialProcedure(state: GameState, ctx: Ctx, action: Extract<Action, { 
   }
   if (proc.oncePerTurn) state.effectUses[`${def.name}:召喚条件`] = 1;
   const matNames = materials.map((m) => name(state, ctx, m));
-  for (const m of materials)
-    moveCard(state, ctx, m, { zone: proc.materialsTo }, { reason: proc.materialsReason ?? 'コスト' });
+  // 重ねてX召喚する（サイバー・ドラゴン・インフィニティ）：素材とその素材を、出すモンスターの素材にする
+  const overlay: string[] = [];
+  if (proc.materialsTo === 'overlay') {
+    for (const m of materials) {
+      overlay.push(...state.cards[m].overlay);
+      state.cards[m].overlay = [];
+      detach(state, m);
+      resetInstance(state.cards[m]);
+      state.cards[m].faceUp = true;
+      overlay.push(m);
+    }
+  } else
+    for (const m of materials)
+      moveCard(state, ctx, m, { zone: proc.materialsTo }, { reason: proc.materialsReason ?? 'コスト' });
   checkMonsterZoneFree(state, ctx, to);
   checkExtraDeckPlacement(state, ctx, uid, to, from);
   checkSummonLocks(state, ctx, uid, from);
   moveCard(state, ctx, uid, to, { faceUp: true, position: action.position ?? 'atk' });
-  markSummoned(state, uid);
+  markSummoned(state, uid, proc.summonType ?? 'special');
   state.cards[uid].properlySummoned = true;
+  if (overlay.length) state.cards[uid].overlay = overlay;
   const cost = matNames.length
-    ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し' }[proc.materialsTo]}、`
+    ? `${matNames.join('・')}を${{ gy: '墓地へ送り', deck: 'デッキに戻し', banished: '除外し', overlay: '素材にし' }[proc.materialsTo]}、`
     : '';
   log(state, `${cost}${def.name}を特殊召喚（${proc.label}・${locLabel(to)}）`, 'summon');
+  // 召喚した後の処理（攻撃力を決めるなど）
+  for (const a of proc.after?.(makeEnv(state, ctx, uid), materials) ?? []) reduce(state, a, ctx);
 }
 
 /** 効果処理で選べるカード */

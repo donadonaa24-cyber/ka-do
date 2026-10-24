@@ -91,7 +91,8 @@ import {
 import { matchesFilter } from '../engine/filters';
 import type { EffectDef } from '../engine/scripts';
 
-type PickSource = 'field' | 'hand' | 'gy';
+/** oppField：相手フィールドのモンスター（キメラテック・フォートレス・ドラゴンなど） */
+type PickSource = 'field' | 'hand' | 'gy' | 'oppField';
 
 /** 素材やゾーンの選択を伴う操作 */
 interface Pending {
@@ -481,7 +482,8 @@ export function App() {
     return (
       (p.pickFrom!.includes('field') && isMonsterZone(loc)) ||
       (p.pickFrom!.includes('hand') && loc?.zone === 'hand') ||
-      (p.pickFrom!.includes('gy') && loc?.zone === 'gy')
+      (p.pickFrom!.includes('gy') && loc?.zone === 'gy') ||
+      (p.pickFrom!.includes('oppField') && (loc?.zone === 'omz' || loc?.zone === 'oemz'))
     );
   };
 
@@ -825,7 +827,9 @@ export function App() {
     }
     (script?.procedures ?? []).forEach((proc, i) => {
       if (!(proc.summonFrom as string[]).includes(loc.zone)) return;
-      const pickFrom: PickSource[] = proc.from.map((f) => (f === 'monsters' ? 'field' : f === 'gy' ? 'gy' : 'hand'));
+      const pickFrom: PickSource[] = proc.from.map((f) =>
+        f === 'monsters' ? 'field' : f === 'oppMonsters' ? 'oppField' : f === 'gy' ? 'gy' : 'hand',
+      );
       btns.push({
         label: `特殊召喚：${proc.label}`,
         primary: true,

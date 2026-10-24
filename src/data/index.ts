@@ -9,16 +9,20 @@ import { BLUE_CARD_DATA } from './blueCards.generated';
 import { BLUE_SCRIPTS } from './blueScripts';
 import { OPP_GENERIC_CARDS } from './oppCards';
 import { TG_CARD_DATA } from './tgCards.generated';
+import { CYBER_CARD_DATA } from './cyberCards.generated';
+import { CYBER_OVERRIDES, CYBER_SCRIPTS } from './cyberScripts';
 import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
 
 const TOON_CARDS: CardDef[] = TOON_CARD_DATA.map((c) => ({ ...c, ...TOON_OVERRIDES[c.id] }));
 const TG_CARDS: CardDef[] = TG_CARD_DATA.map((c) => ({ ...c, ...TG_OVERRIDES[c.id] }));
+const CYBER_CARDS: CardDef[] = CYBER_CARD_DATA.map((c) => ({ ...c, ...CYBER_OVERRIDES[c.id] }));
 
 export const ALL_CARDS: CardDef[] = [
   ...TOON_CARDS,
   ...OTHER_CARD_DATA,
   ...BLUE_CARD_DATA,
   ...TG_CARDS,
+  ...CYBER_CARDS,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
 ];
@@ -26,7 +30,13 @@ export const ALL_CARDS: CardDef[] = [
 export { OPP_GENERIC_CARDS };
 
 /** デッキ編集で選べるカード（動作確認用の架空カードは除く） */
-export const EDITABLE_CARDS: CardDef[] = [...TOON_CARDS, ...OTHER_CARD_DATA, ...BLUE_CARD_DATA, ...TG_CARDS];
+export const EDITABLE_CARDS: CardDef[] = [
+  ...TOON_CARDS,
+  ...OTHER_CARD_DATA,
+  ...BLUE_CARD_DATA,
+  ...TG_CARDS,
+  ...CYBER_CARDS,
+];
 
 export const CARD_DB: Record<string, CardDef> = Object.fromEntries(ALL_CARDS.map((c) => [c.id, c]));
 
@@ -35,6 +45,7 @@ export const CARD_SCRIPTS: Record<string, CardScript> = {
   ...OTHER_SCRIPTS,
   ...BLUE_SCRIPTS,
   ...TG_SCRIPTS,
+  ...CYBER_SCRIPTS,
 };
 
 const n = (id: string, count: number) => Array<string>(count).fill(id);
@@ -279,7 +290,56 @@ export const TG_DECK: DeckList = {
   ],
 };
 
+/** 友達のサイバー・ドラゴン */
+export const CYBER_DRAGON_DECK: DeckList = {
+  name: 'サイバー・ドラゴン',
+  main: [
+    // モンスター 20枚
+    ...n('14558127', 3), // 灰流うらら
+    ...n('23434538', 1), // 増殖するＧ
+    ...n('10604644', 1), // セリオンズ“キング”レギュラス
+    ...n('56100345', 1), // サイバー・ダーク・ヴルム
+    ...n('23893227', 3), // サイバー・ドラゴン・コア
+    ...n('82562802', 3), // サイバー・ダーク・クロー
+    ...n('5370235', 1), // サイバー・ダーク・キメラ
+    ...n('19715246', 1), // サイバー・ヨルムンガンド
+    ...n('66664203', 1), // 機光竜－サイバー・ドラゴン
+    ...n('1142880', 1), // サイバー・ドラゴン・ネクステア
+    ...n('70095154', 1), // サイバー・ドラゴン
+    ...n('63941210', 2), // 壊星壊獣ジズキエル
+    ...n('56364287', 1), // サイバー・ドラゴン・ヘルツ
+    // 魔法 20枚
+    ...n('23171610', 1), // リミッター解除
+    ...n('14532163', 1), // ライトニング・ストーム
+    ...n('18144506', 1), // ハーピィの羽根帚
+    ...n('19613556', 1), // 大嵐
+    ...n('89693655', 3), // 亜空間バトル
+    ...n('92058902', 3), // 未来融合－フューチャー・フュージョン・ノヴァ
+    ...n('64753988', 3), // サイバーダーク・ワールド
+    ...n('63031396', 1), // サイバネティック・ホライゾン
+    ...n('60600126', 3), // エマージェンシー・サイバー
+    ...n('37630732', 2), // パワー・ボンド
+    ...n('84797028', 1), // 機械仕掛けの夜－クロック・ワーク・ナイト－
+  ],
+  extra: [
+    ...n('40216089', 1), // プラチナ・ガジェット
+    ...n('46724542', 1), // サイバー・ドラゴン・ズィーガー
+    ...n('10443957', 1), // サイバー・ドラゴン・インフィニティ
+    ...n('87116928', 1), // キメラテック・メガフリート・ドラゴン
+    ...n('2609443', 1), // 先史遺産ヴィマナ
+    ...n('98462037', 1), // 閃刀姫－アザレア
+    ...n('41739381', 1), // 機械仕掛けの騎士
+    ...n('30275298', 1), // 終撃竜－サイバー・エンド・ドラゴン
+    ...n('36768783', 1), // 星導竜アーミライル
+    ...n('82315403', 1), // サイバー・エタニティ・ドラゴン
+    ...n('22423493', 1), // クリフォート・ゲニウス
+    ...n('84058253', 2), // キメラテック・ランページ・ドラゴン
+    ...n('58069384', 1), // サイバー・ドラゴン・ノヴァ
+    ...n('79229522', 1), // キメラテック・フォートレス・ドラゴン
+  ],
+};
+
 /** 最初から入っているデッキ（編集はコピーして行う）。テスト用デッキは動作確認専用なので含めない */
-export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK, TG_DECK];
+export const BUILTIN_DECKS: DeckList[] = [TOON_DECK, PRE_LIMIT_TOON_DECK, BLUE_EYES_DECK, TG_DECK, CYBER_DRAGON_DECK];
 
 export { TEST_DECK };
