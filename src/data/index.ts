@@ -12,6 +12,7 @@ import { TG_CARD_DATA } from './tgCards.generated';
 import { CYBER_CARD_DATA } from './cyberCards.generated';
 import { CYBER_OVERRIDES, CYBER_SCRIPTS } from './cyberScripts';
 import { ANIME_CARD_DATA } from './animeCards';
+import { SIGNER_CARD_DATA } from './signerCards';
 import { ANIME_SCRIPTS } from './animeScripts';
 import { TG_OVERRIDES, TG_SCRIPTS } from './tgScripts';
 
@@ -25,6 +26,7 @@ export const ALL_CARDS: CardDef[] = [
   ...BLUE_CARD_DATA,
   ...TG_CARDS,
   ...CYBER_CARDS,
+  ...SIGNER_CARD_DATA,
   ...ANIME_CARD_DATA,
   ...TEST_CARDS,
   ...OPP_GENERIC_CARDS,
@@ -39,6 +41,7 @@ export const EDITABLE_CARDS: CardDef[] = [
   ...BLUE_CARD_DATA,
   ...TG_CARDS,
   ...CYBER_CARDS,
+  ...SIGNER_CARD_DATA,
   ...ANIME_CARD_DATA,
 ];
 

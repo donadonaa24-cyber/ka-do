@@ -1,4 +1,4 @@
-import { type Action, currentStats, type MonsterLocation } from '../engine/game';
+import { type Action, type MonsterLocation, oppMonsterSlots } from '../engine/game';
 import type { CardScript, EffectDef, Env, Step } from '../engine/scripts';
 import type { GameState, Location } from '../engine/types';
 import { TG_SCRIPTS } from './tgScripts';
@@ -15,9 +15,9 @@ const ss = (uid: string, zone: Location | null, note: string, position?: 'atk' |
 const fail = (message: string): Action => ({ type: 'FAIL', message });
 const freeMz = (state: GameState): MonsterLocation[] =>
   state.mz.flatMap((u, index) => (u ? [] : [{ zone: 'mz' as const, index }]));
-const isSynchro = (env: Env, u: string) => env.def(u).frame === 'synchro';
 const oppTurn = (env: Env) =>
   env.state.opponentTurn ? null : '相手ターンにのみ発動できます（メニューの「相手ターンへ」で相手ターンに進めます）';
+const toGy = (uid: string, reason: string): Action => ({ type: 'MOVE', uid, to: { zone: 'gy' }, reason });
 /** このターン、表側表示のこのカードがフィールドを離れた */
 const leftFieldThisTurn = (env: Env) => {
   const inst = env.state.cards[env.self];
@@ -35,6 +35,18 @@ const logOnly = (label: string, from: EffectDef['from'], key?: string): EffectDe
   opponentOnly: true,
   speed: 2,
   steps: [],
+});
+
+/** EXデッキから指定したカード名のモンスターを特殊召喚する（出さなくてもよい） */
+const ssFromExtra = (cardName: string, note: string, as?: 'synchro'): Step => ({
+  op: 'pick',
+  prompt: `EXデッキから特殊召喚する「${cardName}」（出さないなら選ばずに決定）`,
+  from: ['extra'],
+  filter: { name: [cardName] },
+  min: 0,
+  max: 1,
+  zone: 'monster',
+  then: (_, p, z) => p.map((u) => ({ ...ss(u, z, note), as })),
 });
 
 /** 墓地から、このカードのS素材にしたモンスター一組を特殊召喚する（全部出すか、出さないか） */
@@ -56,20 +68,37 @@ const materialSetSteps = (note: string): Step[] => [
     },
   },
 ];
+const HALBERD_1 = 'duel:ＴＧ ハルバード・キャノン（アニメ版）①';
+
 function materialSet(env: Env): string[] {
   const mats = env.state.cards[env.self].materials ?? [];
   return mats.length && mats.every((u) => env.loc(u)?.zone === 'gy') ? mats : [];
 }
 
 export const ANIME_SCRIPTS: Record<string, CardScript> = {
-  // ＴＧ ブレード・ガンナー（アニメ版）
+  // ＴＧ ブレード・ガンナー（アニメ版。S召喚は相手ターンでも行える）
   'anime-51447164': {
     materialCheck: TG_SCRIPTS['51447164'].materialCheck,
     effects: [
-      logOnly('① このカードを対象とする相手の魔法・罠の発動を無効にし破壊（相手用）', ['monster']),
       {
-        label:
-          '② 相手ターン：他の自分のモンスターを除外し、このカードは攻撃対象にならない（除外したモンスターの攻撃力分ダウン）',
+        label: '① 手札を1枚墓地へ送り、相手の魔法・罠によるこのカードへの効果を無効（相手用）',
+        from: ['monster'],
+        opponentOnly: true,
+        speed: 2,
+        steps: [
+          {
+            op: 'pick',
+            cost: true,
+            prompt: 'コスト：墓地へ送る手札',
+            from: ['hand'],
+            min: 1,
+            max: 1,
+            then: (_, p) => p.map((u) => toGy(u, 'コスト')),
+          },
+        ],
+      },
+      {
+        label: '② 相手ターンに1度：このカードを除外（相手ターンのエンドフェイズに自分フィールドに戻ってくる）',
         from: ['monster'],
         key: 'ＴＧ ブレード・ガンナー（アニメ版）②',
         limit: 1,
@@ -78,116 +107,96 @@ export const ANIME_SCRIPTS: Record<string, CardScript> = {
         condition: oppTurn,
         steps: [
           {
-            op: 'pick',
-            cost: true,
-            prompt: 'コスト：除外するこのカード以外の自分フィールドのモンスター',
-            from: ['monsters'],
-            where: (env, u) => u !== env.self,
-            min: 1,
-            max: 1,
-            then: (env, p) => [
-              ...p.map((u) => ({ type: 'MOVE', uid: u, to: { zone: 'banished' }, reason: 'コスト' }) as Action),
-              {
-                type: 'STAT_MOD',
-                uid: env.self,
-                atk: -(currentStats(env.state, env.ctx, p[0]).atk ?? 0),
-                source: 'ＴＧ ブレード・ガンナー（アニメ版）',
-              },
+            op: 'do',
+            then: (env) => [
+              { type: 'MOVE', uid: env.self, to: { zone: 'banished' }, reason: 'ＴＧ ブレード・ガンナー（アニメ版）②' },
+              { type: 'RETURN_AT_OPP_END', uid: env.self },
             ],
           },
         ],
       },
       {
-        label:
-          '③ 戦闘で破壊された時：墓地からSモンスターのチューナーとチューナー以外のSモンスターを1体ずつ特殊召喚できる',
+        label: '③ 戦闘で破壊された時：S召喚に使用した素材一組が墓地に揃っていれば、それらを特殊召喚できる',
         from: ['gy'],
-        trigger: true,
-        condition: (env) => {
-          const inst = env.state.cards[env.self];
-          return inst.movedTurn === env.state.turn && inst.movedReason === '戦闘で破壊'
-            ? null
-            : 'このターンに戦闘で破壊されていません';
-        },
-        steps: [
-          {
-            op: 'pick',
-            prompt: '特殊召喚するSモンスターのチューナー（墓地。出さなくてもよい）',
-            from: ['gy'],
-            where: (env, u) => u !== env.self && isSynchro(env, u) && !!env.def(u).tuner,
-            min: 0,
-            max: 1,
-            zone: 'monster',
-            then: (_, p, z) => p.map((u) => ss(u, z, 'ＴＧ ブレード・ガンナー（アニメ版）の効果')),
-          },
-          {
-            op: 'pick',
-            prompt: '特殊召喚するチューナー以外のSモンスター（墓地。出さなくてもよい）',
-            from: ['gy'],
-            where: (env, u) => u !== env.self && isSynchro(env, u) && !env.def(u).tuner,
-            min: 0,
-            max: 1,
-            zone: 'monster',
-            then: (_, p, z) => p.map((u) => ss(u, z, 'ＴＧ ブレード・ガンナー（アニメ版）の効果')),
-          },
-        ],
-      },
-    ],
-  },
-
-  // ＴＧ ハルバード・キャノン（アニメ版。②は相手のモンスター効果を受けない）
-  'anime-97836203': {
-    materialCheck: TG_SCRIPTS['97836203'].materialCheck,
-    effects: [
-      logOnly(
-        '① 召喚・反転召喚・特殊召喚を無効にし、そのモンスターと相手の特殊召喚されたモンスターを全て破壊（相手用）',
-        ['monster'],
-        'ＴＧ ハルバード・キャノン（アニメ版）①',
-      ),
-      {
-        label: '③ フィールドから離れた時：このカードのS素材にしたモンスター一組を墓地から特殊召喚できる',
-        from: ['gy', 'banished'],
-        key: 'ＴＧ ハルバード・キャノン（アニメ版）③',
+        key: 'ＴＧ ブレード・ガンナー（アニメ版）③',
         limit: 1,
         perCard: true,
         trigger: true,
-        condition: (env) =>
-          leftFieldThisTurn(env) ?? (materialSet(env).length ? null : 'S素材にしたモンスターが墓地に揃っていません'),
-        steps: materialSetSteps('ＴＧ ハルバード・キャノン（アニメ版）の効果'),
+        condition: (env) => {
+          const inst = env.state.cards[env.self];
+          if (inst.movedTurn !== env.state.turn || inst.movedReason !== '戦闘で破壊')
+            return 'このターンに戦闘で破壊されていません';
+          return materialSet(env).length ? null : 'S素材にしたモンスターが墓地に揃っていません';
+        },
+        steps: materialSetSteps('ＴＧ ブレード・ガンナー（アニメ版）の効果'),
       },
     ],
   },
 
-  // シューティング・クェーサー・ドラゴン（アニメ版。①は他のカードの効果を受けない・③はS素材の数だけ攻撃できる）
-  'anime-35952884': {
-    materialCheck: (env, m, method) => {
-      if (method !== 'synchro') return null;
-      const tuner = m.find((u) => env.def(u).tuner);
-      const others = m.filter((u) => u !== tuner);
-      return tuner && isSynchro(env, tuner) && others.length >= 2 && others.every((u) => isSynchro(env, u))
-        ? null
-        : '素材はSモンスターのチューナー＋チューナー以外のSモンスター2体以上です';
-    },
+  // ＴＧ ハルバード・キャノン（アニメ版）
+  'anime-97836203': {
+    materialCheck: TG_SCRIPTS['97836203'].materialCheck,
     effects: [
-      logOnly('② 攻撃する時、戦闘を行う相手モンスターの効果を無効（相手用）', ['monster']),
       {
-        label: '④ フィールドを離れた時：EXデッキから「シューティング・スター・ドラゴン」を特殊召喚できる',
+        label: '① 召喚・反転召喚・特殊召喚を無効にし破壊（相手用。S素材にしたモンスターの数だけ）',
+        from: ['monster'],
+        key: HALBERD_1,
+        perCard: true,
+        opponentOnly: true,
+        speed: 2,
+        condition: (env) => {
+          const inst = env.state.cards[env.self];
+          const used = env.state.effectUses[`${HALBERD_1}:${env.self}:${inst.entryId}`] ?? 0;
+          const max = inst.materials?.length ?? 0;
+          return used < max ? null : `この効果はS素材にしたモンスターの数（${max}回）まで使えます`;
+        },
+        steps: [],
+      },
+      {
+        label: '② フィールドを離れた時：EXデッキの「ＴＧ ブレード・ガンナー」1体を特殊召喚できる',
         from: ['gy', 'banished'],
-        key: 'シューティング・クェーサー・ドラゴン（アニメ版）④',
+        key: 'ＴＧ ハルバード・キャノン（アニメ版）②',
+        limit: 1,
+        perCard: true,
+        trigger: true,
+        condition: leftFieldThisTurn,
+        steps: [ssFromExtra('ＴＧ ブレード・ガンナー', 'ＴＧ ハルバード・キャノン（アニメ版）の効果')],
+      },
+      logOnly('③ 相手モンスターが効果でフィールドを離れる場合、その効果を無効にし攻撃力800ダウン（相手用）', [
+        'monster',
+      ]),
+    ],
+  },
+
+  // シューティング・クェーサー・ドラゴン（アニメ版。①は素材にしたSモンスターの数だけ攻撃できる）
+  'anime-35952884': {
+    materialCheck: TG_SCRIPTS['35952884'].materialCheck,
+    effects: [
+      logOnly('② 攻撃する時、「無効にする」効果を持つカード1枚の発動をバトルフェイズ終了時まで無効（相手用）', [
+        'monster',
+      ]),
+      {
+        label:
+          '⑤ フィールドを離れた時：フィールドのモンスターを全て破壊し、EXデッキの「シューティング・スター・ドラゴン」を特殊召喚できる（S召喚扱い）',
+        from: ['gy', 'banished'],
+        key: 'シューティング・クェーサー・ドラゴン（アニメ版）⑤',
         limit: 1,
         perCard: true,
         trigger: true,
         condition: leftFieldThisTurn,
         steps: [
           {
-            op: 'pick',
-            prompt: 'EXデッキから特殊召喚する「シューティング・スター・ドラゴン」',
-            from: ['extra'],
-            filter: { name: ['シューティング・スター・ドラゴン'] },
-            min: 1,
-            max: 1,
-            zone: 'monster',
-            then: (_, p, z) => [ss(p[0], z, 'シューティング・クェーサー・ドラゴン（アニメ版）の効果')],
+            op: 'do',
+            then: (env) =>
+              [...env.state.mz, ...env.state.emz, ...(env.state.opp ? oppMonsterSlots(env.state.opp) : [])]
+                .filter((u): u is string => !!u)
+                .map((u) => toGy(u, '効果で破壊')),
           },
+          ssFromExtra(
+            'シューティング・スター・ドラゴン',
+            'シューティング・クェーサー・ドラゴン（アニメ版）の効果',
+            'synchro',
+          ),
         ],
       },
     ],

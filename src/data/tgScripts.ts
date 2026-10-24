@@ -1271,6 +1271,63 @@ export const TG_SCRIPTS: Record<string, CardScript> = {
     ],
   },
 
+  // シューティング・クェーサー・ドラゴン（①はS素材にしたチューナー以外の数まで攻撃できる）
+  '35952884': {
+    materialCheck: synchroOnly(2),
+    effects: [
+      {
+        ...logOnly(
+          '② 魔法・罠・モンスターの効果が発動した時、その発動を無効にし破壊（相手用）',
+          ['monster'],
+          'シューティング・クェーサー・ドラゴン②',
+        ),
+        perCard: true,
+      },
+      {
+        label: '③ フィールドから離れた時：EXデッキから「シューティング・スター・ドラゴン」を特殊召喚',
+        from: ['gy', 'banished'],
+        key: 'シューティング・クェーサー・ドラゴン③',
+        limit: 1,
+        perCard: true,
+        trigger: true,
+        condition: (env) => {
+          const inst = env.state.cards[env.self];
+          return inst.movedTurn === env.state.turn && ['mz', 'emz'].includes(inst.movedFrom ?? '')
+            ? null
+            : 'このターンにフィールドを離れていません';
+        },
+        steps: [
+          {
+            op: 'pick',
+            prompt: 'EXデッキから特殊召喚する「シューティング・スター・ドラゴン」',
+            from: ['extra'],
+            filter: { name: ['シューティング・スター・ドラゴン'] },
+            min: 1,
+            max: 1,
+            zone: 'monster',
+            then: (_, p, z) => [ss(p[0], z, 'シューティング・クェーサー・ドラゴンの効果')],
+          },
+        ],
+      },
+    ],
+  },
+
+  // フォーミュラ・シンクロン
+  '50091196': {
+    materialCheck: oneNonTuner,
+    effects: [
+      {
+        label: '① S召喚に成功した時：1枚ドロー',
+        from: ['monster'],
+        onSummon: true,
+        trigger: true,
+        condition: synchroSummoned,
+        steps: [{ op: 'do', then: () => [draw(1)] }],
+      },
+      quickSynchro('②', 'フォーミュラ・シンクロン'),
+    ],
+  },
+
   // シューティング・スター・ドラゴン・ＴＧ－ＥＸ
   '63180841': {
     materialCheck: synchroOnly(1),

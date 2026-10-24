@@ -123,6 +123,8 @@ export type Action =
   | { type: 'TIMING' }
   /** このモンスターはエンドフェイズに除外される */
   | { type: 'BANISH_AT_END'; uid: string }
+  /** 除外したこのカードは、相手ターンのエンドフェイズに自分フィールドに戻ってくる（ＴＧ ブレード・ガンナー（アニメ版）） */
+  | { type: 'RETURN_AT_OPP_END'; uid: string }
   /** コイントス（結果は操作を行った時に決めて記録する） */
   | { type: 'COIN'; result: 'heads' | 'tails'; by?: string }
   /** サイコロを振る（1〜6） */
@@ -914,6 +916,7 @@ function resetInstance(inst: CardInstance) {
   delete inst.equipDef;
   inst.destroyAtEnd = false;
   delete inst.banishAtEnd;
+  delete inst.returnAtOppEnd;
   delete inst.oppSpent;
 }
 
@@ -1205,6 +1208,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
       state.phase = next;
       log(state, `${PHASE_LABEL[next]}へ移行`, 'info');
       if (next === 'EP' && !state.opponentTurn) destroyAtEndPhase(state, ctx);
+      if (next === 'EP' && state.opponentTurn) returnAtOppEnd(state, ctx);
       return;
     }
     case 'END_TURN': {
@@ -1216,6 +1220,7 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
         if (u && state.cards[u].pendingResolve) fail(`${name(state, ctx, u)}の解決が終わっていません`);
       }
       if (!state.opponentTurn && !action.startOwnTurn) destroyAtEndPhase(state, ctx);
+      if (state.opponentTurn) returnAtOppEnd(state, ctx);
       const toOpponent = !state.opponentTurn && !!action.toOpponent;
       state.turn += 1;
       state.opponentTurn = toOpponent;
@@ -1462,7 +1467,13 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
           : Math.max(
               def.attacksPerBattle ?? 1,
               inst.doubleAttackTurn === state.turn ? 2 : 1,
-              def.attacksFromMaterials ? Math.max(def.attacksFromMaterials, inst.materials?.length ?? 0) : 1,
+              def.attacksFromMaterials
+                ? Math.max(
+                    def.attacksFromMaterials,
+                    (inst.materials ?? []).filter((m) => !def.attacksFromNonTuners || !getDef(state, ctx, m).tuner)
+                      .length,
+                  )
+                : 1,
             );
         if (inst.attackedTurn === state.turn && inst.attackCount >= maxAttacks)
           fail('このモンスターは既に攻撃しています');
@@ -1638,6 +1649,9 @@ function reduce(state: GameState, action: Action, ctx: Ctx): void {
     }
     case 'BANISH_AT_END':
       if (state.cards[action.uid]) state.cards[action.uid].banishAtEnd = true;
+      return;
+    case 'RETURN_AT_OPP_END':
+      if (state.cards[action.uid]) state.cards[action.uid].returnAtOppEnd = true;
       return;
     case 'OPP_SYNC': {
       const o = oppOf(state);
@@ -1933,6 +1947,28 @@ function destroyAtEndPhase(state: GameState, ctx: Ctx) {
   }
 }
 
+/** 相手ターンのエンドフェイズ：除外されていた「戻ってくる」カードを自分フィールドに戻す（空きが無ければ墓地へ） */
+function returnAtOppEnd(state: GameState, ctx: Ctx) {
+  for (const u of [...state.banished]) {
+    if (!state.cards[u].returnAtOppEnd) continue;
+    const mzIndex = state.mz.indexOf(null);
+    const emzIndex = state.emz.findIndex((x, i) => !x && !state.opp?.emz?.[i]);
+    const to: Location =
+      mzIndex >= 0
+        ? { zone: 'mz', index: mzIndex }
+        : emzIndex >= 0 && !state.emz.some(Boolean)
+          ? { zone: 'emz', index: emzIndex }
+          : { zone: 'gy' };
+    moveCard(state, ctx, u, to, { faceUp: true, position: 'atk', reason: 'エンドフェイズに戻る' });
+    if (isOnField(to)) state.cards[u].enteredTurn = state.turn;
+    log(
+      state,
+      `${getDef(state, ctx, u).name}が${isOnField(to) ? 'フィールドに戻った' : '戻れず墓地へ送られた'}`,
+      'move',
+    );
+  }
+}
+
 function activateCard(state: GameState, ctx: Ctx, uid: string, index?: number) {
   const strict = ctx.options.strict;
   const def = getDef(state, ctx, uid);
@@ -1995,7 +2031,9 @@ function procedureSummon(state: GameState, ctx: Ctx, action: Extract<Action, { t
   const def = getDef(state, ctx, uid);
   const from = findLocation(state, uid);
   checkSummonable(state, ctx, uid);
-  if (!action.by) requireMainPhase(state, ctx, '召喚');
+  // アクセルシンクロ：このカードのS召喚は相手ターンでも行える
+  const accel = def.oppTurnSynchro && method === 'synchro' && state.opponentTurn;
+  if (!action.by && !accel) requireMainPhase(state, ctx, '召喚');
   const matDefs = materials.map((m) => getDef(state, ctx, m));
   const matNames = matDefs.map((d) => d.name).join('・');
   const label = { fusion: '融合', synchro: 'シンクロ', xyz: 'エクシーズ', link: 'リンク', ritual: '儀式' }[method];

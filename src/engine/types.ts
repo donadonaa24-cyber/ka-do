@@ -75,8 +75,12 @@ export interface CardDef {
   attackBonus?: number;
   /** 同じカード名の別の効果のカード（例：「アニメ版」）。カード名の横に表示する */
   variant?: string;
-  /** S素材にしたモンスターの数だけ攻撃できる（この数より少なければこの回数。シューティング・クェーサー・ドラゴン（アニメ版）） */
+  /** S素材にしたモンスターの数だけ攻撃できる（この数より少なければこの回数。シューティング・クェーサー・ドラゴン） */
   attacksFromMaterials?: number;
+  /** attacksFromMaterials で数えるのはチューナー以外の素材だけ（シューティング・クェーサー・ドラゴン（OCG版）） */
+  attacksFromNonTuners?: boolean;
+  /** このカードのS召喚は相手ターンでも行える（アクセルシンクロ。ＴＧ ブレード・ガンナー（アニメ版）） */
+  oppTurnSynchro?: boolean;
   /** X素材1つにつき攻撃力が上がる（サイバー・ドラゴン・インフィニティ） */
   atkPerOverlay?: number;
   /** フィールド・墓地に存在する限り、このカード名として扱う（サイバー・ドラゴン・コアなど） */
@@ -204,6 +208,8 @@ export interface CardInstance {
   destroyAtEnd: boolean;
   /** エンドフェイズに除外される（ＰＳＹフレームギアの効果で特殊召喚したモンスター） */
   banishAtEnd?: boolean;
+  /** 除外されたこのカードは、相手ターンのエンドフェイズに自分フィールドに戻ってくる */
+  returnAtOppEnd?: boolean;
   /** 相手のカード（練習用に手で置いたもの） */
   opp?: boolean;
   /** 相手のカードが使った「表側で存在する限り1度だけ」の効果 */
